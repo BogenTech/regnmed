@@ -805,6 +805,88 @@ async fn the_thread_is_replayed_so_an_agent_does_not_ask_twice() {
     assert_eq!(messages[3]["content"], "Bruk 6800.");
 }
 
+/// A reply without a marker is never read as done (docs/agent.md §8.4):
+/// the model is asked once to mark it, and a reply that stays unmarked
+/// is a question -- the one status that is not terminal.
+#[tokio::test]
+async fn an_unmarked_reply_is_sent_back_to_be_marked() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Merkeagent AS")
+        .await
+        .unwrap();
+    let client_id = format!("merkeagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Mona Merke",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let base = serve(state.clone()).await;
+    let server = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    let reply = |text: &str| json!({"choices":[{"message":{"role":"assistant","content":text}}]});
+    // Verbatim shape from nemotron, 2026-11-17: a question with no «?».
+    let asked = "For å sette en timesats må jeg ha en `valid_from`-dato. Oppgi datoen";
+
+    // The model marks it when reminded: its own marker decides.
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(
+        mock.clone(),
+        vec![
+            reply(asked),
+            reply("SPØRSMÅL: Hvilken dato skal satsen gjelde fra?"),
+        ],
+    )
+    .await;
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
+    let outcome = regnmed_agent::run_loop(&model, &server, "bokforing", None, "Sett sats.", &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        regnmed_agent::Outcome::Question("Hvilken dato skal satsen gjelde fra?".into())
+    );
+    let sett = mock.sett.lock().unwrap().clone();
+    assert_eq!(sett.len(), 2, "én påminnelse, så svaret");
+    let messages = sett[1]["messages"].as_array().unwrap();
+    let n = messages.len();
+    assert_eq!(messages[n - 2]["role"], "assistant");
+    assert_eq!(
+        messages[n - 2]["content"],
+        asked,
+        "modellen må se sitt eget svar"
+    );
+    assert!(
+        messages[n - 1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("mangler merke"),
+        "påminnelsen ble ikke sendt: {:?}",
+        messages[n - 1]
+    );
+
+    // A model that ignores the reminder too gets a question, never `utfort`.
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(mock.clone(), vec![reply(asked), reply(asked)]).await;
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
+    let outcome = regnmed_agent::run_loop(&model, &server, "bokforing", None, "Sett sats.", &[])
+        .await
+        .unwrap();
+    assert_eq!(outcome, regnmed_agent::Outcome::Question(asked.into()));
+    assert_eq!(mock.sett.lock().unwrap().len(), 2, "bare én påminnelse");
+}
+
 /// Exactly one worker gets a task, however many ask at once
 /// (docs/agent.md §8.7).
 ///

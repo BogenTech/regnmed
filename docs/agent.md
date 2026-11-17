@@ -703,10 +703,15 @@ enn en som melder fra om en vegg.
 
 Modellen avslutter med en markør — `FERDIG:`, `SPØRSMÅL:` eller `AVVIST:` —
 som blir statusen køen alt kjenner (#103). Workeren finner ikke opp egne.
-Tekst uten markør leses som utført: en liten modell som gjorde jobben og
-glemte prefikset skal ikke få arbeidet sitt journalført som en nektelse, og
-notatet bærer råteksten uansett. `sporsmal` er ikke terminal i 0064-vakten,
-nettopp fordi agenten skal kunne fortsette når noen har svart.
+Tekst uten markør GJETTES IKKE: workeren sender svaret tilbake én gang med
+beskjed om å gjenta det med riktig markør, og modellen — som ser sitt eget
+svar rett over — klassifiserer det selv. Forblir svaret umerket, blir det
+`sporsmal`, aldri `utfort`. Bare en uttrykkelig `FERDIG:` lukker en oppgave.
+`sporsmal` er ikke terminal i 0064-vakten, nettopp fordi agenten skal kunne
+fortsette når noen har svart — og et menneske som ser at jobben faktisk er
+gjort, lukker den selv. Påminnelsen koster én ekstra tur, og bare når
+modellen glemte markøren. Vakten er `an_unmarked_reply_is_sent_back_to_be_marked` (`agent.rs`),
+sett feile med påminnelsen slått av.
 
 Leverandøren er OpenAI-kompatibel `/chat/completions` med `tools` —
 grunnen til at dette ble lite. OpenAI, OpenRouter og de fleste
@@ -770,10 +775,15 @@ at den finnes.
 **(a) Et ubesvart spørsmål lukket oppgaven.** `gemini-2.5-flash-lite` spurte
 hvilken dato i 2026 som var ment, uten `SPØRSMÅL:`-prefikset. Fallbacken
 leste umerket tekst som utført — og `utfort` er TERMINAL i 0064-vakten, så
-oppgaven ble lukket og spørsmålet forsvant med den. Umerket tekst som ender
-med spørsmålstegn tolkes nå som `sporsmal`. Asymmetrien avgjør regelen: å
-være feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet
-og lukker), å være feilaktig terminal er det ikke.
+oppgaven ble lukket og spørsmålet forsvant med den. Første retting leste
+umerket tekst med spørsmålstegn som `sporsmal`; det holdt til
+`nemotron-3.5-lightning:free` (2026-11-17) spurte i fet skrift med en
+parentes etter, og et spørsmål i ren prosa uten «?» ville sluppet gjennom
+uansett. Hver heuristikk over modellens fritekst taper mot neste modell, så
+workeren slutter å gjette: umerket tekst sendes tilbake for å merkes, og det som
+forblir umerket blir `sporsmal` (§8.3). Asymmetrien avgjør regelen: å være
+feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet og
+lukker), å være feilaktig terminal er det ikke.
 
 **(b) En bokfører kunne ikke føre et bilag.** Bedt om å bokføre en kontant
 utgift svarte `gpt-4o-mini`: «Jeg kan ikke bokføre bilaget fordi jeg ikke
