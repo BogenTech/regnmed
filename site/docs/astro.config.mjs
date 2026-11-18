@@ -9,7 +9,7 @@ export default defineConfig({
       description:
         "Brukerveiledning, utviklerdokumentasjon og teknisk dokumentasjon for regnmed, regnskapssystemet du kan etterprøve.",
       defaultLocale: "root",
-      locales: { root: { label: "Norsk", lang: "nb" } },
+      locales: { root: { label: "Norsk", lang: "nb" }, en: { label: "English", lang: "en" } },
       logo: { src: "./src/assets/logo.svg", alt: "regnmed" },
       favicon: "/favicon.svg",
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/BogenTech/regnmed" }],
@@ -17,9 +17,9 @@ export default defineConfig({
       customCss: ["./src/styles/docs.css"],
       lastUpdated: false,
       sidebar: [
-        { label: "Brukerveiledning", items: [{ autogenerate: { directory: "brukerveiledning" } }] },
-        { label: "For utviklere", items: [{ autogenerate: { directory: "utviklere" } }] },
-        { label: "Teknisk dokumentasjon", collapsed: true, items: [{ autogenerate: { directory: "teknisk" } }] },
+        { label: "Brukerveiledning", translations: { en: "User guide (Norwegian)" }, items: [{ autogenerate: { directory: "brukerveiledning" } }] },
+        { label: "For utviklere", translations: { en: "For developers" }, items: [{ autogenerate: { directory: "utviklere" } }] },
+        { label: "Teknisk dokumentasjon", translations: { en: "Technical documentation (Norwegian)" }, collapsed: true, items: [{ autogenerate: { directory: "teknisk" } }] },
       ],
     }),
   ],

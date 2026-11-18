@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm, cache-dependency-path: "site/*/package-lock.json" }
       - name: API reference matches the handlers
-        run: python3 site/docs/scripts/gen-api-reference.py && git diff --exit-code -- site/docs/src/content/docs/utviklere/api
+        run: python3 site/docs/scripts/gen-api-reference.py && git diff --exit-code -- site/docs/src/content/docs/utviklere/api site/docs/src/content/docs/en/utviklere/api
       - name: Build www
         working-directory: site/www
         run: npm ci && npm run build
