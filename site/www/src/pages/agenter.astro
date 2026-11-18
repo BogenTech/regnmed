@@ -28,9 +28,10 @@ const withAgents = plans.filter((p) => p.integration_limit !== 0);
       <p style="margin-top:0">MCP-serveren er transport, ikke autorisasjon. Den har ingen databasetilgang og kaller det vanlige API-et med agentens eget token. Verktøylisten er håndlaget og kort, for en verktøyliste er en prompt, og to hundre verktøy er den sikreste måten å få en liten modell til å velge feil.</p>
       <p>Fire rolleprompter følger med, for regnskapsfører, bokfører, ansatt og migrering. «Jeg vet ikke» har en konkret handling: agenten svarer med status <code>sporsmal</code> i stedet for å dikte opp et svar.</p>
       <p>Oppgaver til en agent er uforanderlige bestillinger med et innsettings-bart spor, så ingen kan endre hva agenten ble bedt om etterpå. En agent kan ikke gi seg selv oppgaver. MCP-serveren bygges foreløpig fra kildekoden.</p>
-      {capped && (
+      {capped && withAgents.length > 0 && (
         <p>Hvor mange integrasjoner og agenter et selskap kan ha, følger pakken: {withAgents.map((p, i) => <>{i > 0 && (i === withAgents.length - 1 ? " og " : ", ")}<b>{p.name}</b> {p.integration_limit == null ? "uten grense" : `opptil ${fmtN(p.integration_limit)}`}</>)}. Se <a href="/priser/">priser</a>.</p>
       )}
+      {capped && withAgents.length === 0 && <p>Integrasjoner og agenter er ikke med i noen pakke akkurat nå. Se <a href="/priser/">priser</a>.</p>}
       <p><a href={`${DOCS}/developers/`}>Dokumentasjon for utviklere →</a></p>
     </div>
   </div></section>

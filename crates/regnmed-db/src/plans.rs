@@ -255,6 +255,12 @@ fn features_of(v: serde_json::Value) -> Vec<String> {
 
 /// Every plan's newest version with its full price history, for the console.
 pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
+    list_plans_with(pool, true).await
+}
+
+/// `counts` = how many companies are on each plan (the console needs it, the
+/// per-company status does not: it reads every coverage row).
+pub async fn list_plans_with(pool: &PgPool, counts: bool) -> Result<Vec<Plan>> {
     let rows = sqlx::query(
         "select distinct on (slug) slug, name, kind, available, audience, featured, listed, voucher_limit,
                 employee_limit, integration_limit, features, sort, set_by, created_at
@@ -263,16 +269,20 @@ pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
     .fetch_all(pool)
     .await?;
     let prices = crate::subscription::list_prices(pool).await?;
-    let counts: std::collections::HashMap<String, i64> = sqlx::query(
-        "select plan, count(distinct company_id) n from abonnement
+    let counts: std::collections::HashMap<String, i64> = if !counts {
+        Default::default()
+    } else {
+        sqlx::query(
+            "select plan, count(distinct company_id) n from abonnement
          where valid_from <= current_date and (valid_to is null or valid_to > current_date)
          group by plan",
-    )
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(|r| (r.get("plan"), r.get("n")))
-    .collect();
+        )
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .map(|r| (r.get("plan"), r.get("n")))
+        .collect()
+    };
     let mut plans: Vec<Plan> = rows
         .iter()
         .map(|r| {
@@ -420,8 +430,10 @@ pub async fn plan_for_company<'e, E: sqlx::PgExecutor<'e>>(
     }))
 }
 
-/// What a company uses of its limits: vouchers this fiscal year (the import
-/// journal excluded: history brought in is not this year's activity), active
+/// What a company uses of its limits: vouchers this fiscal year that a person or
+/// an integration made (the import journal and the vouchers regnmed posts by
+/// itself — depreciation, accruals, payroll runs, reminder fees, year-end — are
+/// not counted: the customer should not pay for our automation), active
 /// employees and active integration grants.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Usage {
@@ -434,7 +446,12 @@ pub async fn usage(pool: &PgPool, company_id: Uuid, fiscal_year: i32) -> Result<
     let r = sqlx::query(
         "select
             (select count(*) from voucher v join journal j on j.id = v.journal_id
-              where v.company_id = $1 and v.fiscal_year = $2 and j.code <> 'IMP') vouchers,
+              where v.company_id = $1 and v.fiscal_year = $2 and j.code <> 'IMP'
+                and not exists (select 1 from asset_depreciation x where x.voucher_id = v.id)
+                and not exists (select 1 from periodisering_run x where x.voucher_id = v.id)
+                and not exists (select 1 from payroll_run x where x.voucher_id = v.id)
+                and not exists (select 1 from invoice_reminder x where x.voucher_id = v.id)
+                and not exists (select 1 from arsavslutning x where x.voucher_id = v.id)) vouchers,
             (select count(*) from employee
               where company_id = $1 and (ansatt_til is null or ansatt_til >= current_date)) employees,
             (select count(*) from integration_grant
@@ -498,6 +515,68 @@ pub async fn ensure_room(
     Ok(())
 }
 
+/// Why a company does not fit a package's hard limits today, if it does not.
+/// Pure, so the rule is tested without a database.
+pub fn misfit(
+    plan_name: &str,
+    employee_limit: Option<i32>,
+    integration_limit: Option<i32>,
+    usage: &Usage,
+) -> Option<String> {
+    if let Some(l) = employee_limit
+        && usage.employees > i64::from(l)
+    {
+        return Some(format!(
+            "Selskapet har {} ansatte i lønn, og pakken «{plan_name}» har plass til {l}. Avslutt ansatte eller velg en større pakke.",
+            usage.employees
+        ));
+    }
+    if let Some(l) = integration_limit
+        && usage.integrations > i64::from(l)
+    {
+        return Some(format!(
+            "Selskapet har {} integrasjoner og agenter, og pakken «{plan_name}» har plass til {l}. Trekk tilbake tilganger eller velg en større pakke.",
+            usage.integrations
+        ));
+    }
+    None
+}
+
+/// Whether the company fits `slug`'s hard limits as it is today.
+pub async fn fits(
+    pool: &PgPool,
+    company_id: Uuid,
+    slug: &str,
+    fiscal_year: i32,
+) -> Result<Option<String>> {
+    let Some(plan) = list_plans_with(pool, false)
+        .await?
+        .into_iter()
+        .find(|p| p.slug == slug)
+    else {
+        return Ok(None);
+    };
+    let usage = usage(pool, company_id, fiscal_year).await?;
+    Ok(misfit(
+        &plan.name,
+        plan.employee_limit,
+        plan.integration_limit,
+        &usage,
+    ))
+}
+
+/// The plan of the company's most recent coverage, current or ended: what a
+/// grandfathered customer may restart on after a lapse.
+pub async fn last_plan(pool: &PgPool, company_id: Uuid) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar(
+        "select plan from abonnement where company_id = $1
+         order by valid_from desc, created_at desc limit 1",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Capped {
     Employees,
@@ -541,6 +620,30 @@ mod tests {
         ] {
             assert!(validate_slug(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_company_over_the_hard_limits_does_not_fit() {
+        let u = Usage {
+            vouchers: 9999,
+            employees: 5,
+            integrations: 3,
+        };
+        assert!(
+            misfit("Liten", Some(1), Some(0), &u)
+                .unwrap()
+                .contains("5 ansatte")
+        );
+        assert!(
+            misfit("X", None, Some(2), &u)
+                .unwrap()
+                .contains("3 integrasjoner")
+        );
+        assert!(
+            misfit("Stor", Some(25), None, &u).is_none(),
+            "vouchers never decide fit"
+        );
+        assert!(misfit("Basis", None, None, &u).is_none());
     }
 
     #[test]

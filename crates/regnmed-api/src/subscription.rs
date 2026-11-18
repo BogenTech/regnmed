@@ -235,12 +235,25 @@ pub async fn start_subscription(
     }
     // Only a plan that is for sale today: listed, a package (not an add-on),
     // with a price in force. Grandfathered plans are kept, never sold anew.
-    if !choosable_plans(&state, today, None)
+    // A grandfathered customer may restart on the plan of its last coverage
+    // after a lapse; everyone else chooses among what is for sale.
+    let last = regnmed_db::plans::last_plan(&state.pool, company_id).await?;
+    if !choosable_plans(&state, today, last.as_deref())
         .await?
         .iter()
         .any(|p| p["plan"] == request.plan.as_str())
     {
         return Err(ApiError::BadRequest("planen kan ikke velges".into()));
+    }
+    if let Some(why) = regnmed_db::plans::fits(
+        &state.pool,
+        company_id,
+        &request.plan,
+        regnmed_core::fiscal_year::of(today),
+    )
+    .await?
+    {
+        return Err(ApiError::BadRequest(why));
     }
 
     if regnmed_db::subscription::stripe_abo_for(&state.pool, company_id)
@@ -673,7 +686,7 @@ async fn choosable_plans(
     today: chrono::NaiveDate,
     keep: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, ApiError> {
-    let plans = regnmed_db::plans::list_plans(&state.pool).await?;
+    let plans = regnmed_db::plans::list_plans_with(&state.pool, false).await?;
     Ok(plans
         .iter()
         .filter(|p| p.kind == "plan" && (p.listed || Some(p.slug.as_str()) == keep))
@@ -706,7 +719,10 @@ pub struct ChangeRequest {
     plan: String,
 }
 
-/// Switches an invoiced company to another package from today. A card
+/// Switches an invoiced company to another package: an upgrade from today (the
+/// month's price difference invoiced if the month is already billed), a
+/// downgrade from the first of next month, and never to a package the company
+/// does not fit (employees, integrations). A card
 /// (Stripe) subscription is changed by support for now: Stripe owns its
 /// renewal, so a switch there is a price change on the Stripe subscription.
 pub async fn change_plan(
@@ -743,10 +759,25 @@ pub async fn change_plan(
             "selskapet er allerede på denne pakken".into(),
         ));
     }
-    let name = person.name.as_deref().unwrap_or(&person.sub);
-    let from = regnmed_db::subscription::switch_plan(
+    if let Some(why) = regnmed_db::plans::fits(
         &state.pool,
         company_id,
+        &request.plan,
+        regnmed_core::fiscal_year::of(today),
+    )
+    .await?
+    {
+        return Err(ApiError::BadRequest(why));
+    }
+    let name = person.name.as_deref().unwrap_or(&person.sub);
+    // The ops company is only needed when an upgrade lands in a month that is
+    // already invoiced; the db function says so if it is missing then.
+    let drift = drift_company(&state).await.ok();
+    let change = regnmed_db::subscription::change_plan(
+        &state.pool,
+        drift,
+        company_id,
+        &current.slug,
         &request.plan,
         today,
         &format!(
@@ -755,8 +786,11 @@ pub async fn change_plan(
         ),
         name,
     )
-    .await?;
-    Ok(Json(
-        json!({ "plan": request.plan, "fra": from.to_string() }),
-    ))
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(Json(json!({
+        "plan": request.plan,
+        "fra": change.from.to_string(),
+        "fakturanr_prisforskjell": change.invoice_no,
+    })))
 }

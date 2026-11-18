@@ -366,13 +366,23 @@ Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
   leses fra pakken selskapet har dekning på i dag. **Prøveperioden og selskaper uten
   dekning har ingen grenser**, og de gamle pakkene `basis` og `standard` har heller
   ingen, så eksisterende kunder merker ingenting (grandfathering).
-- **Pakkebytte**: `POST …/subscription/change` (selskapsadmin) avslutter dagens
-  dekning og starter den nye samme dag den gamle slutter, i én transaksjon; den gamle
-  raden beholder sin plan, så det fakturerte er lesbart. Et kortabonnement (Stripe)
-  byttes foreløpig av oss, siden Stripe eier fornyelsen.
+- **Pakkebytte**: `POST …/subscription/change` (selskapsadmin). En **oppgradering**
+  (høyere månedspris) gjelder fra i dag, og er måneden allerede fakturert, faktureres
+  prisforskjellen nå. En **nedgradering** gjelder fra den 1. i neste måned. Begge regler
+  hindrer at en måned betales til den lille prisen mens den store pakken var i bruk.
+  Byttet, forskjellsfakturaen og raden i `subscription_upgrade_run` (migrasjon 0095,
+  unik per selskap, måned og ny plan) er én transaksjon, så et nytt forsøk verken
+  dobbeltfakturerer eller lar et bytte stå ufakturert. Den gamle dekningsraden beholder
+  sin plan. Et kortabonnement (Stripe) byttes foreløpig av oss.
+- **Passform**: oppstart og bytte nektes til en pakke selskapet ikke får plass i (flere
+  aktive ansatte eller integrasjoner enn grensen), med en melding om hva som må fjernes.
+  Bilag avgjør aldri passform.
+- **Hva som telles som bilag**: bilag i regnskapsåret fra et menneske eller en
+  integrasjon. Importjournalen IMP og bilagene regnmed fører selv (avskrivninger,
+  periodiseringer, lønnskjøringer, purregebyr, årsavslutning) telles ikke.
 - **Bare det som er til salgs kan velges**: oppstart og bytte godtar bare en listet
-  pakke (ikke et tillegg) med en månedspris som gjelder i dag. En gammel pakke selskapet
-  allerede står på vises fortsatt med sin pris, men kan ikke velges på nytt.
+  pakke (ikke et tillegg) med en månedspris som gjelder i dag, pluss planen fra selskapets
+  siste dekning: en kunde på en gammel pakke kan starte igjen på den etter et opphold.
 - **Offentlig**: `GET /pricing` (åpent) gir listede pakker og tillegg med dagens
   pris og neste daterte endring. Svaret mellomlagres 30 sekunder per prosess og nullstilles ved hver endring.
   Nettsiden leser det ved bygg og bygges på nytt hver sjette time (faller tilbake til

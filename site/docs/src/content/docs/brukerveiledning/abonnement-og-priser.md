@@ -11,12 +11,12 @@ Pakkene og prisene redigeres i plattformkonsollen, og den gjeldende prislisten s
 
 Pakkene skiller på størrelse:
 
-- **Bilag i året.** Bokføringen stoppes aldri. Går du over grensen, får du beskjed i portalen og forslag om en pakke som passer.
+- **Bilag i året.** En pakkegrense stopper aldri bokføringen. Går du over grensen, får du beskjed i portalen og forslag om en pakke som passer. Bilag regnmed fører selv (avskrivninger, periodiseringer, lønnskjøringer, purregebyr og årsavslutning) telles ikke.
 - **Ansatte i lønn** og **integrasjoner og agenter.** Disse har en fast grense. Når pakken er full, avvises en ny ansatt eller en ny agent med en melding som sier hvilken pakke du er på.
 
-Under **Administrasjon → Abonnement** ser du pakken du er på, hvor mye du bruker av grensene, og kan bytte pakke selv. Prøveperioden har ingen grenser.
+Under **Administrasjon → Abonnement** ser du pakken du er på og hvor mye du bruker av grensene. Betaler du med faktura, bytter du pakke selv der: en større pakke gjelder med en gang, og prisforskjellen for inneværende måned faktureres; en mindre pakke gjelder fra den 1. i neste måned. Du kan ikke bytte til en pakke med færre plasser for ansatte eller integrasjoner enn du bruker. Betaler du med kort, tar du kontakt med oss for å bytte. Prøveperioden har ingen grenser.
 
-Prisene er data med dato og kilde. En ny pris gjelder fra en dato som er satt fram i tid, og et selskap som står på en eldre pakke beholder den og prisen sin.
+Prisene er data med dato og kilde. En ny pris gjelder fra en dato som er satt fram i tid, og et selskap som står på en eldre pakke beholder den og prisen sin, også om abonnementet har vært ute en stund og startes igjen.
 
 **Byråer betaler ikke.** All fakturering er per selskap, og hver klient har sitt eget abonnement. Byråavtaler med rabatt er ikke bygget.
 
