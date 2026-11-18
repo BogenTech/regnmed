@@ -104,33 +104,45 @@ const here = Astro.url.pathname;
         </div>
       </div>
     </footer>
-    <script>
+    <script is:inline>
       // Default is the system's theme. The toggle forces the other one; choosing what the system
       // already says clears the choice, so the site follows the system again.
-      const root = document.documentElement;
-      const system = matchMedia("(prefers-color-scheme: dark)");
-      const btn = document.getElementById("theme-toggle")!;
-      const sync = () => {
-        const forced = root.dataset.theme;
-        // Screenshot sources and theme-color follow the system by media query; a forced theme overrides it.
-        for (const el of document.querySelectorAll<HTMLElement>("[data-scheme]")) {
-          const s = el.dataset.scheme;
-          el.setAttribute("media", forced ? (forced === s ? "all" : "not all") : `(prefers-color-scheme: ${s})`);
-        }
-        const dark = forced ? forced === "dark" : system.matches;
-        btn.setAttribute("aria-label", dark ? "Bytt til lyst tema" : "Bytt til mørkt tema");
-        btn.title = btn.getAttribute("aria-label")!;
-      };
-      btn.addEventListener("click", () => {
-        const next = (root.dataset.theme ? root.dataset.theme === "dark" : system.matches) ? "light" : "dark";
-        const follow = next === (system.matches ? "dark" : "light");
-        if (follow) delete root.dataset.theme; else root.dataset.theme = next;
-        try { follow ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch {}
+      // Inline, not bundled: it runs during parse, so a forced theme swaps the screenshots before first paint.
+      (() => {
+        const root = document.documentElement;
+        const system = matchMedia("(prefers-color-scheme: dark)");
+        const btn = document.getElementById("theme-toggle");
+        const isDark = () => (root.dataset.theme ? root.dataset.theme === "dark" : system.matches);
+        const sync = () => {
+          const forced = root.dataset.theme;
+          // Screenshot sources and theme-color follow the system by media query; a forced theme overrides it.
+          for (const el of document.querySelectorAll("[data-scheme]")) {
+            const s = el.dataset.scheme;
+            el.setAttribute("media", forced ? (forced === s ? "all" : "not all") : `(prefers-color-scheme: ${s})`);
+          }
+          btn.title = isDark() ? "Bytt til lyst tema" : "Bytt til mørkt tema";
+          btn.setAttribute("aria-label", btn.title);
+        };
+        // The choice may have changed elsewhere: another tab, or a later page before the back button restored this one.
+        const reread = () => {
+          let t = null;
+          try { t = localStorage.getItem("theme"); } catch {}
+          if (t === "light" || t === "dark") root.dataset.theme = t; else delete root.dataset.theme;
+          sync();
+        };
+        btn.addEventListener("click", () => {
+          const next = isDark() ? "light" : "dark";
+          const follow = (next === "dark") === system.matches;
+          if (follow) delete root.dataset.theme; else root.dataset.theme = next;
+          try { follow ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch {}
+          sync();
+        });
+        system.addEventListener("change", sync);
+        addEventListener("storage", reread);
+        addEventListener("pageshow", (e) => { if (e.persisted) reread(); });
+        btn.hidden = false;
         sync();
-      });
-      system.addEventListener("change", sync);
-      btn.hidden = false;
-      sync();
+      })();
     </script>
   </body>
 </html>

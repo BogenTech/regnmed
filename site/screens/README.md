@@ -27,7 +27,7 @@ Begge nettstedene viser bildet som passer temaet leseren ser. `site/www` bruker 
 <img src="/screens/mva-dark.png" alt="…" width="1440" height="900" loading="lazy" />
 ```
 
-`loading="lazy"` er det som hindrer at det skjulte bildet lastes ned.
+`loading="lazy"` er det som hindrer at det skjulte bildet lastes ned. Et bilde uten mørk tvilling (mobilbildene) skrives alene og vises i begge temaer.
 
 Ikke tatt: ferdig rendret faktura-PDF som eget bilde (PDF-en vises i `bilag` i stedet).
 
