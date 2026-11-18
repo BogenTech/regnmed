@@ -560,3 +560,142 @@ async fn an_agent_that_cannot_run_says_so_in_the_conversation() {
         "{thread}"
     );
 }
+
+/// The conversation with an agent is the whole history with it: a task
+/// given from the Oppdrag card shows up in Meldinger with its question and
+/// answer, without anything being copied (docs/meldinger.md). Found in
+/// prod on 2026-11-18, where three tasks with RegnmedAgent left Meldinger
+/// saying «Ingen samtaler ennå». And no thread is sent whole: it pages.
+#[tokio::test]
+async fn an_agents_task_history_is_its_conversation_and_long_threads_page() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let owner = person(&state, &idp, "Kari Eier").await;
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Historikk AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, owner.id, "admin")
+        .await
+        .unwrap();
+    let agent = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &format!("agent-{}", Uuid::new_v4()),
+        "Historieagent",
+        None,
+        "bokforing",
+        "Kari Eier",
+    )
+    .await
+    .unwrap();
+    // Given from the card: no chat message, only the task trail.
+    let task = regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(agent),
+        "Sett timesats 1700 kr på prosjekt 10001.",
+        None,
+        "Kari Eier",
+        Some(owner.id),
+    )
+    .await
+    .unwrap();
+    for (status, note, by) in [
+        ("pagar", None, "Historieagent"),
+        ("sporsmal", Some("Fra hvilken dato?"), "Historieagent"),
+        ("pagar", Some("2027-01-01"), "Kari Eier"),
+        ("utfort", Some("Satt fra 2027-01-01."), "Historieagent"),
+    ] {
+        regnmed_db::agent_task::answer(&state.pool, company, task, status, note, by, None)
+            .await
+            .unwrap();
+    }
+
+    // The conversation exists where the person looks for it.
+    let (status, list) = call(&state, "GET", "/chat/conversations", &owner.token, None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let row = list["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["with"]["name"] == "Historieagent")
+        .unwrap_or_else(|| panic!("no conversation with the agent: {list}"))
+        .clone();
+    assert_eq!(row["last_text"], "Satt fra 2027-01-01.");
+    assert_eq!(row["last_from_me"], false);
+    let conv = row["conversation_id"].as_str().unwrap().to_string();
+
+    let (status, thread) = call(
+        &state,
+        "GET",
+        &format!("/chat/conversations/{conv}"),
+        &owner.token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{thread}");
+    let me = thread["me"].as_str().unwrap().to_string();
+    let lines: Vec<(String, bool)> = thread["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["text"].as_str().unwrap().to_string(),
+                m["author_id"] == me.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            ("Sett timesats 1700 kr på prosjekt 10001.".into(), true),
+            ("Fra hvilken dato?".into(), false),
+            ("2027-01-01".into(), true),
+            ("Satt fra 2027-01-01.".into(), false),
+        ],
+        "the order, the question, the answer and the result, in order"
+    );
+    assert_eq!(thread["messages"][0]["task_status"], "utfort");
+    assert_eq!(thread["older"], false);
+
+    // Paging: the newest page, then back from its first message.
+    let (_, page) = call(
+        &state,
+        "GET",
+        &format!("/chat/conversations/{conv}?limit=3"),
+        &owner.token,
+        None,
+    )
+    .await;
+    assert_eq!(page["messages"].as_array().unwrap().len(), 3);
+    assert_eq!(page["older"], true, "{page}");
+    assert_eq!(page["messages"][0]["text"], "Fra hvilken dato?");
+    let first = &page["messages"][0];
+    let (_, back) = call(
+        &state,
+        "GET",
+        &format!(
+            "/chat/conversations/{conv}?limit=3&before={}&before_id={}",
+            urlencoding(first["created_at"].as_str().unwrap()),
+            first["message_id"].as_str().unwrap()
+        ),
+        &owner.token,
+        None,
+    )
+    .await;
+    let back_texts: Vec<&str> = back["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(back_texts, vec!["Sett timesats 1700 kr på prosjekt 10001."]);
+    assert_eq!(back["older"], false);
+}
+
+fn urlencoding(s: &str) -> String {
+    s.replace('+', "%2B").replace(':', "%3A")
+}

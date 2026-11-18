@@ -188,6 +188,42 @@
     }
   }
 
+  // A long thread arrives one page at a time: the newest first, older
+  // pages as the reader scrolls up. The scroll position is held, so the
+  // message being read does not jump away under the reader.
+  let lasterEldre = $state(false);
+  async function loadOlder() {
+    const id = openId;
+    const first = thread?.messages[0];
+    if (!id || !first || !thread.older || lasterEldre) return;
+    lasterEldre = true;
+    try {
+      const svar = await api(
+        "/chat/conversations/" +
+          id +
+          "?before=" +
+          encodeURIComponent(first.created_at) +
+          "&before_id=" +
+          first.message_id,
+      );
+      if (id !== openId) return;
+      const fra = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
+      const known = new Set(thread.messages.map((m) => m.message_id));
+      thread.messages = [...svar.messages.filter((m) => !known.has(m.message_id)), ...thread.messages];
+      thread.older = svar.older;
+      await tick();
+      if (scroller) scroller.scrollTop = scroller.scrollHeight - fra;
+    } catch (e) {
+      if (id === openId) threadError = e.message;
+    } finally {
+      lasterEldre = false;
+    }
+  }
+
+  function onScroll() {
+    if (scroller && scroller.scrollTop < 120) loadOlder();
+  }
+
   async function markRead() {
     const last = thread?.messages[thread.messages.length - 1];
     if (!last || document.visibilityState !== "visible" || last.created_at <= lastMarked) return;
@@ -519,11 +555,19 @@
 
         <div
           bind:this={scroller}
+          onscroll={onScroll}
           class="flex-1 overflow-y-auto min-h-0 p-3 flex flex-col gap-2"
           role="log"
           aria-live="polite"
           aria-label={"Samtale med " + thread.with.name}
         >
+          {#if thread.older}
+            <!-- Also a button: scrolling is not the only way to read back,
+                 and a keyboard user needs a target. -->
+            <button class="btn btn-ghost btn-xs self-center" onclick={loadOlder} disabled={lasterEldre}>
+              {lasterEldre ? "Henter eldre meldinger …" : "Vis eldre meldinger"}
+            </button>
+          {/if}
           {#if !thread.messages.length}
             <p class="m-auto text-sm opacity-70 text-center max-w-xs">
               {#if thread.with.agent}

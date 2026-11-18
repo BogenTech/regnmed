@@ -131,16 +131,64 @@ pub async fn conversations(
     State(state): State<AppState>,
     person: AuthPerson,
 ) -> Result<Json<Value>, ApiError> {
+    // An agent the caller has worked with only through the Oppdrag card
+    // has history but no conversation row yet; open it, so the history is
+    // where the person looks for it. Idempotent (`open` is an upsert on
+    // the pair), and only for agents whose queue the caller may read.
+    let contacts = db::contacts(&state.pool, person.person_id).await?;
+    let mut latest: std::collections::HashMap<(Uuid, Uuid), db::Message> = Default::default();
+    for c in contacts.iter().filter(|c| c.agent) {
+        let Some(company) = c.company_id else {
+            continue;
+        };
+        if !sees_agent_history(&state, person.person_id, company).await? {
+            continue;
+        }
+        let Some(last) = db::agent_history(&state.pool, company, c.person_id, None, None, 1)
+            .await?
+            .pop()
+        else {
+            continue;
+        };
+        db::open(&state.pool, person.person_id, c.person_id, Some(company))
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        latest.insert((c.person_id, company), last);
+    }
     let rows = reachable(&state, person.person_id).await?;
+    let mut out: Vec<(DateTime<Utc>, Value)> = rows
+        .iter()
+        .map(|(c, other)| {
+            let mut text = c.last_text.clone();
+            let mut from_me = c.last_author == Some(person.person_id);
+            let mut at = c.last_at.unwrap_or(c.created_at);
+            // The newest line is the history's when it is newer than chat.
+            if let Some(h) = other
+                .company_id
+                .and_then(|co| latest.get(&(other.person_id, co)))
+                && c.last_at.is_none_or(|t| h.created_at > t)
+            {
+                text = Some(h.body.clone());
+                from_me =
+                    h.author_person_id == person.person_id || h.author_name == person.display();
+                at = h.created_at;
+            }
+            (
+                at,
+                json!({
+                    "conversation_id": c.id,
+                    "with": contact_json(other),
+                    "last_text": text,
+                    "last_from_me": from_me,
+                    "last_at": at.to_rfc3339(),
+                    "unread": c.unread,
+                }),
+            )
+        })
+        .collect();
+    out.sort_by(|a, b| b.0.cmp(&a.0));
     Ok(Json(json!({
-        "conversations": rows.iter().map(|(c, other)| json!({
-            "conversation_id": c.id,
-            "with": contact_json(other),
-            "last_text": c.last_text,
-            "last_from_me": c.last_author == Some(person.person_id),
-            "last_at": c.last_at.unwrap_or(c.created_at).to_rfc3339(),
-            "unread": c.unread,
-        })).collect::<Vec<_>>(),
+        "conversations": out.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
     })))
 }
 
@@ -192,6 +240,24 @@ async fn guard(
 #[derive(Deserialize)]
 pub struct MessagesQuery {
     since: Option<DateTime<Utc>>,
+    /// Page back from this message: its `created_at` and `message_id`.
+    before: Option<DateTime<Utc>>,
+    before_id: Option<Uuid>,
+    /// Messages per page. A long thread is never sent whole: the portal
+    /// shows the newest page and fetches older ones as the reader scrolls.
+    limit: Option<i64>,
+}
+
+/// The first page and every page back are this long unless asked.
+const PAGE: i64 = 30;
+
+/// Whether the caller may see an agent's task history in a company: the
+/// queue's own guard (`INTEGRASJON_LES`), so Meldinger never shows a task
+/// the Oppdrag card would have refused.
+async fn sees_agent_history(state: &AppState, me: Uuid, company: Uuid) -> Result<bool, ApiError> {
+    Ok(crate::access::lookup(state, me, company)
+        .await?
+        .is_some_and(|a| a.has(crate::access::Right::IntegrationRead)))
 }
 
 pub async fn messages(
@@ -201,7 +267,46 @@ pub async fn messages(
     Query(query): Query<MessagesQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let (company, other) = guard(&state, person.person_id, conversation).await?;
-    let messages = db::messages(&state.pool, conversation, query.since).await?;
+    let limit = query.limit.unwrap_or(PAGE).clamp(1, 200);
+    let before = query.before.zip(query.before_id);
+    // One more than asked from each source says whether anything is left.
+    let mut messages =
+        db::messages(&state.pool, conversation, query.since, before, limit + 1).await?;
+    // With an agent, the conversation is the whole history with it: the
+    // tasks given from the Oppdrag card are merged in, read from the task
+    // trail rather than copied (docs/meldinger.md).
+    if other.agent
+        && let Some(c) = company
+        && sees_agent_history(&state, person.person_id, c).await?
+    {
+        let mut history = db::agent_history(
+            &state.pool,
+            c,
+            other.person_id,
+            query.since,
+            before,
+            limit + 1,
+        )
+        .await?;
+        // Before 0092 a task recorded only its giver's NAME; the caller's
+        // own words should still read as theirs.
+        let my_name = person.display().to_string();
+        for m in &mut history {
+            if m.author_person_id.is_nil() && m.author_name == my_name {
+                m.author_person_id = person.person_id;
+            }
+        }
+        messages.extend(history);
+    }
+    messages.sort_by(|a, b| (a.created_at, a.id).cmp(&(b.created_at, b.id)));
+    let more = messages.len() as i64 > limit;
+    if query.since.is_some() {
+        messages.truncate(limit as usize);
+    } else {
+        // Paging back keeps the NEWEST `limit` of what both sources gave.
+        let skip = messages.len().saturating_sub(limit as usize);
+        messages.drain(..skip);
+    }
     // An agent regnmed does not run answers only if it runs somewhere
     // else; the thread says so up front rather than leaving the message
     // to wait in silence (docs/meldinger.md §3).
@@ -220,6 +325,9 @@ pub async fn messages(
             Some(c) => vec![c],
             None => other.companies(),
         },
+        // Older messages exist beyond this page (only meaningful when
+        // paging back, not on a live poll).
+        "older": query.since.is_none() && more,
         "messages": messages.iter().map(|m| json!({
             "message_id": m.id,
             "author_id": m.author_person_id,
