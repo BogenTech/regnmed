@@ -23,7 +23,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | GET | `/companies/{company_id}/agent/oppgaver` | `INTEGRASJON_LES` |
 | POST | `/companies/{company_id}/agent/oppgaver` | `INTEGRASJON_ADMIN` |
 | GET | `/companies/{company_id}/agent/oppgaver/{task_id}` | `INTEGRASJON_LES` |
-| POST | `/companies/{company_id}/agent/oppgaver/{task_id}/svar` | `INTEGRASJON_LES`, `INTEGRASJON_ADMIN` |
+| POST | `/companies/{company_id}/agent/oppgaver/{task_id}/svar` | `INTEGRASJON_ADMIN` |
 | POST | `/companies/{company_id}/agents` | `INTEGRASJON_ADMIN` |
 | GET | `/companies/{company_id}/integrations` | `INTEGRASJON_LES` |
 | POST | `/companies/{company_id}/integrations` | `INTEGRASJON_ADMIN` |
