@@ -867,14 +867,35 @@ Verifisert i nettleseren hele veien: agenten spør, svaret sendes fra
 kortet, nyeste status blir `pagar`, og oppgaven er plukkbar av workeren
 igjen (sjekket i databasen, ikke i UI-et).
 
-#### Aldri kjørt ende-til-ende i clusteret
+#### Kjørt ende til ende i prod (2026-11-18, v0.15.0–v0.15.1)
 
-Workeren STARTER i test, leser den forseglede nøkkelen, spør databasen og
-avslutter rent — det er verifisert. Det som ikke er verifisert er en agent
-som faktisk ARBEIDER der: det krever en `client_credentials`-klient i test
-sin regnid og at noen logger inn i portalen og setter opp agenten, og begge
-delene er menneskearbeid som ikke kan gjøres herfra. Sløyfen selv er kjørt
-mot ekte modeller (§8.4), men ikke med token hentet i clusteret.
+Første gang en agent har ARBEIDET i et cluster: RegnmedAgent i BOGENTECH AS
+(rolle `bokforing`, `anthropic/claude-haiku-5.5` via OpenRouter), med token
+hentet av workeren i prod fra agentens egen identitet. Hele veien gikk
+gjennom portalen, køen og workeren — ingenting ble kjørt for hånd.
+
+- **Spørsmål i stedet for gjetning.** «La oss sette en timesats til
+  1650 kr på prosjekt 10001.», uten dato. Workeren plukket oppgaven 0,1 s
+  etter at den ble gitt; seks sekunder senere var den `sporsmal`: hvilken
+  dato satsen skal gjelde fra, hva gjeldende sats er, at førte timer
+  beholder sin, og at ingenting var satt ennå. Ingen rad i `prosjekt_sats`.
+- **Svaret fullførte jobben.** Svaret «2026-12-01» fra samtalen gjorde
+  oppgaven plukkbar igjen; ni sekunder senere sto satsen 165 000 øre fra
+  2026-12-01, bokført av RegnmedAgent, med den gamle satsen urørt, og
+  oppgaven var `utfort` med et notat om hva som ble gjort.
+- **Bare lesing.** «Hvor mange prosjekter har selskapet, og hva heter de?
+  Bare les, ikke endre noe.» ble `utfort` på fem sekunder med riktig svar,
+  og ingenting ble skrevet.
+
+Tre feil kom fram på veien dit, og ingen av dem kunne testene finne:
+(a) agenten var registrert for hånd og regnmed hadde ikke hemmeligheten
+dens — dialogen spurte eieren om den, og feltet ble lagret tomt fem ganger
+(nå provisjonerer regnmed en ny identitet i bakgrunnen, §8.3, #269);
+(b) oppgavelisten fulgte ikke agenten — den viste «ny» mens agenten spurte
+og «pågår» etter at den var ferdig, fordi en oppgave gitt fra kortet ikke
+har noen samtaletråd som melder fra (nå spør listen igjen mens en oppgave
+er `ny`/`pagar`, #270); og (c) en umerket avslutning kunne lukke en
+oppgave som utført (nå sendes den tilbake for å merkes, §8.4, #268).
 
 #### Fortsatt ikke gjort
 
@@ -995,8 +1016,6 @@ rad har sin egen nøkkel mens `integration_id` er felles.
 - **En mislykket provisjonering etterlater ingenting hos kunden, men kan
   etterlate en ubrukt klient i regnid.** Den er inert (ingen grant),
   og `[provision]`-loggen navngir den, men ingen rydder den bort.
-- **Ingen agent har kjørt en oppgave ende til ende i et cluster.**
-  Uendret fra §8.3. Det som er nytt her er hvordan agenten BLIR til.
 
 ### 8.7 Arbeidskø i stedet for CronJob (levert 2026-10-29)
 
