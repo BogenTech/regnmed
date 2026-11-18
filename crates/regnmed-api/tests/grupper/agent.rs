@@ -127,6 +127,7 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "Importer regnskapet fra Conta og avstem mot årsregnskapet.",
         None,
         "Eier Eiersen",
+        None,
     )
     .await
     .unwrap();
@@ -918,6 +919,7 @@ async fn only_one_worker_can_hold_a_task() {
         "Avstem banken.",
         None,
         "Aud Admin",
+        None,
     )
     .await
     .unwrap();
@@ -1421,6 +1423,7 @@ async fn an_agent_reaches_its_own_tasks_whatever_its_role() {
             &format!("Oppgave til {name}"),
             None,
             "Eier Eiersen",
+            None,
         )
         .await
         .unwrap();
@@ -1501,6 +1504,7 @@ async fn an_agent_reaches_its_own_tasks_whatever_its_role() {
         "Les denne",
         None,
         "Eier Eiersen",
+        None,
     )
     .await
     .unwrap();

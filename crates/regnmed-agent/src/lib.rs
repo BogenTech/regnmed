@@ -517,6 +517,22 @@ async fn report(
         Some(integration_id),
     )
     .await?;
+    // A question from a task given outside the chat would otherwise wait
+    // until somebody happened to open the card: the person who gave it is
+    // told by mail. (One that came from a conversation lands there.)
+    if let (Some(js), None, Outcome::Question(question)) = (chat, &mirrored, outcome)
+        && let Err(error) = regnmed_mail::notify_question(
+            js,
+            pool,
+            company_id,
+            task_id,
+            question,
+            std::env::var("PORTAL_BASE_URL").ok().as_deref(),
+        )
+        .await
+    {
+        eprintln!("could not mail the question on {task_id}: {error:#}");
+    }
     if let (Some(js), Some(posted)) = (chat, mirrored)
         && let Err(error) = regnmed_mail::chatbus::announce(
             js,

@@ -129,6 +129,7 @@ pub async fn create(
         &request.message,
         request.deadline,
         person.display(),
+        Some(person.person_id),
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
@@ -205,8 +206,27 @@ pub async fn answer(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    if let Some(posted) = mirrored {
-        crate::chat::announce(&state, posted).await;
+    match mirrored {
+        Some(posted) => crate::chat::announce(&state, posted).await,
+        // An agent on the customer's own machine asked: tell the person
+        // who gave the task, as the hosted worker does. A queue outage
+        // must not fail the agent's answer -- it is already recorded.
+        None if person.integration.is_some() && request.status == "sporsmal" => {
+            if let Some(js) = state.mailq.as_ref()
+                && let Err(e) = regnmed_mail::notify_question(
+                    js,
+                    &state.pool,
+                    company_id,
+                    task_id,
+                    request.note.as_deref().unwrap_or_default(),
+                    state.portal_base.as_deref(),
+                )
+                .await
+            {
+                eprintln!("could not mail the question on {task_id}: {e:#}");
+            }
+        }
+        None => {}
     }
     // A human answering a question puts the task back in play, so it
     // deserves the same nudge as a new one -- otherwise the reply waits
