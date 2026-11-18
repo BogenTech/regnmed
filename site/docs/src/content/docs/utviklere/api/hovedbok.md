@@ -1,6 +1,7 @@
 ---
 title: "Selskap og hovedbok"
 description: "Onboarding av selskap, kontoplan, bilag, vedlegg, periodelås, dimensjoner, periodisering, årsavslutning, balansedokumentasjon og kassaoppgjør."
+editUrl: false
 sidebar:
   order: 2
 ---

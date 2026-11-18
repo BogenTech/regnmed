@@ -211,3 +211,6 @@ pre.code .c { color: #7f98a4; } pre.code .k { color: #8fd8f0; } pre.code .s { co
 .cta-band .btn-row { margin-top: 1.75rem; }
 .quiet { color: var(--ink-2); font-size: 0.95rem; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .btn { transition: none; } }
+
+.skip { position: absolute; left: 0.75rem; top: -4rem; z-index: 30; padding: 0.6rem 1rem; background: var(--ink); color: var(--paper); border-radius: 6px; font-weight: 650; }
+.skip:focus { top: 0.75rem; }

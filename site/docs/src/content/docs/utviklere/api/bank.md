@@ -1,6 +1,7 @@
 ---
 title: "Bank og betaling"
 description: "Bankavstemming, OCR-giro, betalingslister, kort og valuta."
+editUrl: false
 sidebar:
   order: 5
 ---

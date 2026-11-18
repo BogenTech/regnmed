@@ -1,6 +1,7 @@
 ---
 title: "Aksjeeierbok og anlegg"
 description: "Aksjonærer, aksjehendelser, utbytte, RF-1086 og anleggsregisteret."
+editUrl: false
 sidebar:
   order: 8
 ---

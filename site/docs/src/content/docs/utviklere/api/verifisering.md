@@ -1,6 +1,7 @@
 ---
 title: "Forankring og verifisering"
 description: "Den åpne forankringsfeeden og verifisering per selskap."
+editUrl: false
 sidebar:
   order: 10
 ---

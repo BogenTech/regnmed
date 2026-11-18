@@ -1,6 +1,7 @@
 ---
 title: "Salg og reskontro"
 description: "Faktura, tilbud og ordre, produkter og lager, kunder og leverandører, åpne poster og avstemming."
+editUrl: false
 sidebar:
   order: 3
 ---

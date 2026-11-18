@@ -1,6 +1,7 @@
 ---
 title: "Innboks, import og jobber"
 description: "Bilagsinnboksen, forslag, e-post-inn, SAF-T- og CSV-import og bakgrunnsjobber."
+editUrl: false
 sidebar:
   order: 7
 ---

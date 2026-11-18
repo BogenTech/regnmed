@@ -1,6 +1,7 @@
 ---
 title: "Regnskap og rapporter"
 description: "Lovpålagte spesifikasjoner, resultat og balanse, mva og mva-melding, SAF-T, nøkkeltall, budsjett og revisjonsrapporten."
+editUrl: false
 sidebar:
   order: 4
 ---

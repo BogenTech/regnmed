@@ -1,6 +1,7 @@
 ---
 title: "Identitet og tilgang"
 description: "Hvem er jeg, hvem har tilgang til hva: `/me`, medlemmer, roller, invitasjoner, byrå, oppdrag, abonnement og de åpne vilkårssidene."
+editUrl: false
 sidebar:
   order: 1
 ---

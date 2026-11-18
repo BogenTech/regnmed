@@ -125,7 +125,7 @@ for path, meth, h in routes:
 os.makedirs(OUT, exist_ok=True)
 for key, (title, order, desc, docs) in PAGES.items():
     rows = sorted(by[key], key=lambda r: (r[0], r[1]))
-    lines = [f"---\ntitle: {json.dumps(title, ensure_ascii=False)}\ndescription: {json.dumps(desc, ensure_ascii=False)}\nsidebar:\n  order: {order}\n---\n", f"{desc}\n"]
+    lines = [f"---\ntitle: {json.dumps(title, ensure_ascii=False)}\ndescription: {json.dumps(desc, ensure_ascii=False)}\neditUrl: false\nsidebar:\n  order: {order}\n---\n", f"{desc}\n"]
     lines.append("Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`scripts/gen-api-reference.py`). **Rett** er rettigheten handleren krever (se [Tilgang og roller](/utviklere/tilgang-og-roller/)); «åpen» betyr uten token, «—» at kontrollen ligger i en hjelpefunksjon eller at bare innlogging kreves. Der flere retter står, avhenger kravet av parametrene.\n")
     lines.append("| Metode | Sti | Rett |\n| --- | --- | --- |")
     for path, meth, h in rows:

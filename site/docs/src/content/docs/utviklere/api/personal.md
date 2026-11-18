@@ -1,6 +1,7 @@
 ---
 title: "Lønn, timer og utlegg"
 description: "Ansatte, lønnskjøring og a-melding, skattekort, timeføring og utlegg."
+editUrl: false
 sidebar:
   order: 6
 ---

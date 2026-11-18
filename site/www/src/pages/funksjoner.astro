@@ -28,8 +28,8 @@ const groups = [
   { id: "mva", title: "MVA og Skatteetaten", shot: ["mva", "MVA-spesifikasjon per termin", "regnmed.no/mva"], items: [
     ["MVA-koder og satser", "Fullstendig kodeliste og daterte satser, så SAF-T-linjer bærer satsen som gjaldt på bilagsdatoen.", "mva"],
     ["Terminordninger og frister", "To-månedlige, årlige og primærnæring med leveringsfrister, også særregelen i 3. termin.", "mva"],
-    ["Mva-melding", "Rendres som skjema-validert XML fra spesifikasjonen. Innsending til Skatteetaten testes mot testmiljøet.", "mva-melding"],
-    ["SAF-T", "Eksport i Financial 1.30 validert mot Skatteetatens XSD, og import fra andre systemer.", "saft"],
+    ["Mva-melding", "Rendres som skjema-validert XML fra spesifikasjonen. Innsending til Skatteetaten testes mot testmiljøet.", "https://github.com/BogenTech/regnmed/tree/main/docs/mva-melding"],
+    ["SAF-T", "Eksport i Financial 1.30 validert mot Skatteetatens XSD, og import fra andre systemer.", "https://github.com/BogenTech/regnmed/tree/main/docs/saft"],
   ]},
   { id: "bank", title: "Bank", shot: ["bank", "Avstemming mot bankutskrift", "regnmed.no/bank"], items: [
     ["Avstemming", "camt.053 og CSV med layout lest fra overskriftene. Ved uavgjort går det til manuell behandling, aldri til gjetting.", "bank"],
@@ -53,7 +53,7 @@ const groups = [
     <section class="section" id={g.id}><div class="wrap stack" style="--s:2.5rem">
       <h2>{g.title}</h2>
       <Shot slug={g.shot[0]} alt={g.shot[1]} url={g.shot[2]} />
-      <table class="register"><tbody>{g.items.map(([t, d, doc]) => <tr><td>{t}</td><td>{d}</td><td><a href={`${DOCS}/teknisk/${doc}/`}>{doc}</a></td></tr>)}</tbody></table>
+      <table class="register"><tbody>{g.items.map(([t, d, doc]) => <tr><td>{t}</td><td>{d}</td><td><a href={doc.startsWith("http") ? doc : `${DOCS}/teknisk/${doc}/`}>{doc.replace(/^.*\//, "")}</a></td></tr>)}</tbody></table>
     </div></section>
   ))}
 </Base>

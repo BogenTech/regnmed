@@ -31,10 +31,10 @@ import { DOCS } from "../data/links.js";
   <section class="section"><div class="wrap split">
     <div class="stack" style="--s:1.25rem">
       <p class="eyebrow">Mot den som har full tilgang</p>
-      <h2>Forankring utenfor vår kontroll</h2>
+      <h2>Forankring som lar andre holde oss ansvarlige</h2>
     </div>
     <div class="stack prose" style="--s:1rem">
-      <p style="margin-top:0">En kjede som en databaseadministrator regner om fra bunnen, ser gyldig ut. Derfor tar regnmed hver natt et Merkle-snapshot av toppen på alle kjedene og publiserer rotverdien på et åpent endepunkt, <code>/anchors</code>. Roten kan i tillegg bevitnes med et RFC 3161-tidsstempel fra en uavhengig tidsstemplingstjeneste.</p>
+      <p style="margin-top:0">En kjede som en databaseadministrator regner om fra bunnen, ser gyldig ut. Derfor tar regnmed hver natt et Merkle-snapshot av toppen på alle kjedene og publiserer rotverdien på et åpent endepunkt, <code>/anchors</code>. Roten kan i tillegg bevitnes med et RFC 3161-tidsstempel fra en uavhengig tidsstemplingstjeneste når den er konfigurert. Det er tidsstempelet og kopiene andre har lagret som gjør bevisene uavhengige av oss.</p>
       <p>Det betyr at en omskriving i etterkant ikke bare kan mistenkes. Den kan bevises, av hvem som helst som har lagret en tidligere rot. Hvert selskap får et inklusjonsbevis mot roten, og revisjonsrapporten kontrollerer at forankrede kjedetopper fortsatt ligger på den levende kjeden.</p>
       <p><a href={`${DOCS}/teknisk/anchoring/`}>Teknisk beskrivelse av forankringen →</a></p>
     </div>

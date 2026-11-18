@@ -24,7 +24,7 @@ const sealed = rows.map((r) => {
     </div>
   ))}
   <div class="ledger-foot">
-    <span id="ledger-msg" aria-live="polite">Kjeden er intakt. Endre et beløp.</span>
+    <span id="ledger-msg" aria-live="polite" aria-atomic="true">Kjeden er intakt. Endre et beløp.</span>
     <button type="button" id="ledger-reset">Tilbakestill</button>
   </div>
 </div>
@@ -36,12 +36,15 @@ const sealed = rows.map((r) => {
   const msg = document.getElementById("ledger-msg")!;
   const hex = async (s: string) =>
     [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  let run = 0;
   async function verify() {
+    const mine = ++run;
     let prev = "genesis", firstBroken = -1;
     for (let i = 0; i < sealed.length; i++) {
       const r = sealed[i];
       const amount = rows[i].querySelector("input")!.value;
       prev = await hex(`${prev}|${r.no}|${r.date}|${r.text}|${amount}`);
+      if (mine !== run) return; // a newer edit superseded this run
       const bad = prev !== r.hash;
       if (bad && firstBroken < 0) firstBroken = i;
       rows[i].dataset.state = bad ? "broken" : "ok";

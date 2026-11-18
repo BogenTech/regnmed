@@ -1,6 +1,7 @@
 ---
 title: "Plattform (leverandørens konsoll)"
 description: "Krever aktiv plattformrolle (`support` leser og tildeler nye medlemskap, `systemadmin` endrer); hvert kall logges, og ingen av endepunktene når en hovedbok. Ikke en del av integrasjons-API-et."
+editUrl: false
 sidebar:
   order: 11
 ---
