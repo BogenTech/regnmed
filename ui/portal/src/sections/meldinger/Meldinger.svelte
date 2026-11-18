@@ -144,6 +144,11 @@
     }
   }
 
+  // The full explanation lives in the docs; the banner only says what the
+  // reader needs right now.
+  const AGENT_DOK =
+    "https://github.com/BogenTech/regnmed/blob/main/docs/agent.md#hvor-kj%C3%B8rer-agenten";
+
   // ---- The open conversation ----
 
   function nearBottom() {
@@ -544,11 +549,8 @@
                Said up front, so a message does not wait in silence. -->
           <p role="note" class="alert alert-info alert-soft rounded-none text-sm py-2">
             <span>
-              {thread.with.name} kjøres ikke av regnmed, og svarer bare når den kjøres et annet sted, for
-              eksempel på deres egen maskin. Skal regnmed kjøre en agent, lager en administrator den med «Ny
-              agent» under <a class="link" href={"#/c/" + thread.with.company_id + "/admin/brukere"}
-                >Brukere og roller</a
-              > — den får språkmodell og innlogging i samme steg.
+              {thread.with.name} kjøres utenfor regnmed og svarer bare når den er i gang.
+              <a class="link" href={AGENT_DOK} target="_blank" rel="noopener">Les mer</a>
             </span>
           </p>
         {/if}

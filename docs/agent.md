@@ -12,6 +12,28 @@ godt.
 Tilgangsmodellen står i [integrations.md](integrations.md) og
 [auth.md](auth.md); dette dokumentet er agentlaget oppå den.
 
+## Hvor kjører agenten?
+
+*Kort forklart, for den som møter spørsmålet i portalen.*
+
+En agent er en bruker: den har en rolle, den slipper bare til det rollen
+gir, og alt den gjør står i dens navn. Men et menneske leser meldingene
+sine selv — en agent trenger et program som kjører den. Det finnes to
+måter:
+
+- **regnmed kjører agenten.** Den har en språkmodell og en innlogging
+  lagret hos oss, og svarer på oppgaver og meldinger av seg selv. Slik
+  blir en agent du lager med «Ny agent» under Administrasjon → Brukere
+  og roller.
+- **Dere kjører agenten selv**, for eksempel på egen maskin gjennom
+  MCP-serveren (§2). Da henter den oppgavene sine selv når den kjører, og
+  regnmed kan ikke se om den gjør det. Står den ikke på, venter meldinger
+  og oppgaver til noen starter den.
+
+Portalen sier fra i samtalen når en agent er av den andre sorten, så en
+melding ikke venter i det stille. Vil du at regnmed skal kjøre den, gi
+den en modell under «Bytt modell», eller lag en ny med «Ny agent».
+
 ## 1. Prinsippet: en agent er en bruker
 
 Vi fant aldri opp en agent-tilgangsmodell, og det er grunnen til at
