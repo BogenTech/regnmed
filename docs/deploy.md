@@ -72,7 +72,8 @@ Det som skiller prod fra test i rørleggingen:
   `tag:regnmed`), siden podene ikke er på tailnettet selv.
 - **TLS fra cert-manager** via plattformens `letsencrypt` (HTTP-01 gjennom
   Traefik) på plattformens Floating IP 65.109.248.196; HTTP svarer 301 til
-  HTTPS, og `www.regnmed.no` sendes til `regnmed.no`.
+  HTTPS. `www.regnmed.no` hører ikke til clusteret lenger: den er markedsføringssiden
+  på GitHub Pages (CNAME hos Domeneshop), og portalen bor på `regnmed.no`.
 - **arm64.** Imagene er multi-arch fra samme tagg (images.yml bygger amd64
   og arm64 nativt og slår dem sammen), så homelab-test og Hetzner-prod
   kjører samme tagg.
