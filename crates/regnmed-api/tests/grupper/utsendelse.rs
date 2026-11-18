@@ -694,6 +694,49 @@ async fn an_agents_question_is_mailed_to_whoever_gave_the_task() {
         "a finished task mailed again"
     );
 
+    // Someone who has since lost access to the company is not told: the
+    // mail carries company data.
+    let gone_sub = format!("gone|{}", Uuid::new_v4());
+    let gone = regnmed_db::ensure_person(
+        &state.pool,
+        &gone_sub,
+        Some("Borte"),
+        Some("borte@example.test"),
+    )
+    .await
+    .unwrap();
+    let theirs = regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(agent),
+        "Fra en som er borte",
+        None,
+        "Borte",
+        Some(gone),
+    )
+    .await
+    .unwrap();
+    assert!(
+        regnmed_db::agent_task::question_email(&state.pool, company, theirs, "?", None)
+            .await
+            .unwrap()
+            .is_none(),
+        "a person without access was told"
+    );
+    assert!(
+        regnmed_db::agent_task::question_email(
+            &state.pool,
+            company,
+            task.parse().unwrap(),
+            "?",
+            None
+        )
+        .await
+        .unwrap()
+        .is_some(),
+        "the admin who gave the task is told"
+    );
+
     // A task with no recorded giver (given before 0092) has nobody to tell.
     let old = regnmed_db::agent_task::create_task(
         &state.pool,

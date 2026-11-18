@@ -89,7 +89,8 @@ pub async fn create_task(
 
 /// The mail that tells the person who gave a task that the agent asked
 /// a question, or None when there is nobody to tell: a task with no
-/// recorded person (given before 0092), a person with no address, or a
+/// recorded person (given before 0092), a person with no address or no
+/// access to the company any more, or a
 /// task that started in a chat conversation -- there the question is
 /// already in the conversation, with its unread badge, and a mail per
 /// question would be noise.
@@ -101,7 +102,7 @@ pub async fn question_email(
     portal_base: Option<&str>,
 ) -> Result<Option<crate::EmailPayload>> {
     let row = sqlx::query(
-        "select p.email, o.melding, i.navn as agent, c.name as company
+        "select p.id as person_id, p.email, o.melding, i.navn as agent, c.name as company
          from agent_oppgave o
          join person p on p.id = o.created_by_person
          join company c on c.id = o.company_id
@@ -114,6 +115,17 @@ pub async fn question_email(
     .fetch_optional(pool)
     .await?;
     let Some(row) = row else { return Ok(None) };
+    // The mail carries the task and the question -- company data -- so
+    // someone who has since lost access to the company is not told.
+    // shortcut: any access counts, not INTEGRASJON_LES specifically (the
+    // role-to-right table lives in regnmed-api); upgrade if a narrow role
+    // ever gives tasks.
+    if crate::company_roles(pool, row.get("person_id"), company_id)
+        .await?
+        .is_empty()
+    {
+        return Ok(None);
+    }
     let Some(to) = row
         .get::<Option<String>, _>("email")
         .filter(|e| !e.trim().is_empty())

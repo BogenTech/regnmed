@@ -907,7 +907,10 @@ noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
   visningsnavn og når ingen, så migrasjon 0092 legger til
   `created_by_person`; den settes ved opprettelse, og tabellen er fortsatt
   innsettings-bar. Adressen er den personen har NÅ (speilet fra IdP-en ved
-  innlogging).
+  innlogging). Har personen mistet tilgangen til selskapet siden, sendes
+  ingenting — e-posten bærer selskapets data. Enhver tilgang teller, ikke
+  `INTEGRASJON_LES` spesielt; tabellen fra rolle til rettighet bor i
+  `regnmed-api`, og workeren når den ikke.
 - **Ikke for oppgaver fra samtalen.** Kom oppgaven fra Meldinger, lander
   spørsmålet der med ulest-merket sitt; en e-post per spørsmål ville vært
   støy. Oppgaver gitt før 0092 har ingen person og varsles ikke.
@@ -921,8 +924,8 @@ noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
 
 Vakten er `an_agents_question_is_mailed_to_whoever_gave_the_task`
 (`utsendelse.rs`, mot en ekte nats-server): e-posten kommer fram med
-spørsmål, oppgave og lenke, `utfort` sender ingen ny, og en oppgave uten
-person varsler ingen. Sett feile med varslingen koblet fra.
+spørsmål, oppgave og lenke, `utfort` sender ingen ny, en oppgave uten
+person varsler ingen, og en person uten tilgang varsles ikke. Sett feile med varslingen koblet fra.
 
 #### Fortsatt ikke gjort
 
