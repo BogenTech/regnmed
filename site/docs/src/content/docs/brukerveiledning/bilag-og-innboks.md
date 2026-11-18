@@ -19,7 +19,8 @@ Det er tre veier inn i innboksen:
 
 Innholdet kan ikke endres etter opplasting. Samme fil nektes så lenge en kopi ligger i innboksen som ubehandlet eller bokført. En kopi som ble avvist blokkerer ikke: avvisningen svarte på den opplastingen, og samme kvittering sendt på nytt er et nytt dokument.
 
-![Innboksen med dokumenter som venter](/screens/bilag-light.png)
+<img src="/screens/bilag-light.png" alt="Innboksen med dokumenter som venter" width="1440" height="900" loading="lazy" />
+<img src="/screens/bilag-dark.png" alt="Innboksen med dokumenter som venter" width="1440" height="900" loading="lazy" />
 
 ## E-post-inn
 

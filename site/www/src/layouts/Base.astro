@@ -25,8 +25,9 @@ const here = Astro.url.pathname;
     <meta name="description" content={description} />
     <link rel="canonical" href={url} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0d1b23" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)" data-scheme="light" />
+    <meta name="theme-color" content="#0d1b23" media="(prefers-color-scheme: dark)" data-scheme="dark" />
+    <script is:inline>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="nb_NO" />
     <meta property="og:title" content={full} />
@@ -53,6 +54,9 @@ const here = Astro.url.pathname;
             <a href={APP}>Logg inn</a>
           </nav>
         </details>
+        <button type="button" id="theme-toggle" class="theme-toggle" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></svg>
+        </button>
       </div>
     </header>
     <main id="main"><slot /></main>
@@ -100,5 +104,45 @@ const here = Astro.url.pathname;
         </div>
       </div>
     </footer>
+    <script is:inline>
+      // Default is the system's theme. The toggle forces the other one; choosing what the system
+      // already says clears the choice, so the site follows the system again.
+      // Inline, not bundled: it runs during parse, so a forced theme swaps the screenshots before first paint.
+      (() => {
+        const root = document.documentElement;
+        const system = matchMedia("(prefers-color-scheme: dark)");
+        const btn = document.getElementById("theme-toggle");
+        const isDark = () => (root.dataset.theme ? root.dataset.theme === "dark" : system.matches);
+        const sync = () => {
+          const forced = root.dataset.theme;
+          // Screenshot sources and theme-color follow the system by media query; a forced theme overrides it.
+          for (const el of document.querySelectorAll("[data-scheme]")) {
+            const s = el.dataset.scheme;
+            el.setAttribute("media", forced ? (forced === s ? "all" : "not all") : `(prefers-color-scheme: ${s})`);
+          }
+          btn.title = isDark() ? "Bytt til lyst tema" : "Bytt til mørkt tema";
+          btn.setAttribute("aria-label", btn.title);
+        };
+        // The choice may have changed elsewhere: another tab, or a later page before the back button restored this one.
+        const reread = () => {
+          let t = null;
+          try { t = localStorage.getItem("theme"); } catch {}
+          if (t === "light" || t === "dark") root.dataset.theme = t; else delete root.dataset.theme;
+          sync();
+        };
+        btn.addEventListener("click", () => {
+          const next = isDark() ? "light" : "dark";
+          const follow = (next === "dark") === system.matches;
+          if (follow) delete root.dataset.theme; else root.dataset.theme = next;
+          try { follow ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch {}
+          sync();
+        });
+        system.addEventListener("change", sync);
+        addEventListener("storage", reread);
+        addEventListener("pageshow", (e) => { if (e.persisted) reread(); });
+        btn.hidden = false;
+        sync();
+      })();
+    </script>
   </body>
 </html>

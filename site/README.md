@@ -4,7 +4,7 @@ Two static Astro sites, built and deployed by `.github/workflows/site.yml`.
 
 | Folder | Site | Stack | Hosted |
 | --- | --- | --- | --- |
-| `www/` | https://www.regnmed.no | Astro, hand-written CSS, one inline script (the ledger demo) | this repo's GitHub Pages |
+| `www/` | https://www.regnmed.no | Astro, hand-written CSS, two small scripts (the light/dark toggle, the ledger demo) | this repo's GitHub Pages |
 | `docs/` | https://docs.regnmed.no | Astro Starlight (search by Pagefind) | `BogenTech/regnmed-docs` Pages |
 | `screens/` | — | real portal screenshots, source of truth | copied into each site at build |
 

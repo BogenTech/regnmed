@@ -52,4 +52,5 @@ Under **Meldinger** snakker du med klienten, kolleger og eventuelle agenter i se
 
 Se også [Teknisk dokumentasjon: Marketplace](/teknisk/marketplace/).
 
-![Byråvisningen](/screens/byra-light.png)
+<img src="/screens/byra-light.png" alt="Byråvisningen" width="1440" height="900" loading="lazy" />
+<img src="/screens/byra-dark.png" alt="Byråvisningen" width="1440" height="900" loading="lazy" />

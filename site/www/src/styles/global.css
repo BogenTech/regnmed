@@ -17,8 +17,10 @@
   --max: 72rem;
   color-scheme: light dark;
 }
+/* Dark follows the system unless the header toggle forced a theme (data-theme, set before paint in Base.astro).
+   The two variable blocks must stay identical. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #0d1b23;
     --paper-2: #12262f;
     --ink: #ece8dd;
@@ -32,6 +34,21 @@
     --bad: #ff8a80;
   }
 }
+:root[data-theme="dark"] {
+  --paper: #0d1b23;
+  --paper-2: #12262f;
+  --ink: #ece8dd;
+  --ink-2: #9fb2bb;
+  --rule: #25414e;
+  --blue: #62c3e6;
+  --cyan: #3fc6dc;
+  --navy: #07141b;
+  --amber: #e0a24a;
+  --ok: #52c58f;
+  --bad: #ff8a80;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body {
@@ -73,7 +90,7 @@ p { margin: 0; text-wrap: pretty; }
 .site-header .wrap { display: flex; align-items: center; gap: 1.5rem; min-height: 3.75rem; }
 .brand { display: inline-flex; align-items: center; gap: 0.55rem; font-weight: 800; font-size: 1.3rem; letter-spacing: -0.03em; color: var(--ink); text-decoration: none; }
 .brand img { width: 1.7rem; height: auto; }
-.nav { display: flex; gap: 1.4rem; margin-left: auto; align-items: center; font-size: 0.97rem; }
+.nav { display: flex; gap: 1.4rem; margin-left: auto; align-items: center; font-size: 0.97rem; white-space: nowrap; }
 .nav a { color: var(--ink); text-decoration: none; font-weight: 520; }
 .nav a:hover, .nav a[aria-current="page"] { color: var(--blue); }
 .nav .btn { padding: 0.5rem 0.95rem; font-size: 0.93rem; }
@@ -82,7 +99,11 @@ p { margin: 0; text-wrap: pretty; }
 .menu summary::-webkit-details-marker { display: none; }
 .menu nav { position: absolute; left: 0; right: 0; top: 100%; background: var(--paper); border-bottom: 1px solid var(--rule); padding: 1rem var(--gutter) 1.5rem; display: grid; gap: 0.9rem; }
 .menu nav a { color: var(--ink); text-decoration: none; font-weight: 560; font-size: 1.1rem; }
-@media (max-width: 860px) { .nav { display: none; } .menu { display: block; } }
+.theme-toggle { flex: none; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; padding: 0; border: 1.5px solid var(--rule); border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; }
+.theme-toggle:hover { border-color: var(--ink); }
+.theme-toggle[hidden] { display: none; }
+/* brand + nav + toggle need ~990px plus gutters (1070px viewport) with the web font; 1120px leaves room for the fallback font. */
+@media (max-width: 1120px) { .nav { display: none; } .menu { display: block; } }
 
 /* footer */
 .site-footer { border-top: 1px solid var(--rule); padding-block: 3.5rem 2.5rem; background: var(--paper-2); font-size: 0.95rem; }

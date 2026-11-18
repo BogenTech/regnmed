@@ -54,4 +54,5 @@ Du trenger ikke stole på at regnmed sier «OK».
 
 Se også [Teknisk dokumentasjon: Revisjon](/teknisk/revisjon/).
 
-![Verifikasjonsrapporten](/screens/revisjon-light.png)
+<img src="/screens/revisjon-light.png" alt="Verifikasjonsrapporten" width="1440" height="900" loading="lazy" />
+<img src="/screens/revisjon-dark.png" alt="Verifikasjonsrapporten" width="1440" height="900" loading="lazy" />

@@ -55,4 +55,5 @@ Prosjektdimensjonen følger med inntekten, så rapportene kan vise resultat per 
 
 Under Rapporter → **Prosjekt** ser du ett prosjekt per rad: inntekt, kostnad og timer, med utsnittet fra resultatregnskapet for akkurat det prosjektet. Klikk en rad for detaljene. Rapporten er en ren sammenstilling av tall som allerede ligger i regnskapet, uten egen lagret tilstand. Poster uten prosjektkode regnes ikke som prosjektøkonomi.
 
-![Ukegrid for timer](/screens/timer-light.png)
+<img src="/screens/timer-light.png" alt="Ukegrid for timer" width="1440" height="900" loading="lazy" />
+<img src="/screens/timer-dark.png" alt="Ukegrid for timer" width="1440" height="900" loading="lazy" />

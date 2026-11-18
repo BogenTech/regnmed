@@ -9,7 +9,8 @@ Hovedbok-seksjonen er der regnskapet kan sees og føres direkte. Det meste i reg
 
 Seksjonen har fanene **Bilag**, **Nytt bilag**, **Kontoplan**, **Periodisering** og **Kassaoppgjør**.
 
-![Hovedboken med kontoer og posteringer](/screens/hovedbok-light.png)
+<img src="/screens/hovedbok-light.png" alt="Hovedboken med kontoer og posteringer" width="1440" height="900" loading="lazy" />
+<img src="/screens/hovedbok-dark.png" alt="Hovedboken med kontoer og posteringer" width="1440" height="900" loading="lazy" />
 
 ## Bilag: selve boken
 

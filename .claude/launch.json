@@ -36,6 +36,18 @@
       "runtimeExecutable": "zsh",
       "runtimeArgs": ["-lc", "cd ../regnid && exec cargo run -q -- serve"],
       "port": 8081
+    },
+    {
+      "name": "site-www",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-lc", "cd site/www && exec npm run dev -- --port 4321"],
+      "port": 4321
+    },
+    {
+      "name": "site-docs",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-lc", "cd site/docs && exec npm run dev -- --port 4322"],
+      "port": 4322
     }
   ]
 }
