@@ -897,12 +897,37 @@ har noen samtaletråd som melder fra (nå spør listen igjen mens en oppgave
 er `ny`/`pagar`, #270); og (c) en umerket avslutning kunne lukke en
 oppgave som utført (nå sendes den tilbake for å merkes, §8.4, #268).
 
+#### Et spørsmål varsles på e-post (2026-11-18)
+
+Når en agent svarer `sporsmal`, får den som GA oppgaven en e-post med
+oppgaven, spørsmålet og en lenke til samtalen. Før ventet spørsmålet til
+noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
+
+- **Til hvem:** personen som ga oppgaven. `opprettet_av` er bare et
+  visningsnavn og når ingen, så migrasjon 0092 legger til
+  `created_by_person`; den settes ved opprettelse, og tabellen er fortsatt
+  innsettings-bar. Adressen er den personen har NÅ (speilet fra IdP-en ved
+  innlogging).
+- **Ikke for oppgaver fra samtalen.** Kom oppgaven fra Meldinger, lander
+  spørsmålet der med ulest-merket sitt; en e-post per spørsmål ville vært
+  støy. Oppgaver gitt før 0092 har ingen person og varsles ikke.
+- **Begge skinnene:** den vertede workeren og API-et (en agent på kundens
+  egen maskin som svarer over MCP) kaller samme `regnmed_mail::notify_question`,
+  så regelen for hvem som varsles står ett sted
+  (`regnmed_db::agent_task::question_email`). Svaret er alt lagret når
+  e-posten sendes, så en kø som er nede feiler aldri agentens svar.
+- **Lenken** bygges av `PORTAL_BASE_URL`, som workeren nå også har (prod og
+  test); uten den sier e-posten hvor i portalen samtalen står.
+
+Vakten er `an_agents_question_is_mailed_to_whoever_gave_the_task`
+(`utsendelse.rs`, mot en ekte nats-server): e-posten kommer fram med
+spørsmål, oppgave og lenke, `utfort` sender ingen ny, og en oppgave uten
+person varsler ingen. Sett feile med varslingen koblet fra.
+
 #### Fortsatt ikke gjort
 
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives, så et svar
   dukker opp i ett stykke. Det merkes mest på en lang oppgave.
-- **Ingen varsling.** Et spørsmål venter til noen åpner kortet. Mail-skinnen
-  finnes (#32/#35) og er den åpenbare veien, men den er ikke koblet.
 - **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
   hva som er nytt siden sist.
 

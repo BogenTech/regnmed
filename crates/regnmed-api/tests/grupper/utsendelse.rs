@@ -550,3 +550,166 @@ async fn the_follow_up_sends_a_credited_invoice_and_its_credit_note() {
     assert!(!text.contains("betalt"), "kreditert er ikke betalt: {text}");
     assert!(!text.contains("KID:"), "{text}");
 }
+
+/// An agent's question reaches the person who gave the task by mail
+/// (docs/agent.md §8.5). Found in prod on 2026-11-18: a question waited
+/// for whoever happened to open the card. Exercised through the API rail
+/// -- an agent on the customer's own machine answering `sporsmal` -- with
+/// the same rule the hosted worker uses ([`regnmed_mail::notify_question`]).
+#[tokio::test]
+async fn an_agents_question_is_mailed_to_whoever_gave_the_task() {
+    let idp = TestIdp::new();
+    let Some(base_state) = test_state(&idp).await else {
+        return;
+    };
+    let Some(nats) = start_nats().await else {
+        return;
+    };
+    let js = mailq::connect(&nats.url, None, None).await.unwrap();
+    let state = AppState {
+        mailq: Some(js.clone()),
+        portal_base: Some("https://regnmed.example/".into()),
+        ..base_state.clone()
+    };
+
+    let sub = format!("admin|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(
+        &state.pool,
+        &sub,
+        Some("Kari Admin"),
+        Some("kari@example.test"),
+    )
+    .await
+    .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Spørreagent AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    let client_id = format!("spor-{}", Uuid::new_v4());
+    let agent = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Mona Agent",
+        None,
+        "bokforing",
+        "Kari Admin",
+    )
+    .await
+    .unwrap();
+    let token = idp.token(&sub, "Kari Admin");
+    let machine = idp.token(&client_id, "");
+
+    let (status, given) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver"),
+        &token,
+        Some(
+            serde_json::json!({"melding": "Sett timesats 1650 kr på prosjekt 10001.",
+                               "integration_id": agent})
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{given}");
+    let task = given["oppgave_id"].as_str().unwrap().to_string();
+
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{task}/svar"),
+        &machine,
+        Some(
+            serde_json::json!({"status": "sporsmal",
+                               "notat": "Hvilken dato skal satsen gjelde fra?"})
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let stream = js.get_stream(mailq::STREAM).await.unwrap();
+    let consumer: async_nats::jetstream::consumer::PullConsumer = stream
+        .get_or_create_consumer(
+            "sporsmal-reader",
+            async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some("sporsmal-reader".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut messages = consumer.messages().await.unwrap();
+    let message = tokio::time::timeout(Duration::from_secs(5), messages.next())
+        .await
+        .expect("a question mail on the stream")
+        .unwrap()
+        .unwrap();
+    message.ack().await.unwrap();
+    let mail: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+    // The address the person has NOW: sign-in mirrors it from the IdP.
+    let email: String = sqlx::query_scalar("select email from person where id = $1")
+        .bind(admin)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(mail["to"], email.as_str());
+    assert!(
+        mail["subject"].as_str().unwrap().contains("Mona Agent"),
+        "{mail}"
+    );
+    let text = mail["text"].as_str().unwrap();
+    assert!(
+        text.contains("Hvilken dato skal satsen gjelde fra?"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Sett timesats 1650 kr"),
+        "the task itself: {text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "https://regnmed.example/#/c/{company}/admin/oppdrag"
+        )),
+        "a link to answer it: {text}"
+    );
+
+    // Finishing is not a question: no second mail.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{task}/svar"),
+        &machine,
+        Some(serde_json::json!({"status": "utfort", "notat": "Satt."}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(500), messages.next())
+            .await
+            .is_err(),
+        "a finished task mailed again"
+    );
+
+    // A task with no recorded giver (given before 0092) has nobody to tell.
+    let old = regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(agent),
+        "Gammel oppgave",
+        None,
+        "Kari Admin",
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        regnmed_db::agent_task::question_email(&state.pool, company, old, "?", None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

@@ -29,6 +29,9 @@ spec:
               value: http://regnmed-api:8080
             - name: REGNMED_ISSUER
               value: https://id.regnmed.no
+            # The link in the mail that says an agent has a question.
+            - name: PORTAL_BASE_URL
+              value: https://regnmed.no
 ---
 # Feiebrettet arver de samme adressene.
 apiVersion: batch/v1
@@ -48,3 +51,5 @@ spec:
                   value: http://regnmed-api:8080
                 - name: REGNMED_ISSUER
                   value: https://id.regnmed.no
+                - name: PORTAL_BASE_URL
+                  value: https://regnmed.no

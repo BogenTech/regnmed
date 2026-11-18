@@ -45,6 +45,7 @@ pub async fn create_task(
     message: &str,
     deadline: Option<NaiveDate>,
     created_by: &str,
+    created_by_person: Option<Uuid>,
 ) -> Result<Uuid> {
     let message = message.trim();
     ensure!(!message.is_empty(), "oppgaven trenger en melding");
@@ -70,8 +71,9 @@ pub async fn create_task(
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into agent_oppgave
-             (id, company_id, integration_id, melding, frist, opprettet_av)
-         values ($1, $2, $3, $4, $5, $6)",
+             (id, company_id, integration_id, melding, frist, opprettet_av,
+              created_by_person)
+         values ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(id)
     .bind(company_id)
@@ -79,9 +81,75 @@ pub async fn create_task(
     .bind(message)
     .bind(deadline)
     .bind(created_by)
+    .bind(created_by_person)
     .execute(pool)
     .await?;
     Ok(id)
+}
+
+/// The mail that tells the person who gave a task that the agent asked
+/// a question, or None when there is nobody to tell: a task with no
+/// recorded person (given before 0092), a person with no address, or a
+/// task that started in a chat conversation -- there the question is
+/// already in the conversation, with its unread badge, and a mail per
+/// question would be noise.
+pub async fn question_email(
+    pool: &PgPool,
+    company_id: Uuid,
+    task_id: Uuid,
+    question: &str,
+    portal_base: Option<&str>,
+) -> Result<Option<crate::EmailPayload>> {
+    let row = sqlx::query(
+        "select p.email, o.melding, i.navn as agent, c.name as company
+         from agent_oppgave o
+         join person p on p.id = o.created_by_person
+         join company c on c.id = o.company_id
+         left join integration i on i.id = o.integration_id
+         where o.id = $1 and o.company_id = $2
+           and not exists (select 1 from chat_message m where m.task_id = o.id)",
+    )
+    .bind(task_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    let Some(to) = row
+        .get::<Option<String>, _>("email")
+        .filter(|e| !e.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let agent: String = row
+        .get::<Option<String>, _>("agent")
+        .unwrap_or_else(|| "Agenten".into());
+    let company: String = row.get("company");
+    let task: String = row.get("melding");
+    let mut text = format!(
+        "{agent} har et spørsmål om en oppgave i {company}, og venter på svar \
+         før den gjør noe mer.\n\nOppgaven:\n{task}\n\nSpørsmålet:\n{}\n\n",
+        question.trim()
+    );
+    match portal_base {
+        Some(base) => text.push_str(&format!(
+            "Svar i samtalen under Administrasjon → Oppdrag og integrasjoner:\n\
+             {}/#/c/{company_id}/admin/oppdrag\n",
+            base.trim_end_matches('/')
+        )),
+        None => text.push_str(
+            "Svar i samtalen under Administrasjon → Oppdrag og integrasjoner i regnmed.\n",
+        ),
+    }
+    Ok(Some(crate::EmailPayload {
+        to,
+        subject: format!("{agent} har et spørsmål — {company}"),
+        text,
+        reply_to: None,
+        attachment: None,
+        invoice_id: None,
+        reminder_id: None,
+        invitation_id: None,
+    }))
 }
 
 const SELECT: &str = "select o.id, o.integration_id, i.navn as agent, o.melding, o.frist,
