@@ -38,6 +38,15 @@
     });
   });
 
+  // The list polls while the agent works and hands over the task with
+  // its new status; the thread follows it, so the agent's answer shows
+  // here without a reload.
+  const status = $derived(oppgave.status);
+  $effect(() => {
+    status;
+    untrack(() => trad && last());
+  });
+
   // Et menneskes svar er `pagar` med notat: statusen sier at arbeidet
   // fortsetter, notatet er det som ble sagt. Det gjør også oppgaven
   // hentbar igjen for workeren, som hopper over `sporsmal`.
