@@ -1,4 +1,5 @@
 <script>
+  import { renderMarkdown } from "../../lib/markdown.js";
   // Samtalen med en agent (docs/agent.md §8.5).
   //
   // Dette er en VISNING av `agent_oppgave_hendelse`, ikke en ny
@@ -133,7 +134,13 @@
         {#if h.notat}
           <div class="flex flex-col {fraAgenten(h) ? 'items-start' : 'items-end'}">
             <span class="text-xs opacity-60">{h.av} · {formatTime(h.tidspunkt)}</span>
-            <div class="rounded-box max-w-[85%] px-3 py-2 text-sm {boble(h)}">{h.notat}</div>
+            {#if fraAgenten(h)}
+              <div class="rounded-box max-w-[85%] px-3 py-2 text-sm break-words {boble(h)} [&_p]:my-1 first:[&_p]:mt-0 [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5 [&_code]:font-mono [&_code]:text-xs [&_code]:bg-base-300 [&_code]:rounded [&_code]:px-1">
+                {@html renderMarkdown(h.notat)}
+              </div>
+            {:else}
+              <div class="rounded-box max-w-[85%] px-3 py-2 text-sm whitespace-pre-wrap {boble(h)}">{h.notat}</div>
+            {/if}
           </div>
         {/if}
       {/each}

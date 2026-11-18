@@ -1,4 +1,5 @@
 <script>
+  import { renderMarkdown } from "../../lib/markdown.js";
   // Meldinger (docs/meldinger.md): samtaler én-til-én, som en vanlig
   // meldingsapp. Til venstre samtalene, nyeste melding øverst; til høyre
   // den åpne samtalen. På telefon er det én av dem om gangen, og adressen
@@ -144,6 +145,11 @@
     }
   }
 
+  // The full explanation lives in the docs; the banner only says what the
+  // reader needs right now.
+  const AGENT_DOK =
+    "https://github.com/BogenTech/regnmed/blob/main/docs/agent.md#hvor-kj%C3%B8rer-agenten";
+
   // ---- The open conversation ----
 
   function nearBottom() {
@@ -186,6 +192,42 @@
     } catch (e) {
       if (id === openId) threadError = e.message;
     }
+  }
+
+  // A long thread arrives one page at a time: the newest first, older
+  // pages as the reader scrolls up. The scroll position is held, so the
+  // message being read does not jump away under the reader.
+  let lasterEldre = $state(false);
+  async function loadOlder() {
+    const id = openId;
+    const first = thread?.messages[0];
+    if (!id || !first || !thread.older || lasterEldre) return;
+    lasterEldre = true;
+    try {
+      const svar = await api(
+        "/chat/conversations/" +
+          id +
+          "?before=" +
+          encodeURIComponent(first.created_at) +
+          "&before_id=" +
+          first.message_id,
+      );
+      if (id !== openId) return;
+      const fra = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
+      const known = new Set(thread.messages.map((m) => m.message_id));
+      thread.messages = [...svar.messages.filter((m) => !known.has(m.message_id)), ...thread.messages];
+      thread.older = svar.older;
+      await tick();
+      if (scroller) scroller.scrollTop = scroller.scrollHeight - fra;
+    } catch (e) {
+      if (id === openId) threadError = e.message;
+    } finally {
+      lasterEldre = false;
+    }
+  }
+
+  function onScroll() {
+    if (scroller && scroller.scrollTop < 120) loadOlder();
   }
 
   async function markRead() {
@@ -508,22 +550,27 @@
                Said up front, so a message does not wait in silence. -->
           <p role="note" class="alert alert-info alert-soft rounded-none text-sm py-2">
             <span>
-              {thread.with.name} kjøres ikke av regnmed, og svarer bare når den kjøres et annet sted, for
-              eksempel på deres egen maskin. Skal regnmed kjøre en agent, lager en administrator den med «Ny
-              agent» under <a class="link" href={"#/c/" + thread.with.company_id + "/admin/brukere"}
-                >Brukere og roller</a
-              > — den får språkmodell og innlogging i samme steg.
+              {thread.with.name} kjøres utenfor regnmed og svarer bare når den er i gang.
+              <a class="link" href={AGENT_DOK} target="_blank" rel="noopener">Les mer</a>
             </span>
           </p>
         {/if}
 
         <div
           bind:this={scroller}
+          onscroll={onScroll}
           class="flex-1 overflow-y-auto min-h-0 p-3 flex flex-col gap-2"
           role="log"
           aria-live="polite"
           aria-label={"Samtale med " + thread.with.name}
         >
+          {#if thread.older}
+            <!-- Also a button: scrolling is not the only way to read back,
+                 and a keyboard user needs a target. -->
+            <button class="btn btn-ghost btn-xs self-center" onclick={loadOlder} disabled={lasterEldre}>
+              {lasterEldre ? "Henter eldre meldinger …" : "Vis eldre meldinger"}
+            </button>
+          {/if}
           {#if !thread.messages.length}
             <p class="m-auto text-sm opacity-70 text-center max-w-xs">
               {#if thread.with.agent}
@@ -537,12 +584,20 @@
           {#each thread.messages as m (m.message_id)}
             {@const mine = m.author_id === thread.me}
             <div class="flex flex-col {mine ? 'items-end' : 'items-start'}">
-              <div
-                class="rounded-box px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]
-                  {mine ? 'bg-primary text-primary-content' : 'bg-base-200'}"
-              >
-                {m.text}
-              </div>
+              {#if !mine && thread.with.agent}
+                <!-- An agent writes markdown; rendered safely (lib/markdown.js
+                     escapes first and adds a fixed set of tags only). -->
+                <div class="rounded-box px-3 py-2 text-sm break-words max-w-[85%] bg-base-200 [&_p]:my-1 first:[&_p]:mt-0 [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5 [&_code]:font-mono [&_code]:text-xs [&_code]:bg-base-300 [&_code]:rounded [&_code]:px-1">
+                  {@html renderMarkdown(m.text)}
+                </div>
+              {:else}
+                <div
+                  class="rounded-box px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]
+                    {mine ? 'bg-primary text-primary-content' : 'bg-base-200'}"
+                >
+                  {m.text}
+                </div>
+              {/if}
               {#each m.documents as d (d.document_id)}
                 <button
                   class="link text-xs mt-1"
