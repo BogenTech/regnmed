@@ -1,0 +1,15 @@
+---
+// A real portal screenshot in a minimal frame; picks the dark variant under prefers-color-scheme.
+// sync-screens.mjs produces the 720w/1440w WebP files from the PNG sources at build time.
+interface Props { slug: string; alt: string; url?: string; eager?: boolean }
+const { slug, alt, url = "regnmed.no", eager = false } = Astro.props;
+const set = (t: string) => `/screens/${slug}-${t}-720.webp 720w, /screens/${slug}-${t}-1440.webp 1440w`;
+const sizes = "(min-width: 76rem) 72rem, 100vw";
+---
+<div class="shot">
+  <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>{url}</span></div>
+  <picture>
+    <source srcset={set("dark")} sizes={sizes} type="image/webp" media="(prefers-color-scheme: dark)" />
+    <img srcset={set("light")} sizes={sizes} src={`/screens/${slug}-light-1440.webp`} alt={alt} width="1440" height="900" loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} decoding="async" />
+  </picture>
+</div>

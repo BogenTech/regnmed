@@ -32,3 +32,10 @@ target
 ui/node_modules/
 .env.*
 AGENTS.md
+
+# marketing + docs sites
+site/*/node_modules/
+site/*/dist/
+site/*/.astro/
+site/*/public/screens/
+site/docs/src/content/docs/teknisk/

@@ -1,0 +1,63 @@
+---
+// Real SHA-256 chain computed at build time; the client script recomputes it as you edit.
+// Illustration only: the production format is the canonical netstring serialization in regnmed-core::hash.
+import { createHash } from "node:crypto";
+const rows = [
+  { no: "2026-0141", date: "03.11", text: "Faktura 1038 · Fjellvik Bygg AS", amount: "48 750,00" },
+  { no: "2026-0142", date: "05.11", text: "Leverandør · Nordlys Kontor AS", amount: "-6 240,00" },
+  { no: "2026-0143", date: "07.11", text: "Innbetaling KID · Fjellvik Bygg AS", amount: "48 750,00" },
+  { no: "2026-0144", date: "10.11", text: "Husleie november", amount: "-18 500,00" },
+];
+let prev = "genesis";
+const sealed = rows.map((r) => {
+  prev = createHash("sha256").update(`${prev}|${r.no}|${r.date}|${r.text}|${r.amount}`).digest("hex");
+  return { ...r, hash: prev };
+});
+---
+<div id="ledger" class="ledger" data-rows={JSON.stringify(sealed)} role="group" aria-label="Interaktivt eksempel på en hash-kjedet journal">
+  <div class="ledger-row head" aria-hidden="true"><span>Bilag</span><span>Dato</span><span>Tekst</span><span style="text-align:right">Beløp</span><span>Hash</span></div>
+  {sealed.map((r, i) => (
+    <div class="ledger-row" data-i={i} data-state="ok">
+      <span>{r.no}</span><span>{r.date}</span><span class="desc">{r.text}</span>
+      <span><input type="text" inputmode="decimal" value={r.amount} aria-label={`Beløp, bilag ${r.no}`} /></span>
+      <span class="hash"><span class="h">{r.hash.slice(0, 10)}…</span> <span class="state">✓ forsegla</span></span>
+    </div>
+  ))}
+  <div class="ledger-foot">
+    <span id="ledger-msg" aria-live="polite" aria-atomic="true">Kjeden er intakt. Endre et beløp.</span>
+    <button type="button" id="ledger-reset">Tilbakestill</button>
+  </div>
+</div>
+<noscript><p class="quiet">Slå på JavaScript for å prøve eksemplet selv.</p></noscript>
+<script>
+  const root = document.getElementById("ledger")!;
+  const sealed: { no: string; date: string; text: string; amount: string; hash: string }[] = JSON.parse(root.dataset.rows!);
+  const rows = [...root.querySelectorAll<HTMLElement>(".ledger-row[data-i]")];
+  const msg = document.getElementById("ledger-msg")!;
+  const hex = async (s: string) =>
+    [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  let run = 0;
+  async function verify() {
+    const mine = ++run;
+    let prev = "genesis", firstBroken = -1;
+    for (let i = 0; i < sealed.length; i++) {
+      const r = sealed[i];
+      const amount = rows[i].querySelector("input")!.value;
+      prev = await hex(`${prev}|${r.no}|${r.date}|${r.text}|${amount}`);
+      if (mine !== run) return; // a newer edit superseded this run
+      const bad = prev !== r.hash;
+      if (bad && firstBroken < 0) firstBroken = i;
+      rows[i].dataset.state = bad ? "broken" : "ok";
+      rows[i].querySelector(".h")!.textContent = prev.slice(0, 10) + "…";
+      rows[i].querySelector(".state")!.textContent = bad ? "✗ brudd" : "✓ forsegla";
+    }
+    msg.textContent = firstBroken < 0
+      ? "Kjeden er intakt. Endre et beløp."
+      : `Brudd fra bilag ${sealed[firstBroken].no}: hash-en stemmer ikke lenger, og alle bilag etter det følger med.`;
+  }
+  rows.forEach((r) => r.querySelector("input")!.addEventListener("input", verify));
+  document.getElementById("ledger-reset")!.addEventListener("click", () => {
+    rows.forEach((r, i) => (r.querySelector("input")!.value = sealed[i].amount));
+    verify();
+  });
+</script>

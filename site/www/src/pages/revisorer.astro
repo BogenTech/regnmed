@@ -1,0 +1,32 @@
+---
+import Base from "../layouts/Base.astro";
+import Shot from "../components/Shot.astro";
+import { DOCS } from "../data/links.js";
+---
+<Base title="For revisorer" description="Skrivebeskyttet tilgang og en verifikasjonsrapport som kontrollerer hash-kjeden, vedlegg, forankring og reskontro, med en prosedyre for å etterprøve uavhengig.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">For revisorer</p>
+    <h1 style="margin-top:1rem;max-width:17ch">Kontrollér regnskapet uten å spørre noen.</h1>
+    <p class="lede">Revisoren får skrivebeskyttet tilgang og én rapport som kjører alt systemet kan kontrollere om seg selv. Rapporten slutter med en prosedyre du kan følge helt uavhengig av regnmed.</p>
+  </div></section>
+
+  <div class="wrap"><Shot slug="revisjon" alt="Verifikasjonsrapporten" url="regnmed.no/rapporter/revisjon" eager /></div>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem"><p class="eyebrow">Hva rapporten kontrollerer</p><h2>Kontroller som viser avvik, ikke pen forside</h2></div>
+    <ul class="prose" style="margin:0;padding-left:1.2rem">
+      <li><b>Hash-kjede fra første bilag.</b> Hvert bilag regnes om fra lagret innhold, og kjedens topp må stemme.</li>
+      <li><b>Rapportgrunnlag.</b> Månedssummene rapportene leser er lik summen av posteringene, konto for konto.</li>
+      <li><b>Vedlegg.</b> Bytene regnes om mot lagret SHA-256.</li>
+      <li><b>Ekstern forankring.</b> Forankrede kjedetopper ligger fortsatt på den levende kjeden, og rotverdiene regnes om fra bladene.</li>
+      <li><b>Reskontro mot hovedbok</b> og <b>balansekontroll</b>, til øre.</li>
+      <li><b>Importert historikk.</b> Hvilke eksterne SAF-T-filer hovedboken er bygget av, med fulle innholdshasher så du kan sammenligne mot kildesystemets eksport.</li>
+      <li><b>Balansedokumentasjon og dokumentasjon</b> som opplysninger om det som mangler, uten å gi falsk alarm.</li>
+    </ul>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem"><p class="eyebrow">Uavhengig gjennomgang</p><h2>Tekstrapport du kan regne på</h2></div>
+    <div class="prose"><p style="margin-top:0">Rapporten kan lastes ned som en deterministisk tekstfil som slutter med en steg-for-steg-prosedyre for å verifisere funnene med egne verktøy. Samme data gir alltid samme tekst, så rapporten kan arkiveres og sammenlignes.</p><p>Tilgangen er skrivebeskyttet. En revisor kan lese hovedbok, rapporter og lønn og følger revisjonsoppdraget, men aldri bokføre eller endre. <a href={`${DOCS}/teknisk/revisjon/`}>Les den tekniske beskrivelsen</a>.</p></div>
+  </div></section>
+</Base>

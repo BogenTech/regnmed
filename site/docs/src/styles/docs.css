@@ -1,0 +1,27 @@
+@import "@fontsource-variable/schibsted-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root {
+  --sl-font: "Schibsted Grotesk Variable", system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+:root[data-theme="light"] {
+  --sl-color-accent-low: #d6e9f2;
+  --sl-color-accent: #1f6a91;
+  --sl-color-accent-high: #0f3a52;
+  --sl-color-bg: #f7f5f0;
+  --sl-color-bg-nav: #f7f5f0;
+  --sl-color-bg-sidebar: #f1eee7;
+}
+:root[data-theme="dark"] {
+  --sl-color-accent-low: #0e3447;
+  --sl-color-accent: #3aa6d4;
+  --sl-color-accent-high: #a8dcf2;
+  --sl-color-bg: #0e1c24;
+  --sl-color-bg-nav: #0e1c24;
+  --sl-color-bg-sidebar: #0b1820;
+}
+
+.three { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; margin-top: 2rem; }
+.three > div { border-top: 3px solid var(--sl-color-text); padding-top: 1rem; }
+.three h3 { margin-top: 0; }
