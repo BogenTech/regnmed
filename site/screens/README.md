@@ -18,6 +18,17 @@ Filene heter `<slug>-light.png` og `<slug>-dark.png` (tema `steelzombie`), 1440�
 | `byra` | Byråvisning: klienter og medlemmer |
 | `integrasjoner` | Agenter og integrasjoner (bring-your-own-agent) |
 
+## Lyst og mørkt
+
+Begge nettstedene viser bildet som passer temaet leseren ser. `site/www` bruker `Shot.astro` (bare `slug`). I `site/docs` skrives bildet som et par, lyst først, og `docs.css` skjuler det som ikke passer:
+
+```html
+<img src="/screens/mva-light.png" alt="…" width="1440" height="900" loading="lazy" />
+<img src="/screens/mva-dark.png" alt="…" width="1440" height="900" loading="lazy" />
+```
+
+`loading="lazy"` er det som hindrer at det skjulte bildet lastes ned.
+
 Ikke tatt: ferdig rendret faktura-PDF som eget bilde (PDF-en vises i `bilag` i stedet).
 
 ## Lage dem på nytt

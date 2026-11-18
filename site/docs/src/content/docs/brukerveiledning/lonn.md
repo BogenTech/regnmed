@@ -104,4 +104,5 @@ Regnmed bruker bare koder fra Skatteetatens publiserte lister, og **nekter** nå
 
 Se også [Teknisk dokumentasjon: Lønn](/teknisk/lonn/).
 
-![Lønn i regnmed](/screens/lonn-light.png)
+<img src="/screens/lonn-light.png" alt="Lønn i regnmed" width="1440" height="900" loading="lazy" />
+<img src="/screens/lonn-dark.png" alt="Lønn i regnmed" width="1440" height="900" loading="lazy" />

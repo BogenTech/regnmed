@@ -9,7 +9,8 @@ Bank-seksjonen viser at kontoen i regnskapet stemmer med bankens egne tall, og l
 
 Seksjonen har fanene **Avstemming**, **Betalinger**, **Valutakurser** og **Firmakort**.
 
-![Bankavstemming med foreslåtte koblinger](/screens/bank-light.png)
+<img src="/screens/bank-light.png" alt="Bankavstemming med foreslåtte koblinger" width="1440" height="900" loading="lazy" />
+<img src="/screens/bank-dark.png" alt="Bankavstemming med foreslåtte koblinger" width="1440" height="900" loading="lazy" />
 
 ## Slik kommer kontoutskriften inn
 

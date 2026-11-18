@@ -25,3 +25,8 @@
 .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; margin-top: 2rem; }
 .three > div { border-top: 3px solid var(--sl-color-text); padding-top: 1rem; }
 .three h3 { margin-top: 0; }
+
+/* Screenshots come in pairs (x-light.png then x-dark.png); only the one matching the theme shows.
+   Written as <img loading="lazy"> so the hidden twin is never downloaded. */
+:root:not([data-theme="dark"]) img[src$="-dark.png"],
+:root[data-theme="dark"] img[src$="-light.png"] { display: none; }

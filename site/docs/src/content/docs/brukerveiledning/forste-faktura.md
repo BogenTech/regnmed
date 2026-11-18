@@ -45,7 +45,8 @@ Etter utstedelsen lander du på fakturaen, og «Send til kunden» er neste steg.
 
 Utsendelsen er alltid en handling du gjør selv. regnmed sender aldri en faktura av seg selv. Har du ikke e-post å sende til, bruker du «Last ned PDF» og sender den på den måten du vil.
 
-![Fakturalisten med status per faktura](/screens/faktura-light.png)
+<img src="/screens/faktura-light.png" alt="Fakturalisten med status per faktura" width="1440" height="900" loading="lazy" />
+<img src="/screens/faktura-dark.png" alt="Fakturalisten med status per faktura" width="1440" height="900" loading="lazy" />
 
 ## Hva er skjedd
 

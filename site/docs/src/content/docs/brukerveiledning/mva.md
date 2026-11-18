@@ -57,4 +57,5 @@ SAF-T for hele året ligger under Rapporter.
 3. Er alle bilag bokført, og er perioden klar til å låses? Se under Administrasjon → Periode.
 4. Last ned meldingen og lever.
 
-![Mva-spesifikasjon per kode](/screens/mva-light.png)
+<img src="/screens/mva-light.png" alt="Mva-spesifikasjon per kode" width="1440" height="900" loading="lazy" />
+<img src="/screens/mva-dark.png" alt="Mva-spesifikasjon per kode" width="1440" height="900" loading="lazy" />

@@ -59,7 +59,8 @@ Etter innlogging velger du selskap, og du lander på **Oversikt**.
 
 På Oversikt finner du snarveiene «Ny faktura», «Last opp bilag» og «Registrer timer», listen «Til oppfølging» («Ingenting venter på deg nå» når den er tom), «Utestående fra kunder», «Disponibelt» (bank og kunder, minus leverandører og mva) og «Siste bilag». Knappen «Kontroller at ingenting er endret» kjører kontrollen av hovedboken. Hva den gjør står i [teknisk dokumentasjon](/teknisk/ledger/).
 
-![Oversikt-siden i regnmed med nøkkeltall og oppfølgingsliste](/screens/oversikt-light.png)
+<img src="/screens/oversikt-light.png" alt="Oversikt-siden i regnmed med nøkkeltall og oppfølgingsliste" width="1440" height="900" loading="lazy" />
+<img src="/screens/oversikt-dark.png" alt="Oversikt-siden i regnmed med nøkkeltall og oppfølgingsliste" width="1440" height="900" loading="lazy" />
 
 ## Gjør dette før du fakturerer
 

@@ -44,4 +44,5 @@ Under **Siste endringer fra agenter og integrasjoner** ser du hva agentene har g
 
 Se også [Teknisk dokumentasjon: Agent](/teknisk/agent/) og [Integrasjoner](/teknisk/integrations/).
 
-![Agenter og integrasjoner](/screens/integrasjoner-light.png)
+<img src="/screens/integrasjoner-light.png" alt="Agenter og integrasjoner" width="1440" height="900" loading="lazy" />
+<img src="/screens/integrasjoner-dark.png" alt="Agenter og integrasjoner" width="1440" height="900" loading="lazy" />
