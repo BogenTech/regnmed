@@ -51,6 +51,8 @@ pub struct Plan {
     pub sort: i32,
     pub set_by: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Companies with coverage on this plan today: a new price for it changes what they pay.
+    pub companies: i64,
     /// Newest first; a `year` row's amount is for the whole year.
     pub prices: Vec<PlanPrice>,
 }
@@ -58,12 +60,14 @@ pub struct Plan {
 /// A slug is permanent (it is what `abonnement.plan` points at) and goes
 /// into URLs, so it is strict.
 pub fn validate_slug(slug: &str) -> Result<(), String> {
+    // Same rule as the table check and the console: words of [a-z0-9] joined by single hyphens.
     let ok = !slug.is_empty()
         && slug.len() <= 40
-        && slug
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-        && !slug.starts_with('-');
+        && slug.split('-').all(|w| {
+            !w.is_empty()
+                && w.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        });
     if ok {
         Ok(())
     } else {
@@ -101,10 +105,36 @@ pub fn validate_input(input: &PlanInput) -> Result<(), String> {
     Ok(())
 }
 
-/// A new version of a plan (or a brand-new plan for a new slug).
+/// The kind of an existing slug (from its newest version), if it exists.
+pub async fn existing_kind(pool: &PgPool, slug: &str) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar(
+        "select kind from subscription_plan where slug = $1 order by created_at desc, id desc limit 1",
+    )
+    .bind(slug)
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Companies with coverage on `slug` today.
+pub async fn companies_on_plan(pool: &PgPool, slug: &str) -> Result<i64> {
+    Ok(sqlx::query_scalar(
+        "select count(distinct company_id) from abonnement
+         where plan = $1 and valid_from <= current_date
+           and (valid_to is null or valid_to > current_date)",
+    )
+    .bind(slug)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// A new version of a plan (or a brand-new plan for a new slug). The kind of a
+/// slug is permanent: coverage rows and prices point at it as one or the other.
 pub async fn save_plan(pool: &PgPool, slug: &str, input: &PlanInput, by: Uuid) -> Result<()> {
     ensure!(validate_slug(slug).is_ok(), "ugyldig plan-id");
     ensure!(validate_input(input).is_ok(), "ugyldig plan");
+    if let Some(kind) = existing_kind(pool, slug).await? {
+        ensure!(kind == input.kind, "typen til en plan kan ikke endres");
+    }
     sqlx::query(
         "insert into subscription_plan
             (slug, name, kind, available, audience, featured, listed, voucher_limit,
@@ -151,6 +181,8 @@ pub enum PriceRefused {
     InThePast,
     /// There is already a price for this plan, interval and day.
     Duplicate,
+    /// This many companies are on the plan today and the caller did not confirm.
+    InUse(i64),
 }
 
 /// A new price row. Dated data, append-only: a change is another row,
@@ -163,6 +195,7 @@ pub async fn add_price(
     from: NaiveDate,
     today: NaiveDate,
     source: &str,
+    confirm_existing: bool,
 ) -> Result<std::result::Result<(), PriceRefused>> {
     if !matches!(interval, "month" | "year") {
         return Ok(Err(PriceRefused::BadInterval));
@@ -178,6 +211,11 @@ pub async fn add_price(
     }
     if !plan_exists(pool, slug).await? {
         return Ok(Err(PriceRefused::UnknownPlan));
+    }
+    // Invoicing prices by date, so a new row reprices everyone already on the plan.
+    let on_plan = companies_on_plan(pool, slug).await?;
+    if on_plan > 0 && !confirm_existing {
+        return Ok(Err(PriceRefused::InUse(on_plan)));
     }
     let inserted = sqlx::query(
         "insert into abonnement_pris (plan, interval, pris_ore_per_mnd, valid_from, kilde)
@@ -219,10 +257,21 @@ pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
     .fetch_all(pool)
     .await?;
     let prices = crate::subscription::list_prices(pool).await?;
+    let counts: std::collections::HashMap<String, i64> = sqlx::query(
+        "select plan, count(distinct company_id) n from abonnement
+         where valid_from <= current_date and (valid_to is null or valid_to > current_date)
+         group by plan",
+    )
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|r| (r.get("plan"), r.get("n")))
+    .collect();
     let mut plans: Vec<Plan> = rows
         .iter()
         .map(|r| {
             let slug: String = r.get("slug");
+            let companies = counts.get(&slug).copied().unwrap_or(0);
             Plan {
                 prices: prices
                     .iter()
@@ -247,6 +296,7 @@ pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
                 sort: r.get("sort"),
                 set_by: r.get("set_by"),
                 created_at: r.get("created_at"),
+                companies,
             }
         })
         .collect();
@@ -340,7 +390,17 @@ mod tests {
     fn slugs_are_strict() {
         assert!(validate_slug("liten").is_ok());
         assert!(validate_slug("pro-2027").is_ok());
-        for bad in ["", "Liten", "-x", "a b", "æ", "a_b", &"x".repeat(41)] {
+        for bad in [
+            "",
+            "Liten",
+            "-x",
+            "x-",
+            "a--b",
+            "a b",
+            "æ",
+            "a_b",
+            &"x".repeat(41),
+        ] {
             assert!(validate_slug(bad).is_err(), "{bad:?}");
         }
     }

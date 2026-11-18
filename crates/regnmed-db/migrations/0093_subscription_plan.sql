@@ -20,7 +20,7 @@
 
 create table subscription_plan (
     id             uuid primary key default gen_random_uuid(),
-    slug           text not null check (slug ~ '^[a-z0-9][a-z0-9-]{0,39}$'),
+    slug           text not null check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) <= 40),
     name           text not null check (name <> '' and length(name) <= 80),
     audience       text not null default '' check (length(audience) <= 200),
     -- 'plan' is the package a company is on; 'addon' (tilleggstjeneste) is

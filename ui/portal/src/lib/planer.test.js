@@ -69,3 +69,9 @@ test("planBody: only add-ons can be unavailable", () => {
   assert.equal(planBody({ name: "Liten", available: false }).available, true);
   assert.equal(planBody({ name: "Liten", kind: "junk" }).kind, "plan");
 });
+
+test("numbers the server cannot read as 32-bit integers are refused in the form", () => {
+  assert.throws(() => planBody({ name: "x", voucher_limit: "99999999999" }), /for stor/);
+  assert.throws(() => planBody({ name: "x", sort: "99999999999" }), /helt tall/);
+  assert.equal(planBody({ name: "x", voucher_limit: "2147483647" }).voucher_limit, 2147483647);
+});

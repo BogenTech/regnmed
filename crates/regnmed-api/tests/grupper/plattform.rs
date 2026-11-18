@@ -939,6 +939,66 @@ async fn packages_and_prices_are_edited_by_systemadmin_and_served_publicly() {
         .await;
     assert!(tampered.is_err(), "plan versions are append-only");
 
+    // The kind of a slug is permanent: coverage and prices point at it as one or the other.
+    let (code, why) = json_call(
+        &state,
+        "PUT",
+        &format!("/platform/plans/{slug}"),
+        &sysadmin,
+        &plan(true, "plan", true),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "kind cannot flip: {why}");
+
+    // A price for a plan that companies are on reprices them: it needs an explicit confirmation.
+    regnmed_db::subscription::open_coverage(
+        &state.pool,
+        company,
+        &slug,
+        Utc::now().date_naive(),
+        None,
+        "test",
+        "test",
+    )
+    .await
+    .unwrap();
+    let later = (Utc::now() + Duration::days(400)).date_naive();
+    let (code, why) = json_call(
+        &state,
+        "POST",
+        &prices,
+        &sysadmin,
+        &price(&later.to_string(), 5900),
+    )
+    .await;
+    assert_eq!(
+        code,
+        StatusCode::BAD_REQUEST,
+        "unconfirmed repricing: {why}"
+    );
+    assert!(
+        why["error"].as_str().unwrap().contains("1 selskap"),
+        "{why}"
+    );
+    let (_, all) = json_call(&state, "GET", "/platform/plans", &sysadmin, "").await;
+    let row = all["plans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["slug"] == slug)
+        .unwrap();
+    assert_eq!(
+        row["companies"], 1,
+        "the console shows how many companies a price reaches"
+    );
+    let confirmed = format!(
+        r#"{{"interval":"month","price_ore":5900,"valid_from":"{later}","source":"test","confirm_existing":true}}"#
+    );
+    assert_eq!(
+        status(&state, "POST", &prices, &sysadmin, &confirmed).await,
+        StatusCode::CREATED
+    );
+
     // Leave the shared dev database as found: unlist the test add-on.
     assert_eq!(
         status(

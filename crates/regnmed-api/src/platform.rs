@@ -764,7 +764,15 @@ async fn put_plan(
         sort: body.sort,
     };
     regnmed_db::plans::validate_input(&input).map_err(ApiError::BadRequest)?;
+    if let Some(kind) = regnmed_db::plans::existing_kind(&state.pool, &slug).await?
+        && kind != input.kind
+    {
+        return Err(ApiError::BadRequest(
+            "typen til en plan kan ikke endres; opprett en ny plan i stedet".into(),
+        ));
+    }
     regnmed_db::plans::save_plan(&state.pool, &slug, &input, ctx.person_id).await?;
+    crate::subscription::invalidate_pricing_cache();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -775,6 +783,9 @@ pub struct PriceRequest {
     price_ore: i64,
     valid_from: NaiveDate,
     source: String,
+    /// Must be true when companies are on the plan today: the price reaches them.
+    #[serde(default)]
+    confirm_existing: bool,
 }
 
 async fn post_price(
@@ -794,10 +805,17 @@ async fn post_price(
         body.valid_from,
         today,
         &body.source,
+        body.confirm_existing,
     )
     .await?
     {
-        Ok(()) => Ok(StatusCode::CREATED),
+        Ok(()) => {
+            crate::subscription::invalidate_pricing_cache();
+            Ok(StatusCode::CREATED)
+        }
+        Err(R::InUse(n)) => Err(ApiError::BadRequest(format!(
+            "{n} selskap er på denne planen, og en ny pris endrer hva de betaler. Bekreft for å fortsette."
+        ))),
         Err(why) => Err(ApiError::BadRequest(
             match why {
                 R::UnknownPlan => "ukjent plan",
@@ -808,6 +826,7 @@ async fn post_price(
                 R::Duplicate => {
                     "det finnes allerede en pris for denne planen, dette intervallet og denne dagen"
                 }
+                R::InUse(_) => unreachable!("answered above"),
             }
             .to_string(),
         )),

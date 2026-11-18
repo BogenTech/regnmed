@@ -350,13 +350,19 @@ Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
   kilde, så fakturering som slår opp pris etter dato aldri får en gammel måned
   omskrevet. En pakke er «i kraft» når den har en månedspris som gjelder i dag,
   og «kommer» når første pris er datert fram i tid.
+- **En ny pris for en pakke som selskaper er på, endrer hva de betaler**, siden
+  fakturering slår opp pris etter dato. Konsollen viser derfor hvor mange selskaper
+  som er på pakken, og API-et krever `confirm_existing` når det er noen. Grandfathering
+  er gratis bare for en ny `slug`. Typen (pakke eller tillegg) til en `slug` kan ikke
+  endres etter første versjon.
 - **Grensene er beskrivende.** Ingenting måler eller håndhever dem ennå. De
   finnes slik at prissiden og konsollen sier det samme, og slik at den dagen
   håndhevingen bygges leser den tallet kunden ble vist. Det samme gjelder at
   kjøp av en tilleggstjeneste ennå ikke er bygget som dekningsrad.
 - **Offentlig**: `GET /pricing` (åpent) gir listede pakker og tillegg med dagens
-  pris og neste daterte endring. Nettsiden leser det ved bygg og bygges på nytt
-  hver sjette time, så en endring i konsollen vises der innen få timer.
+  pris og neste daterte endring. Svaret mellomlagres 30 sekunder per prosess og nullstilles ved hver endring.
+  Nettsiden leser det ved bygg og bygges på nytt hver sjette time (faller tilbake til
+  prisvedtaket som gjelder, aldri til et forslag, hvis API-et ikke svarer), så en endring i konsollen vises der innen få timer.
 
 ### Forslag under vurdering: planer etter størrelse (#279)
 

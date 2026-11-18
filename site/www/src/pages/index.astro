@@ -3,9 +3,9 @@ import Base from "../layouts/Base.astro";
 import Shot from "../components/Shot.astro";
 import LedgerDemo from "../components/LedgerDemo.astro";
 import { APP, DOCS } from "../data/links.js";
-import { loadPricing, priceLabel, fromPrice, fmtN } from "../data/pricing.js";
+import { loadPricing, priceLabel, fromPrice, fmtN, fmtKr } from "../data/pricing.js";
 const { plans } = await loadPricing();
-const FROM = fromPrice(plans) != null ? fromPrice(plans) / 100 : 49;
+const from = fromPrice(plans);
 const anyUpcoming = plans.some((p) => !p.in_force);
 const areas = [
   ["Hovedbok og bilag", "Fortløpende bilagsnummer uten hull, korrigering med reverserende bilag, periodelåsing og vedlegg med oppbevaringsplikt.", "bokføringsloven §§ 4, 13"],
@@ -28,7 +28,7 @@ const areas = [
         <a class="btn primary" href={APP}>Prøv gratis i 30 dager</a>
         <a class="btn" href="/sikkerhet/">Slik etterprøver du selv</a>
       </div>
-      <small>Fra {FROM} kr i måneden for hele systemet, etter 30 dagers prøveperiode.</small>
+      <small>{from != null ? `Fra ${fmtKr(from)} kr i måneden for hele systemet, etter 30 dagers prøveperiode.` : "30 dagers prøveperiode."}</small>
     </div>
   </section>
 

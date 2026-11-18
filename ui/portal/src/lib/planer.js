@@ -12,6 +12,9 @@ export function strictOre(text) {
   return Number.isSafeInteger(ore) ? ore : null;
 }
 
+// Serveren leser tallene som 32-bits heltall.
+const I32_MAX = 2147483647;
+
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function featuresFromText(text) {
@@ -26,6 +29,7 @@ function limit(text, navn) {
   const t = String(text ?? "").replace(/[\s ]/g, "");
   if (!t) return null;
   if (!/^\d+$/.test(t)) throw new Error(navn + " må være et helt tall, eller tomt for ingen grense");
+  if (Number(t) > I32_MAX) throw new Error(navn + " er for stor");
   return Number(t);
 }
 
@@ -33,7 +37,7 @@ export function planBody(v) {
   const name = String(v.name ?? "").trim();
   if (!name) throw new Error("planen trenger et navn");
   const sort = String(v.sort ?? "").trim() === "" ? 0 : Number(v.sort);
-  if (!Number.isInteger(sort)) throw new Error("rekkefølge må være et helt tall");
+  if (!Number.isInteger(sort) || Math.abs(sort) > I32_MAX) throw new Error("rekkefølge må være et helt tall");
   // Tilleggstjenester kan merkes «ikke tilgjengelig» (vises som «kommer», kan ikke kjøpes);
   // en pakke er alltid tilgjengelig.
   const kind = v.kind === "addon" ? "addon" : "plan";

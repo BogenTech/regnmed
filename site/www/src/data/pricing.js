@@ -15,16 +15,21 @@ export async function loadPricing() {
     if (!valid(json)) throw new Error("unexpected shape");
     return { ...json, source: "api" };
   } catch (e) {
-    console.warn(`[pricing] using the built-in fallback, ${URL} failed: ${e.message}`);
+    const msg = `[pricing] using the built-in fallback (the prisvedtak in force), ${URL} failed: ${e.message}`;
+    // A GitHub annotation, so a build that fell back is visible on the run instead of in a log nobody reads.
+    console.warn(process.env.GITHUB_ACTIONS ? `::warning title=Pricing fallback::${msg}` : msg);
     return { ...FALLBACK, source: "fallback" };
   }
 }
 
-const kr = (ore) => new Intl.NumberFormat("nb-NO").format(ore / 100);
+// Whole kroner without decimals, anything else with two ("29,50"); works from integer øre.
+const kr = (ore) =>
+  new Intl.NumberFormat("nb-NO", ore % 100 === 0 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(ore / 100);
 export const fmtKr = kr;
 export const fmtN = (n) => new Intl.NumberFormat("nb-NO").format(n);
+// The lowest price in force today; announced prices are not for sale yet.
 export const fromPrice = (plans) => {
-  const prices = plans.map((p) => p.price_ore_per_month ?? p.upcoming?.price_ore_per_month).filter((x) => x != null);
+  const prices = plans.map((p) => p.price_ore_per_month).filter((x) => x != null);
   return prices.length ? Math.min(...prices) : null;
 };
 // "49 kr/mnd", "129 kr/mnd fra 1. februar 2027", or "Pris kommer".

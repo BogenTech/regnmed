@@ -3,7 +3,7 @@
   // abonnementet leser. Alt er innsettings-bart — en endring er en ny versjon eller
   // en ny datert prisrad, aldri en overskriving. Support leser, systemadmin skriver.
   import { api, post, send } from "../lib/api.js";
-  import { skjema } from "../lib/dialog.svelte.js";
+  import { bekreft, skjema } from "../lib/dialog.svelte.js";
   import { toast } from "../lib/toast.svelte.js";
   import { kr, today, formatDate } from "../lib/format.js";
   import { SLUG, planBody, priceBody, currentAndNext } from "../lib/planer.js";
@@ -142,6 +142,15 @@
       { ok: "Legg til", melding: "Prisen kan ikke endres eller slettes etterpå. En ny pris er en ny rad." },
     );
     if (!kropp) return;
+    // En pris for en plan som selskaper er på, endrer hva de betaler: be om bekreftelse først.
+    if (p.companies > 0) {
+      const ok = await bekreft(
+        p.companies + (p.companies === 1 ? " selskap er" : " selskaper er") + " på «" + p.slug + "» i dag. Den nye prisen endrer hva de betaler fra " + formatDate(kropp.valid_from) + ". Vil du legge den til?",
+        { tittel: "Prisen når eksisterende kunder", ok: "Ja, legg til", farlig: true },
+      );
+      if (!ok) return;
+      kropp.confirm_existing = true;
+    }
     try {
       await post("/platform/plans/" + p.slug + "/prices", kropp);
       toast("Prisen er lagt til", true);
@@ -168,7 +177,7 @@
         <tr>
           <td>
             <div class="font-medium">{p.name}</div>
-            <div class="text-xs opacity-60">{p.slug}</div>
+            <div class="text-xs opacity-60">{p.slug}{#if p.companies > 0} · {p.companies} {p.companies === 1 ? "selskap" : "selskaper"}{/if}</div>
           </td>
           <td>
             <span class="badge badge-sm {p.listed ? 'badge-success' : 'badge-ghost'}">{p.listed ? "vises" : "skjult"}</span>
