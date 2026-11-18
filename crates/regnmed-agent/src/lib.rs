@@ -102,12 +102,16 @@ impl Outcome {
 /// to finish, and it is deliberately short: a small model follows two
 /// rules better than eight.
 fn closing_rules() -> String {
-    "Når du er ferdig, reply med vanlig text som starter med FERDIG: og en kort \
+    "Når du er ferdig, svar med vanlig tekst som starter med FERDIG: og en kort \
      oppsummering av hva du gjorde.\n\
      Trenger du en avgjørelse et menneske må ta, eller mangler du en opplysning, \
-     reply med text som starter med SPØRSMÅL: og still ett konkret spørsmål. \
-     Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør.\n\
-     Kan oppgaven ikke gjøres, reply med text som starter med AVVIST: og si hvorfor.\n\
+     svar med tekst som starter med SPØRSMÅL: og still ett konkret spørsmål. \
+     Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør. \
+     Spørsmålet leses av et menneske, ofte i en e-post: skriv det med vanlige ord, \
+     uten feltnavn og verktøynavn. Nevn ikke verktøyene du vil kalle (som \
+     `prosjekt_sats_sett`) eller feltene (som `valid_from`), og skriv beløp i \
+     kroner, ikke i øre.\n\
+     Kan oppgaven ikke gjøres, svar med tekst som starter med AVVIST: og si hvorfor.\n\
      Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven."
         .to_string()
 }
@@ -608,6 +612,21 @@ mod tests {
         assert!(without.trim_end().ends_with(protokoll.trim_end()));
         // Empty instructions add nothing at all -- no stray heading.
         assert_eq!(system_prompt("bokforing", Some("   ")), without);
+    }
+
+    /// The worker's own prompt text is Norwegian prose a model reads and
+    /// imitates, so it is held to the same guard as the role prompts.
+    /// «reply med vanlig text» stood here unnoticed: the #134 rename
+    /// reached this file too, and the guard did not scan it.
+    #[test]
+    fn the_worker_prompt_text_stays_norwegian_and_asks_in_plain_words() {
+        for (what, text) in [
+            ("closing_rules", closing_rules()),
+            ("MARK_YOUR_REPLY", MARK_YOUR_REPLY.to_string()),
+        ] {
+            assert_eq!(regnmed_mcp::role::english_in_prose(&text), None, "{what}");
+        }
+        assert!(closing_rules().contains("uten feltnavn og verktøynavn"));
     }
 
     #[test]

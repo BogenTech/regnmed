@@ -929,7 +929,7 @@ pub const TOOLS: &[Tool] = &[
         schema: r#"{"type":"object","required":["oppgave","status"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"},
             "status":{"type":"string","enum":["pagar","sporsmal","utfort","avvist"]},
-            "notat":{"type":"string","description":"Hva du gjorde, eller hva du trenger svar på"}},
+            "notat":{"type":"string","description":"Hva du gjorde, eller hva du trenger svar på. Et menneske leser det, ofte i en e-post: vanlige ord, ingen feltnavn eller verktøynavn"}},
             "additionalProperties":false}"#,
     },
 ];
