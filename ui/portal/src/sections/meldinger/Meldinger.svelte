@@ -1,4 +1,5 @@
 <script>
+  import { renderMarkdown } from "../../lib/markdown.js";
   // Meldinger (docs/meldinger.md): samtaler én-til-én, som en vanlig
   // meldingsapp. Til venstre samtalene, nyeste melding øverst; til høyre
   // den åpne samtalen. På telefon er det én av dem om gangen, og adressen
@@ -583,12 +584,20 @@
           {#each thread.messages as m (m.message_id)}
             {@const mine = m.author_id === thread.me}
             <div class="flex flex-col {mine ? 'items-end' : 'items-start'}">
-              <div
-                class="rounded-box px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]
-                  {mine ? 'bg-primary text-primary-content' : 'bg-base-200'}"
-              >
-                {m.text}
-              </div>
+              {#if !mine && thread.with.agent}
+                <!-- An agent writes markdown; rendered safely (lib/markdown.js
+                     escapes first and adds a fixed set of tags only). -->
+                <div class="rounded-box px-3 py-2 text-sm break-words max-w-[85%] bg-base-200 [&_p]:my-1 first:[&_p]:mt-0 [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5 [&_code]:font-mono [&_code]:text-xs [&_code]:bg-base-300 [&_code]:rounded [&_code]:px-1">
+                  {@html renderMarkdown(m.text)}
+                </div>
+              {:else}
+                <div
+                  class="rounded-box px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]
+                    {mine ? 'bg-primary text-primary-content' : 'bg-base-200'}"
+                >
+                  {m.text}
+                </div>
+              {/if}
               {#each m.documents as d (d.document_id)}
                 <button
                   class="link text-xs mt-1"
