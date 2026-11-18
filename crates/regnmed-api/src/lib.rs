@@ -172,6 +172,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/health", get(health))
         .route("/me", get(me))
+        .route("/notifications", get(agent_task::notifications))
         // Public by design: root hashes only — every independent copy of
         // a root is one more witness a database rewrite cannot reach.
         .route("/anchors", get(anchor::list_anchors))

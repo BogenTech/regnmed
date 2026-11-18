@@ -240,6 +240,52 @@ pub async fn answer(
     Ok(Json(json!({ "status": request.status })))
 }
 
+/// What is waiting for the caller across every company they reach --
+/// the portal's notification centre (docs/agent.md §8.5).
+///
+/// Derived, never stored: an agent question is listed while its task's
+/// newest status is `sporsmal` and disappears when someone answers, so
+/// the centre cannot disagree with the queue and needs no read-state.
+/// Each company is checked with the SAME guard as the queue itself
+/// (`INTEGRASJON_LES`), so the centre shows nothing a person could not
+/// open. A machine gets an empty list: its questions are its own output.
+pub async fn notifications(
+    State(state): State<AppState>,
+    person: AuthPerson,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut items = Vec::new();
+    if person.integration.is_none() {
+        let companies = regnmed_db::one_per_company(
+            regnmed_db::company_access_for_person(&state.pool, person.person_id).await?,
+        );
+        for c in companies {
+            let allowed = lookup(&state, person.person_id, c.company_id)
+                .await?
+                .is_some_and(|a| a.has(Right::IntegrationRead));
+            if !allowed {
+                continue;
+            }
+            for t in regnmed_db::agent_task::list_oppgaver(&state.pool, c.company_id, None, true)
+                .await?
+                .into_iter()
+                .filter(|t| t.status == "sporsmal")
+            {
+                items.push(json!({
+                    "type": "agent_sporsmal",
+                    "company_id": c.company_id,
+                    "selskap": c.name,
+                    "oppgave_id": t.id,
+                    "agent": t.agent,
+                    "melding": t.message,
+                    "sporsmal": t.last_note,
+                    "tidspunkt": t.last_timestamp.map(|ts| ts.to_rfc3339()),
+                }));
+            }
+        }
+    }
+    Ok(Json(json!({ "varsler": items })))
+}
+
 /// Rings the doorbell, and shrugs if the queue is down.
 ///
 /// The task is already in the database, which is what makes this safe

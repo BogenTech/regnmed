@@ -6,7 +6,8 @@
   import { toast } from "./lib/toast.svelte.js";
   import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
-  import { connect, disconnect } from "./lib/chat.svelte.js";
+  import { chat, connect, disconnect } from "./lib/chat.svelte.js";
+  import { hentVarsler } from "./lib/varsler.svelte.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
@@ -104,6 +105,19 @@
 
   $effect(() => {
     if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform, Meldinger]);
+  });
+
+  // The notification centre: at sign-in, on every chat event, and once a
+  // minute while the tab is visible (an agent's question comes from a
+  // worker, not from this page).
+  $effect(() => {
+    if (!me.loaded || !session.authed) return;
+    chat.tick;
+    hentVarsler();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") hentVarsler();
+    }, 60_000);
+    return () => clearInterval(timer);
   });
 
   // One live connection per signed-in person: the unread badge in every

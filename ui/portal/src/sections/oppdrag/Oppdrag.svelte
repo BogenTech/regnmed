@@ -13,6 +13,7 @@
   import Oppdragsliste from "./Oppdragsliste.svelte";
   import Byraliste from "./Byraliste.svelte";
   import Agentoppgaver from "./Agentoppgaver.svelte";
+  import { hentVarsler } from "../../lib/varsler.svelte.js";
 
   let { companyId } = $props();
 
@@ -74,6 +75,15 @@
     oppdrag = agent = null;
     lastOppdrag(id);
     if (serAgenter) lastAgent(id);
+  });
+
+  // When this card's list changes -- an answer sent, or the agent asking --
+  // the bell and the menu marker follow at once instead of within a minute.
+  const sporsmalHer = $derived(
+    agent?.oppgaver?.filter((o) => o.status === "sporsmal").length ?? null,
+  );
+  $effect(() => {
+    if (sporsmalHer !== null) hentVarsler();
   });
 
   // An agent answers in the background, and a task given from this card
