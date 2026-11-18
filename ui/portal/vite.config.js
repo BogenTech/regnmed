@@ -25,6 +25,7 @@ export default defineConfig({
     proxy: {
       "/companies": api,
       "/me": api,
+      "/notifications": api,
       "/firms": api,
       "/registry": api,
       "/auth": api,

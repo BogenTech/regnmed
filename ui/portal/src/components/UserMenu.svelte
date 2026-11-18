@@ -13,6 +13,7 @@
   import { me } from "../lib/me.svelte.js";
   import { session, logout } from "../lib/auth.svelte.js";
   import { theme, THEME_GROUPS, ICON, setTheme } from "../lib/theme.svelte.js";
+  import VarselButton from "./VarselButton.svelte";
   import ChatButton from "./ChatButton.svelte";
 
   // Optional: where this context's settings live (the company console's
@@ -38,6 +39,7 @@
 </script>
 
 <ChatButton />
+<VarselButton />
 <div class="dropdown dropdown-end">
   <div
     tabindex="0"

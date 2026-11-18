@@ -434,6 +434,42 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
 
+    // An agent waiting on the demo user, so the notification centre and
+    // the menu marker (docs/agent.md §8.5) have something to show.
+    let agent = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &format!("demo-agent-{}", Uuid::new_v4()),
+        "Demoagent",
+        None,
+        "bokforing",
+        "Demo Bruker",
+    )
+    .await
+    .unwrap();
+    let task = regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(agent),
+        "La oss sette en timesats til 1700 kr på prosjekt P1.",
+        None,
+        "Demo Bruker",
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::agent_task::answer(
+        &state.pool,
+        company,
+        task,
+        "sporsmal",
+        Some("Hvilken dato skal satsen på 1 700 kr gjelde fra?"),
+        "Demoagent",
+        Some(agent),
+    )
+    .await
+    .unwrap();
+
     std::fs::write(
         format!("{out_dir}/jwks.json"),
         serde_json::to_string(&idp.jwks).unwrap(),

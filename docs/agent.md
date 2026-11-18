@@ -937,12 +937,35 @@ Vakten er `an_agents_question_is_mailed_to_whoever_gave_the_task`
 spørsmål, oppgave og lenke, `utfort` sender ingen ny, en oppgave uten
 person varsler ingen, og en person uten tilgang varsles ikke. Sett feile med varslingen koblet fra.
 
+#### Varslingssenteret og markøren (2026-11-18)
+
+Ved siden av profilen står en bjelle med antallet spørsmål fra agenter som
+venter på DEG, på tvers av selskapene du når; listen lenker rett til
+samtalen. Ved innlogging sier en melding én gang hva som venter.
+Administrasjon i menyen og fanen «Oppdrag og integrasjoner» bærer det samme
+tallet for selskapet du står i.
+
+- **Utledet, aldri lagret.** `GET /notifications` lister oppgaver med
+  nyeste status `sporsmal`; når noen svarer, forsvinner varselet. Derfor
+  finnes ingen lest/ulest-tilstand å holde i takt, og bjella, markøren og
+  oppgavelisten kan ikke være uenige.
+- **Samme vakt som køen.** Hvert selskap sjekkes med `INTEGRASJON_LES`, så
+  senteret viser aldri noe personen ikke kan åpne. En maskin får en tom
+  liste.
+- **Hentes** ved innlogging, ved hver hendelse i meldingsstrømmen, hvert
+  minutt mens fanen er synlig, og med en gang oppgavelisten endrer seg.
+
+Vakten er `the_notification_centre_lists_waiting_agent_questions`
+(`integrasjon.rs`): spørsmålet listes for admin, ikke for en ansatt uten
+retten (sett feile med vakten fjernet), ikke for maskinen, og er borte
+når det er besvart. Verifisert i nettleseren mot en lokal API: bjella,
+menymarkøren, fanemarkøren og velkomstmeldingen, og alle tre tømmes når
+spørsmålet besvares.
+
 #### Fortsatt ikke gjort
 
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives, så et svar
   dukker opp i ett stykke. Det merkes mest på en lang oppgave.
-- **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
-  hva som er nytt siden sist.
 
 ### 8.6 Agenten opprettes i portalen (levert 2026-10-29)
 
