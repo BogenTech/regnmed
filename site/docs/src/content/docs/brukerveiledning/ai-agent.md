@@ -7,7 +7,7 @@ sidebar:
 
 Du kan la din egen AI-modell arbeide i selskapet ditt, som ansatt eller som regnskapsfører. **Regnmed hoster ingen modell og selger ingen tokens.** Du bringer agenten og nøklene, og regnmed stiller skinnen. Det holder personvern, regning og ansvar der de hører hjemme.
 
-Teknisk oppsett står i [dokumentasjon for utviklere](/utviklere/). Her er det du som eier selskapet trenger å vite.
+Teknisk oppsett står i [dokumentasjon for utviklere](/developers/). Her er det du som eier selskapet trenger å vite.
 
 ## En agent er en bruker
 

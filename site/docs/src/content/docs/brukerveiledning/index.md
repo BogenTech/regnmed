@@ -50,5 +50,5 @@ Det som er bygget og det som ikke er det, står uttrykkelig i hver veiledning. D
 
 ## Trenger du mer detaljer?
 
-- Skal du koble til regnmed fra et annet system eller en agent, finner du det under [For utviklere](/utviklere/).
+- Skal du koble til regnmed fra et annet system eller en agent, finner du det under [For utviklere](/developers/).
 - Hvordan hver garanti i systemet er bygget og testet, står i [Teknisk dokumentasjon](/teknisk/).

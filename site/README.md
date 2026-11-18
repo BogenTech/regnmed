@@ -19,7 +19,7 @@ cd site/docs && npm ci && npm run dev
 
 `docs/` imports the audit-facing `../docs/*.md` as "Teknisk dokumentasjon" at every build
 (`site/docs/scripts/import-technical.mjs`; the copy is gitignored). `brukerveiledning/` and
-`utviklere/` are written by hand. Screenshots: `site/screens/README.md`.
+`developers/` (also translated to English under `en/`) are written by hand. Screenshots: `site/screens/README.md`.
 
 ## One-time setup
 

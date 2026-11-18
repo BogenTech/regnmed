@@ -11,7 +11,7 @@ hero:
       link: /brukerveiledning/
       icon: right-arrow
     - text: API for utviklere
-      link: /utviklere/
+      link: /developers/
       variant: minimal
 ---
 
@@ -32,7 +32,7 @@ For bedriftseiere, regnskapsførere og revisorer. Oppgaver steg for steg: først
 
 Autentisering med `client_credentials`, tilgang og roller, API-referanse, MCP-server for agenter og hvordan du verifiserer en hovedbok selv.
 
-[Til utviklerdokumentasjonen →](/utviklere/)
+[Til utviklerdokumentasjonen →](/developers/) ([in English](/en/developers/))
 
 </div>
 <div>
