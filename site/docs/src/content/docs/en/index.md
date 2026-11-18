@@ -8,10 +8,10 @@ hero:
     file: ../../../assets/logo.svg
   actions:
     - text: Developer introduction
-      link: /en/utviklere/
+      link: /en/developers/
       icon: right-arrow
     - text: Get started with the API
-      link: /en/utviklere/kom-i-gang/
+      link: /en/developers/getting-started/
       variant: minimal
 ---
 
@@ -23,7 +23,7 @@ hero:
 
 Authenticate with `client_credentials`, understand access and roles, call the API, connect an agent over MCP, and verify a ledger without trusting us. This section is available in English.
 
-[Developer documentation →](/en/utviklere/)
+[Developer documentation →](/en/developers/)
 
 </div>
 <div>

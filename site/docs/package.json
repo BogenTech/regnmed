@@ -7,7 +7,8 @@
     "predev": "npm run sync",
     "prebuild": "npm run sync",
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/prune-fallbacks.mjs",
+    "check": "node scripts/check-translations.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
