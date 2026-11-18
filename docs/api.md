@@ -93,6 +93,9 @@ endepunktene når noe selskaps hovedbok.
 | `/platform/overview` | GET |
 | `/platform/subscriptions` | GET |
 | `/platform/settings` | GET PUT |
+| `/platform/plans` | GET |
+| `/platform/plans/{slug}` | PUT |
+| `/platform/plans/{slug}/prices` | POST |
 | `/platform/companies` | GET |
 | `/platform/companies/{company_id}` | GET |
 | `/platform/companies/{company_id}/settings` | PUT |
@@ -114,6 +117,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/accounts` | GET POST |
 | `/companies/{company_id}/accounts/{account_number}` | PUT |
 | `/companies/{company_id}/accounts/{account_number}/reskontro` | PUT |
+| `/pricing` | GET |
 | `/companies/{company_id}/anchors` | GET |
 | `/companies/{company_id}/anchors/verify` | GET |
 | `/companies/{company_id}/assets` | GET POST |

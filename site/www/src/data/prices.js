@@ -1,10 +1,14 @@
-// Single source for the price list shown on www. Not yet in force: billing still runs
-// Basis 49 / Standard 99 (docs/abonnement.md). Shape mirrors what the admin-managed
-// plan list will serve, so the pages can switch to the API without markup changes.
-export const IN_FORCE = false;
-export const PLANS = [
-  { slug: "liten", name: "Liten", price: 49, vouchers: "ca. 150", audience: "For holdingselskap, enkeltpersonforetak og selskap med lite aktivitet", features: ["Alle funksjoner", "Lønn for 1 ansatt", "Dokumentasjon som support"] },
-  { slug: "standard", name: "Standard", price: 129, vouchers: "ca. 1 500", featured: true, audience: "For aktive små og mellomstore bedrifter", features: ["Alle funksjoner", "Lønn for opptil 5 ansatte", "Support på e-post"] },
-  { slug: "stor", name: "Stor", price: 299, vouchers: "ca. 10 000", audience: "For selskap med mye aktivitet", features: ["Alle funksjoner", "Lønn for opptil ca. 25 ansatte", "Prioritert support", "Høyere kapasitet for API og agenter (planlagt)"] },
-];
-export const FROM = Math.min(...PLANS.map((p) => p.price));
+// Fallback price list, used only when the API cannot be reached at build time (local dev,
+// an API blip, or an API that does not serve /pricing yet). It is the prisvedtak IN FORCE
+// (docs/abonnement.md), never a proposal: a failed fetch must not publish unapproved prices.
+// The live source is the platform console (Planer og priser) via GET /pricing; see
+// data/pricing.js. Same shape as the API.
+export const FALLBACK = {
+  plans: [
+    { slug: "basis", name: "Basis", kind: "plan", available: true, audience: "Selvbetjent", featured: false, voucher_limit: null, employee_limit: null, features: ["Alle funksjoner", "Dokumentasjon som support"], price_ore_per_month: 4900, in_force: true, upcoming: null },
+    { slug: "standard", name: "Standard", kind: "plan", available: true, audience: "Med e-postsupport", featured: true, voucher_limit: null, employee_limit: null, features: ["Alle funksjoner", "Support på e-post"], price_ore_per_month: 9900, in_force: true, upcoming: null },
+  ],
+  addons: [
+    { slug: "bank", name: "Bankkobling", kind: "addon", available: false, audience: "Henter bankbevegelsene automatisk i stedet for fra fil", featured: false, voucher_limit: null, employee_limit: null, features: [], price_ore_per_month: null, in_force: false, upcoming: null },
+  ],
+};

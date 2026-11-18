@@ -525,6 +525,12 @@ stamdata:
   innsettings-bare rader, nyeste per nøkkel): i dag ikonstilen i
   portalmenyen, **låst globalt** av systemadmin og servert alle via det
   åpne `/portal-config`. Verdien valideres mot stilene portalen kan.
+- `GET /platform/plans`, `PUT /platform/plans/{slug}`,
+  `POST /platform/plans/{slug}/prices` — pakker, tilleggstjenester og
+  priser (migrasjon 0093, docs/abonnement.md §7). Støtte leser, **bare
+  systemadmin endrer**; en pris kan aldri datert bakover og aldri
+  redigeres, bare erstattes av en ny rad. Det åpne `GET /pricing`
+  serverer det som er listet.
 
 Identitetsdata (navn/e-post) eies av IdP-en og speiles hit ved
 innlogging — regnmed redigerer dem aldri (neste innlogging ville

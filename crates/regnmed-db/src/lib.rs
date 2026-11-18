@@ -44,6 +44,7 @@ pub mod opening;
 pub mod payments;
 pub mod payroll;
 pub mod period;
+pub mod plans;
 pub mod platform;
 pub mod product;
 pub mod rates;

@@ -21,6 +21,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -607,4 +608,49 @@ mod tests {
         let stranger = json!({ "id": "in_3" });
         assert_eq!(invoice_subscription(&stranger), "");
     }
+}
+
+/// The public price list (no token): the listed plans and add-ons with the
+/// price that applies today and the next dated change. This is what the
+/// marketing site reads at build time, so the console is the one place
+/// packages and prices are edited.
+pub async fn pricing(State(state): State<AppState>) -> Result<Response, ApiError> {
+    const TTL: std::time::Duration = std::time::Duration::from_secs(30);
+    let json = |body: String| {
+        (
+            [
+                ("cache-control", "public, max-age=300"),
+                ("content-type", "application/json"),
+            ],
+            body,
+        )
+            .into_response()
+    };
+    if let Some((at, body)) = PRICING_CACHE.lock().unwrap().as_ref()
+        && at.elapsed() < TTL
+    {
+        return Ok(json(body.clone()));
+    }
+    let today = chrono::Utc::now().date_naive();
+    let all = regnmed_db::plans::public_pricing(&state.pool, today).await?;
+    let (plans, addons): (Vec<_>, Vec<_>) = all.into_iter().partition(|p| p.kind == "plan");
+    let body = serde_json::json!({
+        "currency": "NOK",
+        "vat": "excluded",
+        "plans": plans,
+        "addons": addons,
+    });
+    let body = body.to_string();
+    *PRICING_CACHE.lock().unwrap() = Some((std::time::Instant::now(), body.clone()));
+    Ok(json(body))
+}
+
+/// The serialized public price list, kept for a short while per process: the endpoint
+/// is unauthenticated and reads the whole price table. A console edit clears it here;
+/// other replicas catch up within the TTL.
+static PRICING_CACHE: std::sync::Mutex<Option<(std::time::Instant, String)>> =
+    std::sync::Mutex::new(None);
+
+pub fn invalidate_pricing_cache() {
+    *PRICING_CACHE.lock().unwrap() = None;
 }

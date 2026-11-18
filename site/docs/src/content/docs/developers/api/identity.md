@@ -63,6 +63,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/firms/{firm_id}/requests/{request_id}/decision` | — |
 | GET | `/health` | åpen |
 | GET | `/me` | — |
+| GET | `/pricing` | åpen |
 | GET | `/registry/enheter/{orgnumber}` | — |
 | GET | `/terms` | åpen |
 | GET | `/terms/versions` | åpen |

@@ -13,6 +13,7 @@
   import Card from "./Card.svelte";
   import Ikon from "./Ikon.svelte";
   import PlattformSelskap from "./PlattformSelskap.svelte";
+  import PlattformPlaner from "./PlattformPlaner.svelte";
 
   const systemadmin = $derived(me.plattform?.rolle === "systemadmin");
 
@@ -24,6 +25,7 @@
       ["selskaper", "Selskaper", "selskaper"],
       ["byraer", "Byråer", "byraer"],
       ["brukere", "Brukere", "brukere"],
+      ["planer", "Planer og priser", "abonnementer"],
       ...(systemadmin
         ? [
             ["abonnementer", "Abonnementer", "abonnementer"],
@@ -54,6 +56,8 @@
       else if (fane === "kunder") rader = (await api("/platform/customers" + q)).kunder;
       else if (fane === "medlemmer") rader = (await api("/platform/members")).medlemmer;
       else if (fane === "innstillinger") rader = await api("/platform/settings");
+      // Planer-fanen henter selv; [] slipper den forbi lastesnurren.
+      else if (fane === "planer") rader = [];
     } catch (error) {
       rader = [];
       toast(error.message, false);
@@ -204,7 +208,7 @@
         }}
       />
     {:else}
-    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer" && fane !== "innstillinger"}
+    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer" && fane !== "innstillinger" && fane !== "planer"}
       <form class="mb-4 flex gap-2" onsubmit={sokSubmit}>
         <input
           class="input input-sm w-full max-w-xs"
@@ -479,6 +483,8 @@
           </tbody>
         </table>
       </Card>
+    {:else if fane === "planer"}
+      <PlattformPlaner {systemadmin} />
     {:else if fane === "innstillinger"}
       <Card title="Innstillinger — hele plattformen">
         <p class="text-sm opacity-70 mb-3">

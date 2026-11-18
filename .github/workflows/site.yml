@@ -9,6 +9,9 @@ on:
     paths: ["site/**", "docs/**", "images/logo/**", ".github/workflows/site.yml"]
   pull_request:
     paths: ["site/**", "docs/**", ".github/workflows/site.yml"]
+  # The price list is read from the API at build time, so rebuild now and then.
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -32,6 +35,8 @@ jobs:
           node site/docs/scripts/check-translations.mjs
       - name: Build www
         working-directory: site/www
+        env:
+          PRICING_URL: https://api.regnmed.no/pricing
         run: npm ci && npm run build
       - name: Build docs
         working-directory: site/docs

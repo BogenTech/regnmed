@@ -332,14 +332,46 @@ beskjeden, **serveren er sperren**.
   etterpå, stillhet etter det, gjenoppretting nøyaktig én gang når
   betalingen er matchet — og at en OPPSIGELSE aldri gjenopprettes.
 
-## Forslag under vurdering: planer etter størrelse (#279)
+## 7. Pakker, tillegg og priser i konsollen
 
-**Ikke i kraft.** PRISVEDTAK 2026-07-28 (Basis 49, Standard 99) gjelder fortsatt, og det er det
-`abonnement_pris` og faktureringen bruker. Forslaget i #279 skiller planene på størrelse i
-stedet for supportkanal, siden Basis og Standard bare skilte på e-postsupport og alle valgte
-Basis: Liten 49 / Standard 129 / Stor 299 kr per måned etter antall bilag i året (ca. 150 /
-1 500 / 10 000), myke grenser, ingen funksjon låst. Nettsiden viser forslaget med en tydelig
-merknad om at det ikke er innført. Før det tas i bruk må avgjøres: hva som skjer med
-eksisterende abonnement (grandfathering), grensene og hvordan de måles og varsles, og om
-pioner- og årspris skal finnes. Planer og priser skal etter hvert redigeres i plattformkonsollen
-og serveres derfra, så denne seksjonen erstattes av beslutningen når den er tatt.
+Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
+(fanen «Planer og priser»), ikke i kode eller migrasjoner.
+
+- **Pakke** (`subscription_plan`, migrasjon 0093): navn, målgruppe, grenser
+  (bilag per år, ansatte i lønn), punktliste, om den vises på prissiden.
+  Innsettings-bare versjoner, nyeste rad per `slug` gjelder, `set_by` navngir
+  hvem. `basis` og `standard` er sådd fra prisvedtaket 2026-07-28.
+- **Tilleggstjeneste** (`kind = 'addon'`): kjøpes på toppen av en pakke. Første er
+  `bank` (direkte bankkobling, #70), som er listet som «kommer»
+  (`available = false`) uten pris, og kan ikke bestilles før den virker. Flere
+  legges til i konsollen etter hvert.
+- **Pris** er fortsatt `abonnement_pris` (§4): daterte, innsettings-bare rader.
+  Konsollen kan bare legge til en rad som gjelder fra i dag eller senere, med en
+  kilde, så fakturering som slår opp pris etter dato aldri får en gammel måned
+  omskrevet. En pakke er «i kraft» når den har en månedspris som gjelder i dag,
+  og «kommer» når første pris er datert fram i tid.
+- **En ny pris for en pakke som selskaper er på, endrer hva de betaler**, siden
+  fakturering slår opp pris etter dato. Konsollen viser derfor hvor mange selskaper
+  som er på pakken, og API-et krever `confirm_existing` når det er noen. Grandfathering
+  er gratis bare for en ny `slug`. Typen (pakke eller tillegg) til en `slug` kan ikke
+  endres etter første versjon.
+- **Grensene er beskrivende.** Ingenting måler eller håndhever dem ennå. De
+  finnes slik at prissiden og konsollen sier det samme, og slik at den dagen
+  håndhevingen bygges leser den tallet kunden ble vist. Det samme gjelder at
+  kjøp av en tilleggstjeneste ennå ikke er bygget som dekningsrad.
+- **Offentlig**: `GET /pricing` (åpent) gir listede pakker og tillegg med dagens
+  pris og neste daterte endring. Svaret mellomlagres 30 sekunder per prosess og nullstilles ved hver endring.
+  Nettsiden leser det ved bygg og bygges på nytt hver sjette time (faller tilbake til
+  prisvedtaket som gjelder, aldri til et forslag, hvis API-et ikke svarer), så en endring i konsollen vises der innen få timer.
+
+### Forslag under vurdering: planer etter størrelse (#279)
+
+**Ikke i kraft før de legges inn i konsollen.** PRISVEDTAK 2026-07-28 (Basis 49,
+Standard 99) gjelder, og er det faktureringen bruker. Forslaget i #279 skiller
+pakkene på størrelse i stedet for supportkanal, siden Basis og Standard bare
+skilte på e-postsupport og alle valgte Basis: Liten 49 / Standard 129 / Stor 299 kr
+per måned etter bilag i året (ca. 150 / 1 500 / 10 000), myke grenser, ingen
+funksjon låst. Før det tas i bruk må avgjøres: hva som skjer med eksisterende
+abonnement (grandfathering), grensene og hvordan de måles og varsles, og om pioner-
+og årspris skal finnes. Når beslutningen er tatt, skrives den her og pakkene legges
+inn i konsollen med en dato.
