@@ -199,14 +199,28 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
             && k["path"].as_str().unwrap().contains("/bokfor")),
         "de endrende kallene er logget: {log}"
     );
-    let (_, listing) = request(
-        &state,
-        "GET",
-        &format!("{base}/integrations"),
-        &admin_token,
-        None,
-    )
-    .await;
+    // The day counter is bumped from the same detached task, so it is
+    // polled for the same reason (CI read 2 of 3 on 2026-11-18).
+    let mut listing = serde_json::Value::Null;
+    for _ in 0..50 {
+        listing = request(
+            &state,
+            "GET",
+            &format!("{base}/integrations"),
+            &admin_token,
+            None,
+        )
+        .await
+        .1;
+        if listing["integrasjoner"][0]["kall_i_dag"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 3
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     let entry = &listing["integrasjoner"][0];
     assert_eq!(entry["navn"], "Nettbutikken");
     assert_eq!(entry["access"], "bokforing");
