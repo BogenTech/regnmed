@@ -248,25 +248,6 @@
           standard: "",
           hjelp: "Lagres kryptert og vises aldri igjen.",
         },
-        // Only for an agent registered with its OWN client_id: one made
-        // with «Ny agent» has its secret already, and nobody should be
-        // asked for something they were never given.
-        ...(i.klient_lagret
-          ? []
-          : [
-              {
-                navn: "klient_hemmelighet",
-                etikett: "Klienthemmelighet fra regnid",
-                type: "password",
-                standard: "",
-                valgfri: true,
-                hjelp:
-                  "Denne agenten ble registrert med egen klient (" +
-                  i.client_id +
-                  "), så regnmed trenger hemmeligheten til den for å kjøre agenten selv. " +
-                  "Har du den ikke, lag heller en ny agent med «Ny agent» — den får alt automatisk.",
-              },
-            ]),
       ],
       {
         melding:
@@ -361,7 +342,7 @@
             </div>
             <div class="text-xs opacity-70">
               {rolleNavn(i.access)}{i.system_prompt ? ", med egne instrukser" : ""}.
-              {#if i.llm}Modell: {i.llm.leverandor} {i.llm.modell}.{#if i.aktiv && !i.klient_lagret}{" "}<span class="text-warning">Mangler klienthemmelighet, så den kan ikke kjøre ennå.</span
+              {#if i.llm}Modell: {i.llm.leverandor} {i.llm.modell}.{#if i.aktiv && !i.klient_lagret}{" "}<span class="text-warning">Kan ikke kjøre ennå: velg «Bytt modell» og lagre, så ordner regnmed resten.</span
                   >{/if}{:else}Kjører hos dere selv.{/if}
               {#if i.aktiv}{i.kall_i_dag} kall i dag, høyst {i.rate_limit_min} i minuttet.{/if}
               {#if !i.aktiv && i.revoked_by}Trukket av {i.revoked_by}.{/if}

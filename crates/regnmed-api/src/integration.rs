@@ -184,6 +184,45 @@ pub struct AgentRequest {
     api_key: Option<String>,
 }
 
+/// Creates a fresh machine identity in regnid and returns its client_id
+/// and secret -- the one step a customer cannot do for themselves
+/// (docs/agent.md §8.6). regnmed's own provisioning secret is the only
+/// system-wide credential; each agent still gets an identity of its own.
+async fn provision_identity(state: &AppState, name: &str) -> Result<(String, String), ApiError> {
+    let Some(cfg) = state.regnid.as_ref() else {
+        return Err(ApiError::BadRequest(
+            "denne installasjonen kan ikke opprette agentidentiteter selv — \
+             oppgi en client_id fra påloggingstjenesten (docs/agent.md §8.6)"
+                .into(),
+        ));
+    };
+    // The secret has to be stored sealed, so refuse before creating
+    // anything we would then have to throw away.
+    if state.sealing_key.is_none() {
+        return Err(ApiError::BadRequest(
+            "vertsagenter er ikke satt opp på denne installasjonen \
+             (AGENT_SEALING_KEY mangler)"
+                .into(),
+        ));
+    }
+    let client_id = format!("agent-{}", Uuid::now_v7().simple());
+    let client = regnmed_gov::regnid::Regnid::new(
+        cfg.base_url
+            .as_deref()
+            .unwrap_or_else(|| state.verifier.issuer()),
+        &cfg.client_id,
+        &cfg.client_secret,
+    )
+    .create_machine_client(
+        &client_id,
+        name.trim(),
+        state.verifier.audience().unwrap_or_default(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok((client.client_id, client.client_secret))
+}
+
 /// Creates an agent in one call: identity, access, face, instructions
 /// and model (docs/agent.md §8.6).
 ///
@@ -225,38 +264,8 @@ pub async fn create_agent(
     let (client_id, secret) = match oppgitt {
         Some(client_id) => (client_id.to_string(), None),
         None => {
-            let Some(cfg) = state.regnid.as_ref() else {
-                return Err(ApiError::BadRequest(
-                    "denne installasjonen kan ikke opprette agentidentiteter selv — \
-                     oppgi en client_id fra påloggingstjenesten (docs/agent.md §8.6)"
-                        .into(),
-                ));
-            };
-            // The secret has to be stored sealed, so refuse before
-            // creating anything we would then have to throw away.
-            if state.sealing_key.is_none() {
-                return Err(ApiError::BadRequest(
-                    "vertsagenter er ikke satt opp på denne installasjonen \
-                     (AGENT_SEALING_KEY mangler)"
-                        .into(),
-                ));
-            }
-            let client_id = format!("agent-{}", Uuid::now_v7().simple());
-            let client = regnmed_gov::regnid::Regnid::new(
-                cfg.base_url
-                    .as_deref()
-                    .unwrap_or_else(|| state.verifier.issuer()),
-                &cfg.client_id,
-                &cfg.client_secret,
-            )
-            .create_machine_client(
-                &client_id,
-                request.name.trim(),
-                state.verifier.audience().unwrap_or_default(),
-            )
-            .await
-            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-            (client.client_id, Some(client.client_secret))
+            let (client_id, secret) = provision_identity(&state, &request.name).await?;
+            (client_id, Some(secret))
         }
     };
 
@@ -496,12 +505,6 @@ pub struct LlmRequest {
     /// [`llm`] reports whether one is set, never what it is.
     #[serde(rename = "api_nokkel")]
     api_key: String,
-    /// The agent's own OIDC client secret (docs/agent.md §8.3). The
-    /// worker needs it to get a token AS THE AGENT -- there is no
-    /// second way into the ledger for it. Optional here so a key can be
-    /// replaced without re-entering this one.
-    #[serde(rename = "klient_hemmelighet")]
-    client_secret: Option<String>,
 }
 
 /// The provider this agent uses, and whether a key is stored. The key
@@ -538,6 +541,29 @@ pub async fn llm(
     })))
 }
 
+async fn set_model(
+    state: &AppState,
+    key: &regnmed_core::secret::SealingKey,
+    company_id: Uuid,
+    integration_id: Uuid,
+    request: &LlmRequest,
+    by: &str,
+) -> Result<(), ApiError> {
+    regnmed_db::agentllm::sett_llm(
+        &state.pool,
+        key,
+        company_id,
+        integration_id,
+        &request.supplier,
+        request.base_url.as_deref(),
+        &request.model,
+        &request.api_key,
+        by,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))
+}
+
 /// Records the provider and seals the key. Takes `IntegrasjonAdmin`:
 /// this decides which company the ledger's contents are sent to, and
 /// whose bill they are sent on.
@@ -560,33 +586,85 @@ pub async fn sett_llm(
                 .into(),
         ));
     };
-    regnmed_db::agentllm::sett_llm(
-        &state.pool,
-        key,
-        company_id,
-        integration_id,
-        &request.supplier,
-        request.base_url.as_deref(),
-        &request.model,
-        &request.api_key,
-        person.display(),
-    )
-    .await
-    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    if let Some(secret) = request.client_secret.as_deref().map(str::trim)
-        && !secret.is_empty()
-    {
-        regnmed_db::agentllm::sett_klienthemmelighet(
+    // The worker logs in AS the agent, so it needs the agent's own
+    // secret. An agent made with «Ny agent» has it; one registered by
+    // hand with its own client_id never gave it to us, and regnid keeps
+    // only a hash. Nobody should be asked for it: the agent is moved to
+    // a fresh identity in the background -- same name, face, role and
+    // instructions -- and the old identity's grant is ended LAST, so a
+    // failure on the way leaves the old agent exactly as it was.
+    let mut integration_id = integration_id;
+    if !regnmed_db::agentllm::har_klienthemmelighet(&state.pool, integration_id).await? {
+        let old = regnmed_db::list_integrations(&state.pool, company_id)
+            .await?
+            .into_iter()
+            .find(|g| g.integration_id == integration_id && g.valid_to.is_none())
+            .ok_or(ApiError::NotFound)?;
+        let (client_id, secret) = provision_identity(&state, &old.name).await?;
+        let new_id = regnmed_db::grant_integration(
             &state.pool,
-            key,
             company_id,
-            integration_id,
-            secret,
+            &client_id,
+            &old.name,
+            old.contact.as_deref(),
+            &old.access,
+            person.display(),
         )
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        // Everything after the new grant either completes or ends that
+        // grant again: a model the provider check refuses (a bad
+        // address, say) must not leave a second, half-made agent.
+        let moved = async {
+            regnmed_db::update_integration(
+                &state.pool,
+                company_id,
+                new_id,
+                &old.name,
+                old.contact.as_deref(),
+                old.avatar_color.as_deref(),
+                old.avatar_icon.as_deref(),
+                old.system_prompt.as_deref(),
+            )
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+            regnmed_db::agentllm::sett_klienthemmelighet(
+                &state.pool,
+                key,
+                company_id,
+                new_id,
+                &secret,
+            )
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+            set_model(&state, key, company_id, new_id, &request, person.display()).await?;
+            Ok::<(), ApiError>(())
+        }
+        .await;
+        if let Err(e) = moved {
+            let _ =
+                regnmed_db::revoke_integration(&state.pool, company_id, new_id, person.display())
+                    .await;
+            return Err(e);
+        }
+        regnmed_db::revoke_integration(&state.pool, company_id, integration_id, person.display())
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+        integration_id = new_id;
+    } else {
+        set_model(
+            &state,
+            key,
+            company_id,
+            integration_id,
+            &request,
+            person.display(),
+        )
+        .await?;
     }
-    Ok(Json(json!({ "leverandor": request.supplier })))
+    Ok(Json(
+        json!({ "leverandor": request.supplier, "integration_id": integration_id }),
+    ))
 }
 
 /// Turns the agent's model off. The row stays: which provider held this
