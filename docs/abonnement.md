@@ -331,3 +331,15 @@ beskjeden, **serveren er sperren**.
   purringen, dekningen avsluttet på dag 30 og logget, inkassovarselet
   etterpå, stillhet etter det, gjenoppretting nøyaktig én gang når
   betalingen er matchet — og at en OPPSIGELSE aldri gjenopprettes.
+
+## Forslag under vurdering: planer etter størrelse (#279)
+
+**Ikke i kraft.** PRISVEDTAK 2026-07-28 (Basis 49, Standard 99) gjelder fortsatt, og det er det
+`abonnement_pris` og faktureringen bruker. Forslaget i #279 skiller planene på størrelse i
+stedet for supportkanal, siden Basis og Standard bare skilte på e-postsupport og alle valgte
+Basis: Liten 49 / Standard 129 / Stor 299 kr per måned etter antall bilag i året (ca. 150 /
+1 500 / 10 000), myke grenser, ingen funksjon låst. Nettsiden viser forslaget med en tydelig
+merknad om at det ikke er innført. Før det tas i bruk må avgjøres: hva som skjer med
+eksisterende abonnement (grandfathering), grensene og hvordan de måles og varsles, og om
+pioner- og årspris skal finnes. Planer og priser skal etter hvert redigeres i plattformkonsollen
+og serveres derfra, så denne seksjonen erstattes av beslutningen når den er tatt.

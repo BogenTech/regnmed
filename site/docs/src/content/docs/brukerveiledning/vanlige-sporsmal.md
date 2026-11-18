@@ -53,7 +53,7 @@ En invitasjon gir en person tilgang til selskapet ditt. Et oppdrag gir et byrå 
 ## Pris og drift
 
 **Hva koster det?**
-49 kr per måned (Basis) eller 99 kr (Standard), per selskap og uten mva. Alt er inkludert, og brukere koster aldri.
+49 kr per måned (Basis) eller 99 kr (Standard), per selskap og uten mva. Nye planer etter størrelse er foreslått, men ikke innført ([priser](https://www.regnmed.no/priser/)). Alt er inkludert, og brukere koster aldri.
 
 **Hva skjer hvis jeg slutter å betale?**
 Etter prøvetid, frist og sperre stopper det som endrer regnskapet. Lesing, eksport og styring virker alltid.
