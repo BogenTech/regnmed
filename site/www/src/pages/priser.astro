@@ -1,36 +1,56 @@
 ---
 import Base from "../layouts/Base.astro";
-import { APP, DOCS } from "../data/links.js";
+import { APP } from "../data/links.js";
 ---
-<Base title="Priser" description="Basis 49 kr og Standard 99 kr i måneden. Alt er inkludert i begge, og brukere koster aldri ekstra. 30 dagers prøveperiode.">
+<Base title="Priser" description="Tre planer etter hvor mange bilag du har: Liten 49 kr, Standard 129 kr og Stor 299 kr i måneden. Alle funksjoner er med i alle, og brukere koster aldri ekstra.">
   <section class="pagehead"><div class="wrap">
     <p class="eyebrow">Priser</p>
-    <h1 style="margin-top:1rem;max-width:16ch">Én pris. Alt er med.</h1>
-    <p class="lede">Ingen moduler å kjøpe til, ingen pris per bruker. Du betaler for selskapet, og får hele systemet.</p>
+    <h1 style="margin-top:1rem;max-width:16ch">Du betaler etter størrelse, ikke etter funksjoner.</h1>
+    <p class="lede">Alle funksjonene er med i alle planene, og brukere koster aldri ekstra. Planen følger hvor mange bilag selskapet bokfører i året.</p>
   </div></section>
   <section class="section"><div class="wrap stack" style="--s:2.5rem">
-    <div class="plans">
+    <div class="notice">
+      <b>Nye planer innføres snart.</b> Til da gjelder dagens abonnement for selskap som registrerer seg, og prisene under er det de flytter til. Avtalte priser endres ikke i løpet av en løpende periode.
+    </div>
+    <div class="plans three">
       <div class="plan">
-        <h3>Basis</h3><div class="price num">49<small> kr/mnd per selskap</small></div>
-        <p class="quiet">Selvbetjent</p>
-        <ul><li>Alle funksjoner</li><li>Ubegrenset antall brukere</li><li>Dokumentasjon som support</li><li>SAF-T-eksport når du vil</li></ul>
+        <h3>Liten</h3><div class="price num">49<small> kr/mnd per selskap</small></div>
+        <p class="cap">opptil ca. 150 bilag i året</p>
+        <ul><li>For holdingselskap, enkeltpersonforetak og selskap med lite aktivitet</li><li>Alle funksjoner</li><li>1 ansatt i lønn</li><li>Dokumentasjon som support</li></ul>
         <p style="margin-top:1.5rem"><a class="btn primary" href={APP}>Prøv i 30 dager</a></p>
       </div>
       <div class="plan feature">
-        <h3>Standard</h3><div class="price num">99<small> kr/mnd per selskap</small></div>
-        <p style="opacity:.8">Med e-postsupport</p>
-        <ul><li>Alt i Basis</li><li>Support på e-post</li></ul>
+        <h3>Standard</h3><div class="price num">129<small> kr/mnd per selskap</small></div>
+        <p class="cap">opptil ca. 1 500 bilag i året</p>
+        <ul><li>For aktive små og mellomstore bedrifter</li><li>Alle funksjoner</li><li>Lønn for opptil 5 ansatte</li><li>API og AI-agenter</li><li>Support på e-post</li></ul>
         <p style="margin-top:1.5rem"><a class="btn" style="border-color:var(--paper);color:var(--paper)" href={APP}>Prøv i 30 dager</a></p>
       </div>
+      <div class="plan">
+        <h3>Stor</h3><div class="price num">299<small> kr/mnd per selskap</small></div>
+        <p class="cap">opptil ca. 10 000 bilag i året</p>
+        <ul><li>For selskap med mye aktivitet</li><li>Alle funksjoner</li><li>Lønn for opptil ca. 25 ansatte</li><li>Høyere grenser for API og agenter</li><li>Prioritert support</li></ul>
+        <p style="margin-top:1.5rem"><a class="btn primary" href={APP}>Prøv i 30 dager</a></p>
+      </div>
     </div>
+    <p class="quiet">Priser er per selskap per måned, uten mva. Over 10 000 bilag i året gir vi tilbud.</p>
+
     <div class="prose narrow">
+      <h2>Tillegg: bankkobling</h2>
+      <p>Direkte bankkobling, så bankbevegelsene hentes automatisk i stedet for fra fil, blir et tillegg til <b>29 kr i måneden</b> per selskap. Det er under det konkurrentene tar for samme ting. <b>Den er ikke bygget ennå</b>, og tilbys ikke før den virker. I dag importerer du kontoutskrift som fil, og det er med i alle planer.</p>
+
+      <h2>Hva grensene betyr</h2>
+      <p>Grensene er myke. Passerer du antallet bilag, flytter vi deg til neste plan med 30 dagers varsel. Vi stopper aldri bokføringen din på grunn av en grense, og lesing og eksport er alltid åpent.</p>
+
       <h2>Hva som skjer når prøveperioden går ut</h2>
       <p>Prøveperioden er 30 dager fra selskapet opprettes. Etter det følger en frist på 14 dager før tilgangen til å endre stanses.</p>
       <p><b>Vi tar aldri hovedboken som gissel.</b> Et utløpt abonnement stopper nye bokføringer og andre endringer. Det stopper aldri lesing, eksport eller styring av selskapet, slik at du alltid får ut dataene dine, i SAF-T, og kan rydde opp i tilgangene.</p>
+
       <h2>Regnskapsførere og byråer</h2>
-      <p>Å registrere et byrå er gratis. Fakturering skjer per selskap, så klientene dine betaler for sin egen hovedbok, og byrået har ingen pris per klient å forholde seg til.</p>
+      <p>Å registrere et byrå er gratis. Fakturering skjer per selskap, så klientene dine betaler for sin egen hovedbok etter størrelse, og byrået har ingen pris per klient å forholde seg til.</p>
+
       <h2>Betaling</h2>
       <p>Du får faktura med KID fra regnmed, bokført i vår egen hovedbok med samme motor som kundene våre bruker. Kortbetaling med automatisk fornying er bygget og slås på i produksjon når den er ferdig utprøvd.</p>
+
       <h2>Selvhosting</h2>
       <p>Koden er åpen under AGPL-3.0, og du kan kjøre regnmed selv. Da trenger du ingen lisens fra oss, men må tilby din egen kildekode videre til brukerne dine. <a href="/apen-kildekode/">Les mer</a>.</p>
     </div>

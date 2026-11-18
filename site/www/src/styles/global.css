@@ -183,6 +183,11 @@ figcaption { margin-top: 1rem; color: var(--ink-2); font-size: 0.95rem; max-widt
 .plan .price small { font: 500 1rem var(--sans); letter-spacing: 0; opacity: .75; }
 .plan ul { padding-left: 1.1rem; margin: 1.25rem 0 0; }
 .plan li + li { margin-top: 0.45rem; }
+.plans.three { grid-template-columns: repeat(3, 1fr); max-width: none; }
+.plan .cap { margin-top: 0.4rem; color: var(--ink-2); font: 500 0.88rem var(--mono); }
+.plan.feature .cap { color: inherit; opacity: .75; }
+.notice { border: 1.5px solid var(--ink); border-left-width: 6px; border-radius: 6px; padding: 1rem 1.25rem; background: var(--paper-2); max-width: 52rem; }
+@media (max-width: 860px) { .plans.three { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
 
 /* status list */
