@@ -57,6 +57,10 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 6. ER DU USIKKER, SPØR. Kall `oppgave_svar` med status "sporsmal" og skriv
    presist hva du trenger svar på. Det er et riktig svar, ikke en innrømmelse.
    Å gjette er alltid galt, også når gjetningen er god.
+   Spørsmålet leses av et menneske, ofte i en e-post: skriv det med vanlige
+   ord, uten feltnavn og verktøynavn. Skriv «hvilken dato satsen skal gjelde
+   fra», ikke `valid_from`; nevn ikke hvilket verktøy du vil kalle; og skriv
+   beløp i kroner, ikke i øre.
 
 SLIK ARBEIDER DU:
 
@@ -298,6 +302,30 @@ pub fn prompt(name: &str) -> Option<String> {
         .map(|r| format!("{GROUND_RULES}\n{}", r.text))
 }
 
+/// The first English word standing alone in Norwegian prose, if any --
+/// the shape a mechanical rename leaves inside a prompt (CLAUDE.md, #134).
+/// `Code spans` are exempt: they name tools and wire fields, which belong
+/// in a prompt. Public so the worker's own prompt text (`regnmed-agent`)
+/// is held to the same list.
+#[doc(hidden)]
+pub fn english_in_prose(text: &str) -> Option<&'static str> {
+    const ENGLISH: &[&str] = &[
+        "new", "role", "name", "date", "code", "call", "error", "active", "source", "message",
+        "note", "number", "month", "day", "year", "step", "company", "title", "percent",
+        "response", "answer", "amount", "account", "invoice", "reply", "text",
+    ];
+    let prose = text.split('`').step_by(2).collect::<Vec<_>>().join(" ");
+    let words: Vec<String> = prose
+        .split(|c: char| !c.is_alphanumeric() && c != '-')
+        .map(|w| w.to_lowercase())
+        .collect();
+    ENGLISH.iter().copied().find(|bad| {
+        words
+            .iter()
+            .any(|w| w == bad || w.ends_with(&format!("-{bad}")))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,6 +358,8 @@ mod tests {
             let full = prompt(r.name).unwrap();
             assert!(full.contains("velg ikke dagens"), "{}", r.name);
             assert!(full.contains("TIMER ER IKKE BOKFØRING"), "{}", r.name);
+            let flat = full.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(flat.contains("uten feltnavn og verktøynavn"), "{}", r.name);
         }
         // A general rule lost to the procedure with a real model: the
         // ansatt agent logged the hours and said nothing. So the rule also
@@ -372,15 +402,6 @@ mod tests {
     /// `bilag_bokfor` are wire names and belong in the prompt.
     #[test]
     fn the_prompts_and_descriptions_stay_norwegian() {
-        // Strip `code spans`: those name tools and wire fields.
-        fn prose(s: &str) -> String {
-            s.split('`').step_by(2).collect::<Vec<_>>().join(" ")
-        }
-        const ENGLISH: &[&str] = &[
-            "new", "role", "name", "date", "code", "call", "error", "active", "source", "message",
-            "note", "number", "month", "day", "year", "step", "company", "title", "percent",
-            "response", "answer", "amount", "account", "invoice",
-        ];
         let mut texts: Vec<(String, String)> = ROLES
             .iter()
             .map(|r| (format!("prompt {}", r.name), prompt(r.name).unwrap()))
@@ -397,17 +418,8 @@ mod tests {
                 .map(|t| (format!("verktoy {}", t.name), t.description.to_string())),
         );
         for (what, text) in texts {
-            let words: Vec<String> = prose(&text)
-                .split(|c: char| !c.is_alphanumeric() && c != '-')
-                .map(|w| w.to_lowercase())
-                .collect();
-            for bad in ENGLISH {
-                assert!(
-                    !words
-                        .iter()
-                        .any(|w| w == bad || w.ends_with(&format!("-{bad}"))),
-                    "{what}: «{bad}» is English -- a rename reached inside the literal"
-                );
+            if let Some(bad) = english_in_prose(&text) {
+                panic!("{what}: «{bad}» is English -- a rename reached inside the literal");
             }
         }
     }

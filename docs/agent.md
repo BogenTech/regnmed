@@ -919,6 +919,16 @@ noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
   så regelen for hvem som varsles står ett sted
   (`regnmed_db::agent_task::question_email`). Svaret er alt lagret når
   e-posten sendes, så en kø som er nede feiler aldri agentens svar.
+- **Spørsmålet skrives for et menneske.** Den første e-posten i prod spurte
+  «Hvilken dato skal timesatsen … gjelde fra (`valid_from`)?» — et feltnavn
+  i en e-post til en eier. Regel 6 i grunnreglene, avslutningsreglene i
+  workeren og `notat`-feltet på `oppgave_svar` sier nå: vanlige ord, ingen
+  feltnavn eller verktøynavn, beløp i kroner. Med en gratismodell ble alle
+  tre spørsmålene i prøvebenken rene etterpå (før: «for å kalle
+  `prosjekt_sats_sett`», beløpet i øre). Samme runde fant «reply med vanlig
+  text» i workerens egne avslutningsregler — #134-skaden, i en fil
+  språkvakten ikke leste. Vakten er nå en delt funksjon
+  (`role::english_in_prose`) som også leser workerens tekst.
 - **Lenken** bygges av `PORTAL_BASE_URL`, som workeren nå også har (prod og
   test); uten den sier e-posten hvor i portalen samtalen står.
 
