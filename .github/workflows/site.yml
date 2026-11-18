@@ -1,0 +1,63 @@
+name: site
+
+# www.regnmed.no  -> this repo's GitHub Pages (source: GitHub Actions)
+# docs.regnmed.no -> BogenTech/regnmed-docs (Pages serves one custom domain per repo),
+#                    pushed with a deploy key kept in the DOCS_DEPLOY_KEY secret.
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/**", "images/logo/**", ".github/workflows/site.yml"]
+  pull_request:
+    paths: ["site/**", "docs/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: "site/*/package-lock.json" }
+      - name: Build www
+        working-directory: site/www
+        run: npm ci && npm run build
+      - name: Build docs
+        working-directory: site/docs
+        run: npm ci && npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site/www/dist }
+      - uses: actions/upload-artifact@v4
+        with: { name: docs-dist, path: site/docs/dist }
+
+  deploy-www:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
+    environment: { name: github-pages, url: "https://www.regnmed.no" }
+    steps:
+      - uses: actions/deploy-pages@v4
+
+  deploy-docs:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: docs-dist, path: dist }
+      - name: Push to regnmed-docs
+        env:
+          KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
+        run: |
+          install -m 600 /dev/null ~/key && printf '%s\n' "$KEY" > ~/key
+          export GIT_SSH_COMMAND="ssh -i $HOME/key -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:BogenTech/regnmed-docs.git out
+          rsync -a --delete --exclude .git dist/ out/
+          touch out/.nojekyll
+          cd out
+          git add -A
+          git -c user.name=site -c user.email=site@regnmed.no commit -m "docs from ${GITHUB_SHA::7}" || exit 0
+          git push

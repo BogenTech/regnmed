@@ -1,0 +1,59 @@
+---
+import Base from "../layouts/Base.astro";
+import Shot from "../components/Shot.astro";
+import { DOCS } from "../data/links.js";
+const groups = [
+  { id: "salg", title: "Salg og betaling", shot: ["faktura", "Fakturaoversikten", "regnmed.no/faktura"], items: [
+    ["Faktura og kreditnota", "Fortløpende fakturanummer i samme transaksjon som bokføringen, KID fra fakturanummeret, og kreditnota som reverserer til opprinnelig kurs. Utstedte fakturaer kan aldri endres.", "faktura"],
+    ["Repeterende faktura og tilbud", "Maler som genererer vanlige fakturaer, og tilbud som blir ordre og så faktura, med egen nummerserie per type.", "faktura"],
+    ["PDF og EHF", "Faktura-PDF etter bokføringsforskriften lagres som bilagsvedlegg. EHF (PEPPOL BIS 3.0) lages av de låste fakturalinjene og valideres mot UBL-skjemaet.", "ehf"],
+    ["Purring og betalingsoppfølging", "Aldersfordeling, purregebyr og forsinkelsesrente etter satsene som gjelder den dagen, og stegreglene i inkassoforskriften. Inkasso overlates til bevillingshavere.", "purring"],
+    ["Flervaluta", "Dagskurs fra Norges Bank, agio bokført i samme transaksjon som matchen, og urealisert kursregulering med motbilag.", "valuta"],
+  ]},
+  { id: "kjop", title: "Bilag og kjøp", shot: ["bilag", "Bilagsinnboksen med forslag til bokføring", "regnmed.no/bilag"], items: [
+    ["Bilagsinnboks", "Last opp et kvitteringsfoto fra mobilen eller send på e-post. Innholdet er uforanderlig, og bokføring skjer i én transaksjon som kopierer dokumentet inn som vedlegg.", "bilagsinnboks"],
+    ["Forslag fra dokumentet", "Et forslag leses fra EHF, PDF-tekstlag eller tekst, og hvert felt viser begrunnelsen. Kontrollsifrene i orgnummer, KID og kontonummer avgjør. Det finnes ingen automatisk bokføring.", "bilagstolkning"],
+    ["E-post inn", "Hvert selskap får en adresse som er vanskelig å gjette og som kan roteres. Ukjent avsender havner i karantene og blir aldri stille importert eller stille kastet.", "epost-inn"],
+    ["Attestering", "Valgfri policy med beløpsgrense og utpekt attestant. Fire øyne på penger ut håndheves i transaksjonen.", "attestering"],
+    ["Utlegg og kjøregodtgjørelse", "Uforanderlige krav med kvittering, statens satser på kjøredatoen, og kvitteringen følger bilaget.", "utlegg"],
+  ]},
+  { id: "regnskap", title: "Regnskap og rapporter", shot: ["hovedbok", "Kontoplan og kontospesifikasjon", "regnmed.no/hovedbok"], items: [
+    ["Hovedbok og kontoplan", "Standardkatalogen fra Skatteetaten og egne kontoer. Manuelt bilag går gjennom de samme vaktene, og saldoen er alltid en sum.", "hovedbok"],
+    ["Lovpålagte spesifikasjoner", "Bokføringsspesifikasjon, kontospesifikasjon, saldobalanse, resultat og balanse etter NS 4102.", "rapporter"],
+    ["Periodelåsing og årsavslutning", "Låsehistorikken er innsettings-bar, og gjenåpning er administratorhandling som loggføres. Resultatdisponering og skattekostnad føres som ett vanlig bilag.", "perioder"],
+    ["Budsjett og avvik", "Budsjettet er en mening og behandles slik: versjoner, og en avviksrapport som alltid navngir planen den måler mot.", "budsjett"],
+    ["Dimensjoner og prosjekt", "Avdeling og prosjekt er med i hash-kjeden, og resultat kan filtreres per dimensjon. Prosjektlønnsomhet er en ren sammenstilling.", "dimensjoner"],
+    ["Anleggsregister og periodisering", "Lineære avskrivninger som vanlige bilag, skattemessig saldo per gruppe, og fordeling av kostnad og inntekt over månedene de hører til.", "anlegg"],
+  ]},
+  { id: "mva", title: "MVA og Skatteetaten", shot: ["mva", "MVA-spesifikasjon per termin", "regnmed.no/mva"], items: [
+    ["MVA-koder og satser", "Fullstendig kodeliste og daterte satser, så SAF-T-linjer bærer satsen som gjaldt på bilagsdatoen.", "mva"],
+    ["Terminordninger og frister", "To-månedlige, årlige og primærnæring med leveringsfrister, også særregelen i 3. termin.", "mva"],
+    ["Mva-melding", "Rendres som skjema-validert XML fra spesifikasjonen. Innsending til Skatteetaten testes mot testmiljøet.", "mva-melding"],
+    ["SAF-T", "Eksport i Financial 1.30 validert mot Skatteetatens XSD, og import fra andre systemer.", "saft"],
+  ]},
+  { id: "bank", title: "Bank", shot: ["bank", "Avstemming mot bankutskrift", "regnmed.no/bank"], items: [
+    ["Avstemming", "camt.053 og CSV med layout lest fra overskriftene. Ved uavgjort går det til manuell behandling, aldri til gjetting.", "bank"],
+    ["Betalingsliste", "pain.001 som skaper en betalingsfil, og oppgjør som lukker reskontroen. Opprett og godkjenn er separate handlinger.", "betaling"],
+    ["OCR-giro", "Fastbreddeformat med kontrollposter. Ugyldige KID flagges, de avvises ikke.", "bank"],
+  ]},
+  { id: "folk", title: "Lønn, timer og aksjer", shot: ["lonn", "Lønnskjøring", "regnmed.no/lonn"], items: [
+    ["Lønn", "Fastlønn og timelønn fra låste timer, tabelltrekk, arbeidsgiveravgift per sone og feriepenger, bokført som ett bilag. Funksjoner modellen mangler nektes høylytt.", "lonn"],
+    ["Timeføring", "Et ukegrid som regneark, heltallsminutter, satser per prosjekt på sin dato og månedslås. Fakturerbare timer uten sats nektes.", "timer"],
+    ["Aksjeeierbok og RF-1086", "Aksjeeierboken er lovpålagt og eierandelen beregnes alltid fra hendelser. Fødselsnummer ligger bare i innsendingen, aldri i boken.", "aksjonaer"],
+  ]},
+];
+---
+<Base title="Funksjoner" description="Alt regnmed gjør: hovedbok, faktura, bilag, mva, bank, lønn, timer, aksjeeierbok og rapporter, bygget mot lovtekstene de svarer til.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">Funksjoner</p>
+    <h1 style="margin-top:1rem;max-width:19ch">Bygget mot lovteksten, ikke mot en funksjonsliste.</h1>
+    <p class="lede">Hver funksjon har et fagdokument som sier hva den garanterer, hvor garantien håndheves og hvor den testes. Lenkene under går dit.</p>
+  </div></section>
+  {groups.map((g) => (
+    <section class="section" id={g.id}><div class="wrap stack" style="--s:2.5rem">
+      <h2>{g.title}</h2>
+      <Shot slug={g.shot[0]} alt={g.shot[1]} url={g.shot[2]} />
+      <table class="register"><tbody>{g.items.map(([t, d, doc]) => <tr><td>{t}</td><td>{d}</td><td><a href={`${DOCS}/teknisk/${doc}/`}>{doc}</a></td></tr>)}</tbody></table>
+    </div></section>
+  ))}
+</Base>

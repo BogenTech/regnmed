@@ -1,0 +1,59 @@
+---
+import Base from "../layouts/Base.astro";
+import LedgerDemo from "../components/LedgerDemo.astro";
+import { DOCS } from "../data/links.js";
+---
+<Base title="Etterprøvbarhet" description="Tre lag hindrer at hovedboken endres, og forankring utenfor vår kontroll gjør selv en omskriving i databasen synlig. Slik etterprøver du det selv.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">Etterprøvbarhet</p>
+    <h1 style="margin-top:1rem;max-width:18ch">Ikke stol på oss. Verifiser.</h1>
+    <p class="lede">Et regnskapssystem som sier at det er trygt, har ikke sagt noe. Vi bygger regnmed slik at påstanden kan kontrolleres av deg, regnskapsføreren din og en revisor, uten vår hjelp.</p>
+  </div></section>
+
+  <section class="section"><div class="wrap stack" style="--s:2.5rem">
+    <div class="stack narrow"><h2>Tre lag, som hver for seg hindrer endring</h2></div>
+    <div class="layers">
+      <div><span class="n">1</span><div><h3>Domenet</h3><p>Det finnes ingen operasjon som endrer et bilag. En feil rettes med et nytt, reverserende bilag som peker tilbake på det opprinnelige. Rettingen er synlig i bokføringen, som god bokføringsskikk krever.</p></div></div>
+      <div><span class="n">2</span><div><h3>Databasen</h3><p>Triggere avviser UPDATE, DELETE og TRUNCATE på bilag og posteringer. Applikasjonens databasebruker har bare INSERT og SELECT på hovedboken. Selv en feil i koden får ikke skrevet om historikken.</p></div></div>
+      <div><span class="n">3</span><div><h3>Kryptografien</h3><p>Hvert bilag lagrer SHA-256 av forrige bilags hash og eget innhold. Endrer noen en rad, også direkte i databasen, stemmer ikke lenger hash-en, og alle bilag etter følger med. <code class="inline">regnmed verify-ledger</code> regner kjeden om fra første bilag.</p></div></div>
+    </div>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem">
+      <h2>Prøv kjeden selv</h2>
+      <p class="lede">Dette er en forenklet versjon som regnes ut i nettleseren din.</p>
+      <p>Poenget er det samme som i regnmed: hash-en til et bilag avhenger av alt som kom før. Du kan ikke endre én rad uten at resten av kjeden røper det.</p>
+    </div>
+    <div><LedgerDemo /></div>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem">
+      <p class="eyebrow">Mot den som har full tilgang</p>
+      <h2>Forankring utenfor vår kontroll</h2>
+    </div>
+    <div class="stack prose" style="--s:1rem">
+      <p style="margin-top:0">En kjede som en databaseadministrator regner om fra bunnen, ser gyldig ut. Derfor tar regnmed hver natt et Merkle-snapshot av toppen på alle kjedene og publiserer rotverdien på et åpent endepunkt, <code>/anchors</code>. Roten kan i tillegg bevitnes med et RFC 3161-tidsstempel fra en uavhengig tidsstemplingstjeneste.</p>
+      <p>Det betyr at en omskriving i etterkant ikke bare kan mistenkes. Den kan bevises, av hvem som helst som har lagret en tidligere rot. Hvert selskap får et inklusjonsbevis mot roten, og revisjonsrapporten kontrollerer at forankrede kjedetopper fortsatt ligger på den levende kjeden.</p>
+      <p><a href={`${DOCS}/teknisk/anchoring/`}>Teknisk beskrivelse av forankringen →</a></p>
+    </div>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem">
+      <p class="eyebrow">Tilgang</p>
+      <h2>Autorisasjon bor i databasen, ikke i tokens</h2>
+    </div>
+    <div class="stack prose">
+      <p style="margin-top:0">Innloggingen skjer hos en egen identitetstjeneste. Tokenet beviser hvem du er, og regnmed avgjør hva du får gjøre ut fra person, byrå, oppdrag og selskap. Har du ikke tilgang til et selskap, svarer systemet 404 og ikke 403, så ingen lærer at selskapet finnes.</p>
+      <p>Det finnes ingen plattformadministrator med bakdør inn i en hovedbok. Leverandørroller kan lese stamdata på tvers, men aldri bilag, og hver slik tilgang er tidsbegrenset, loggført og synlig for selskapet det gjelder.</p>
+      <p><a href={`${DOCS}/teknisk/auth/`}>Tilgangsmatrisen, maskinsjekket mot koden →</a></p>
+    </div>
+  </div></section>
+
+  <section class="section dark"><div class="wrap cta-band">
+    <h2>Alt dette er åpen kildekode. Les den, kjør den, kontroller den.</h2>
+    <div class="btn-row"><a class="btn primary" href="/apen-kildekode/">Om åpen kildekode</a><a class="btn" href={`${DOCS}/utviklere/`}>Verifiser selv: for utviklere</a></div>
+  </div></section>
+</Base>

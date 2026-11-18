@@ -1,0 +1,33 @@
+---
+import Base from "../layouts/Base.astro";
+const rows = [
+  ["live", "Hovedbok, bilag og rapporter", "Hash-kjedet hovedbok, forankring, periodelåsing, saldobalanse, resultat og balanse, verifikasjonsrapport."],
+  ["live", "Faktura, purring og tilbud", "Kreditnota, repeterende faktura, KID, PDF, EHF-dokument ut og inn, e-postutsendelse, purregebyr og rente."],
+  ["live", "MVA", "Koder, terminordninger, spesifikasjon og mva-melding som skjema-validert XML."],
+  ["live", "Bank og betaling", "Import av camt.053 og bank-CSV, avstemming, betalingsliste som pain.001."],
+  ["live", "Lønn", "Fastlønn og timelønn, tabelltrekk fra Skatteetatens rutine, arbeidsgiveravgift, feriepenger og lønnsslipp."],
+  ["live", "Timer, utlegg, anlegg, valuta, lager, budsjett", "Alt med innsettings-bare spor og de samme vaktene som hovedboken."],
+  ["live", "Migrering", "SAF-T inn (også flere årsfiler), kontakter og åpne poster som CSV, SAF-T ut."],
+  ["live", "Byrå, oppdrag og roller", "Verifisert autorisasjon, oppdrag, medlemmer, egne roller og attestering."],
+  ["live", "AI-agenter", "MCP-server, roller, oppgavekø. Ferdigbygde binærer i utgivelsene mangler ennå, så serveren bygges fra kildekoden."],
+  ["test", "Innsending til Skatteetaten og Altinn", "Mva-melding, a-melding og aksjonærregisteroppgave bygges og valideres mot etatens skjema og testes mot testmiljøet via Maskinporten. Produksjonsinnsending følger når tilgangen er gitt."],
+  ["test", "Kortbetaling av abonnement", "Bygget og testet mot ekte Stripe-trafikk i testmiljøet. Er ikke slått på i produksjon ennå, så abonnementet faktureres med KID."],
+  ["no", "Aksjonærregisteroppgaven, alle transaksjonstyper", "Vi leverer de kodene Skatteetaten har publisert, og nekter høylytt for resten i stedet for å gjette en feil transaksjonstype."],
+  ["no", "E-faktura via aksesspunkt", "Dokumentet er klart. Selve transporten krever en leverandøravtale. Lovkravet fra 1. januar 2027 er kartlagt."],
+  ["no", "Skattemelding og næringsspesifikasjon", "Kartlagt og ikke bygget. Innsending krever ID-porten."],
+  ["no", "Bank-API (PSD2)", "Filimport først. Direkte bankkobling kommer senere."],
+  ["no", "Avvikende regnskapsår", "Bevisst ikke bygget. Målgruppen er kalenderår, og antakelsen er gjort eksplisitt i koden."],
+];
+const label = { live: "Virker", test: "Under utprøving", no: "Ikke ennå" };
+---
+<Base title="Status og veikart" description="Hva regnmed gjør i dag, hva som testes, og hva som ikke er bygget ennå.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">Status og veikart</p>
+    <h1 style="margin-top:1rem;max-width:18ch">Det som virker, og det som ikke gjør det.</h1>
+    <p class="lede">Et regnskapssystem som overdriver, taper tilliten sin første gang noen sjekker. Her står det ærlig.</p>
+  </div></section>
+  <section class="section"><div class="wrap">
+    <ul class="status">{rows.map(([k, t, d]) => <li><span class={`tag ${k}`}>{label[k]}</span><div><b>{t}</b><span class="d">{d}</span></div></li>)}</ul>
+    <p class="quiet" style="margin-top:2rem">Den detaljerte planen med milepæler ligger i <a href="https://github.com/BogenTech/regnmed/blob/main/ROADMAP.md">ROADMAP.md</a>.</p>
+  </div></section>
+</Base>

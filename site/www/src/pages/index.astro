@@ -1,0 +1,168 @@
+---
+import Base from "../layouts/Base.astro";
+import Shot from "../components/Shot.astro";
+import LedgerDemo from "../components/LedgerDemo.astro";
+import { APP, DOCS } from "../data/links.js";
+const areas = [
+  ["Hovedbok og bilag", "Fortløpende bilagsnummer uten hull, korrigering med reverserende bilag, periodelåsing og vedlegg med oppbevaringsplikt.", "bokføringsloven §§ 4, 13"],
+  ["Faktura og purring", "Kreditnota, repeterende faktura, tilbud og ordre, KID, PDF og EHF. Purregebyr og forsinkelsesrente beregnes etter satsene som gjelder.", "bokføringsforskriften § 5-1-1"],
+  ["MVA", "Standard mva-koder, daterte satser, alle terminordninger og mva-melding som skjema-validert XML.", "merverdiavgiftsloven § 15-1"],
+  ["Bank", "Import av camt.053 og bank-CSV, avstemming der uavgjort aldri gjettes, og betalingsliste som pain.001.", "bokføringsforskriften § 3-1"],
+  ["Lønn", "Fastlønn og timelønn, tabelltrekk, arbeidsgiveravgift per sone, feriepenger, lønnsslipp og a-melding.", "ferieloven § 10"],
+  ["Bilagsinnboks", "Last opp et kvitteringsfoto eller send på e-post. Forslag til bokføring leses fra dokumentet, og et menneske godkjenner.", "bokføringsloven § 11"],
+  ["Rapporter", "Saldobalanse, resultat og balanse per NS 4102, kontospesifikasjon, nøkkelstall, budsjettavvik og prosjektlønnsomhet.", "regnskapsloven § 6-1"],
+  ["Migrering", "SAF-T inn fra Tripletex, Fiken, Visma og Conta, også en fil per regnskapsår. SAF-T ut når som helst.", "SAF-T Financial 1.30"],
+];
+---
+<Base title="regnmed" description="Regnskapssystem for det norske markedet med en hovedbok som ikke kan endres i det stille. Du, regnskapsføreren og revisoren kan hver for seg bevise det.">
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Regnskapssystem for Norge · åpen kildekode</p>
+      <h1 style="margin-top:1.25rem;max-width:15ch">Regnskap du kan <em>etterprøve</em>.</h1>
+      <p class="lede">I regnmed er hovedboken en journal som bare kan føres videre. Hvert bilag bærer en hash av alt som kom før. Du, regnskapsføreren din og revisoren kan hver for seg bevise at ingenting er endret. Du trenger ikke stole på oss.</p>
+      <div class="btn-row">
+        <a class="btn primary" href={APP}>Prøv gratis i 30 dager</a>
+        <a class="btn" href="/sikkerhet/">Slik etterprøver du selv</a>
+      </div>
+      <small>Fra 49 kr i måneden for hele systemet, etter 30 dagers prøveperiode.</small>
+    </div>
+  </section>
+
+  <div class="wrap" style="padding-bottom:clamp(2.5rem,5vw,4rem)">
+    <Shot slug="oversikt" alt="Oversikten i regnmed: nøkkelstall, likviditet og kommende frister" eager />
+  </div>
+
+  <div class="wrap">
+    <div class="facts">
+      <div><b>3 lag</b><span>som hindrer endring: domene, database og kryptografi</span></div>
+      <div><b>SHA-256</b><span>over hvert bilag og kjeden før det, verifisert fra første bilag</span></div>
+      <div><b>0 hull</b><span>i bilagsnummerserien, også når en postering feiler</span></div>
+      <div><b>AGPL-3.0</b><span>hele kildekoden er åpen, du kan lese hvordan hovedboken føres</span></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="wrap split">
+      <div class="stack" style="--s:1.25rem">
+        <p class="eyebrow">Prøv selv</p>
+        <h2>Endre et beløp. Se hva som skjer.</h2>
+        <p class="lede">Dette er en liten, ekte hash-kjede som regnes ut i nettleseren din. Endrer du ett tall, stemmer ikke hash-en lenger, og alle bilag etter det følger med.</p>
+        <p>I regnmed finnes det ingen knapp for å endre et bokført bilag. Databasen avviser det, og selv med full tilgang til databasen kan en omskriving ikke skjules: kjeden verifiseres fra første bilag, og toppen av den forankres hver natt utenfor vår kontroll.</p>
+        <a href="/sikkerhet/">Les hvordan de tre lagene virker →</a>
+      </div>
+      <div><LedgerDemo /><p class="quiet" style="margin-top:.8rem">Forenklet illustrasjon. Det ekte formatet er en kanonisk serialisering som er festet av en gyllen test.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="funksjoner">
+    <div class="wrap stack" style="--s:2.5rem">
+      <div class="stack narrow">
+        <p class="eyebrow">Alt det loven krever, og litt til</p>
+        <h2>Bokføring uten omveier</h2>
+        <p class="lede">Hver del er bygget mot lovteksten den svarer til, og dokumentert slik at en revisor kan følge den.</p>
+      </div>
+      <table class="register">
+        <thead><tr><th>Område</th><th>Hva det gjør</th><th>Hjemmel</th></tr></thead>
+        <tbody>{areas.map(([a, d, h]) => <tr><td>{a}</td><td>{d}</td><td>{h}</td></tr>)}</tbody>
+      </table>
+      <p><a href="/funksjoner/">Se alle funksjoner →</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="bedrift">
+    <div class="wrap stack" style="--s:2.5rem">
+      <div class="stack narrow">
+        <p class="eyebrow">Én hovedbok, tre roller</p>
+        <h2>Alle jobber i den samme, levende hovedboken</h2>
+      </div>
+      <div class="cols">
+        <article>
+          <h3>Bedriften</h3>
+          <p>Fakturer, ta bilde av kvitteringer og se likviditeten din. Godkjenn det regnskapsføreren foreslår.</p>
+          <ul><li>Egen bedrift registreres fra Enhetsregisteret</li><li>Ingen pris per bruker</li><li>Eksport til SAF-T når du vil</li></ul>
+          <a class="more" href={APP}>Kom i gang →</a>
+        </article>
+        <article>
+          <h3>Regnskapsføreren</h3>
+          <p>Ha alle klientene dine på ett sted, med tilgang som følger oppdraget og stopper samme dag det avsluttes.</p>
+          <ul><li>Verifisert autorisasjon mot Finanstilsynet</li><li>Gratis for byrået</li><li>Medlemmer og roller per byrå</li></ul>
+          <a class="more" href="/regnskapsforere/">For regnskapsførere →</a>
+        </article>
+        <article>
+          <h3>Revisoren</h3>
+          <p>Skrivebeskyttet tilgang og en rapport som kontrollerer kjeden, vedleggene og forankringen med ett klikk.</p>
+          <ul><li>Etterprøv uten å stole på oss</li><li>Deterministisk tekstrapport</li><li>Prosedyre for uavhengig gjennomgang</li></ul>
+          <a class="more" href="/revisorer/">For revisorer →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack" style="--s:3rem">
+      <div class="split">
+        <div class="stack" style="--s:1.25rem">
+          <p class="eyebrow">Rapporten revisoren åpner først</p>
+          <h2>Verifikasjonsrapporten viser avvik, aldri en pen forside</h2>
+          <p class="lede">Over ti kontroller kjører mot ekte data: kjeden regnes om, vedleggenes hash sjekkes, forankringene sammenlignes, reskontro stemmes av mot hovedbok og balansen må gå opp. Feil blir avviksfunn, de skjules ikke.</p>
+          <a href="/revisorer/">Slik bruker revisoren den →</a>
+        </div>
+        <Shot slug="revisjon" alt="Revisorens verifikasjonsrapport med kontroller og resultater" url="regnmed.no/rapporter/revisjon" />
+      </div>
+    </div>
+  </section>
+
+  <section class="section dark">
+    <div class="wrap split">
+      <div class="stack" style="--s:1.25rem">
+        <p class="eyebrow" style="color:#a9bdc6">Ta med din egen agent</p>
+        <h2>En AI-agent er en bruker som alle andre</h2>
+        <p class="lede" style="color:#a9bdc6">Bruk din egen modell som regnskapsfører eller ansatt. Vi hoster ingen modell og selger ingen tokens. Agenten får en rolle i selskapet og de samme vaktene som et menneske, med ett tak til: den kan foreslå, men et menneske godkjenner.</p>
+        <p><a href="/agenter/">Slik virker det →</a></p>
+      </div>
+      <div class="stack" style="--s:1rem">
+        <ol style="margin:0;padding-left:1.2rem;display:grid;gap:.8rem;color:#e9efe9">
+          <li><b>Agenten foreslår.</b> Bilagsforslag med begrunnelse per felt.</li>
+          <li><b>Et menneske attesterer.</b> Alt en maskin bokfører krever godkjenning, uansett beløp.</li>
+          <li><b>Sporet står igjen.</b> Hvem ba om hva, og hva agenten svarte, er innsettings-bart og leses av revisor.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap split">
+      <div class="stack" style="--s:1.25rem">
+        <p class="eyebrow">Pris</p>
+        <h2>Alt inkludert. Brukere koster aldri.</h2>
+        <p class="lede">To planer, ingen moduler å legge til. Forskjellen er supportkanalen, aldri funksjonene.</p>
+        <p><a href="/priser/">Se priser og vilkår →</a></p>
+      </div>
+      <div class="plans" style="grid-template-columns:1fr 1fr">
+        <div class="plan"><h3>Basis</h3><div class="price num">49<small> kr/mnd</small></div><p class="quiet">Selvbetjent. Dokumentasjonen er supporten.</p></div>
+        <div class="plan feature"><h3>Standard</h3><div class="price num">99<small> kr/mnd</small></div><p style="opacity:.8">Alt i Basis, og e-postsupport.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack" style="--s:2rem">
+      <div class="stack narrow">
+        <p class="eyebrow">Ærlig om status</p>
+        <h2>Det som virker, og det som ikke gjør det ennå</h2>
+        <p class="lede">Vi skriver heller hva som mangler enn å late som. Mva-melding, a-melding og aksjonærregisteroppgave er bygget og validert mot Skatteetatens skjema, og testes mot deres testmiljø. Produksjonsinnsending følger når tilgangen er gitt.</p>
+      </div>
+      <p><a href="/status/">Se hele statuslisten →</a></p>
+    </div>
+  </section>
+
+  <section class="section dark">
+    <div class="wrap cta-band">
+      <h2>Prøv regnmed i 30 dager. Bokfør noe, og prøv å endre det.</h2>
+      <div class="btn-row">
+        <a class="btn primary" href={APP}>Opprett konto</a>
+        <a class="btn" href={DOCS}>Les dokumentasjonen</a>
+      </div>
+    </div>
+  </section>
+</Base>

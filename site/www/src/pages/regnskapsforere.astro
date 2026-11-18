@@ -1,0 +1,37 @@
+---
+import Base from "../layouts/Base.astro";
+import Shot from "../components/Shot.astro";
+import { APP, DOCS } from "../data/links.js";
+---
+<Base title="For regnskapsførere" description="Samle klientporteføljen på ett sted, med tilgang som følger oppdraget. Gratis for byrået, og hver klient får sin egen hovedbok du kan etterprøve.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">For regnskapsførere og byråer</p>
+    <h1 style="margin-top:1rem;max-width:17ch">Klientene dine i samme hovedbok som dem selv.</h1>
+    <p class="lede">Ingen overføring av filer frem og tilbake. Klienten laster opp et bilde, du ser det med en gang, og dere jobber i den samme, levende hovedboken.</p>
+    <div class="btn-row" style="margin-top:2rem"><a class="btn primary" href={APP}>Registrer byrå</a><a class="btn" href={`${DOCS}/brukerveiledning/`}>Les veiledningen</a></div>
+  </div></section>
+
+  <div class="wrap"><Shot slug="byra" alt="Byråvisningen med klientliste og forespørsler" url="regnmed.no/byra" eager /></div>
+
+  <section class="section"><div class="wrap cols">
+    <article><h3>Verifisert autorisasjon</h3><p>Et byrå kan bare tilby tjenester i katalogen når autorisasjonen er sjekket mot Finanstilsynets register. Kundene finner byråer de kan stole på, og du slipper å bevise det hver gang.</p></article>
+    <article><h3>Tilgang som følger oppdraget</h3><p>Et oppdrag har omfang og gyldighet. Avsluttes det, stopper tilgangen samme dag, uten at noen må huske å fjerne den. Klienten ser hvem som har tilgang, og hvorfor.</p></article>
+    <article><h3>Byrået styrer sine egne folk</h3><p>Inviter medarbeidere på e-postadresse. Administratorer styrer medlemmer og avgjør oppdragsforespørsler, ansatte ser porteføljen. Siste administrator kan aldri fjerne seg selv.</p></article>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem"><p class="eyebrow">Hver dag i praksis</p><h2>Det du gjør oftest, gjort kort</h2></div>
+    <ul class="prose" style="margin:0;padding-left:1.2rem">
+      <li><b>Bilagsinnboksen.</b> Klienten tar bilde eller sender på e-post. Du får et forslag lest ut av dokumentet, med begrunnelse per felt, og bokfører med ett trykk.</li>
+      <li><b>Attestering.</b> Sett en policy med beløpsgrense og utpekt attestant. Håndhevingen ligger i transaksjonen, ikke i skjermbildet.</li>
+      <li><b>Mva og lønn.</b> Spesifikasjon per termin etter klientens terminordning, og lønnskjøring som ett bilag.</li>
+      <li><b>Bytte av system.</b> SAF-T-import fra Tripletex, Fiken, Visma og Conta, med kontoplanveiviser og avstemming av åpningsbalansen.</li>
+      <li><b>Egen agent.</b> Bruk din egen AI-modell som medarbeider. <a href="/agenter/">Les om agenter</a>.</li>
+    </ul>
+  </div></section>
+
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem"><p class="eyebrow">Pris</p><h2>Gratis for byrået</h2></div>
+    <div class="prose"><p style="margin-top:0">All fakturering er per selskap, og byrået har ingen egen abonnementspris. Klientene betaler 49 eller 99 kroner i måneden for sin egen hovedbok, og brukere koster aldri ekstra. <a href="/priser/">Se priser</a>.</p></div>
+  </div></section>
+</Base>

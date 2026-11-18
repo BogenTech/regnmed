@@ -1,0 +1,12 @@
+---
+// A real portal screenshot in a minimal frame; picks the dark variant under prefers-color-scheme.
+interface Props { slug: string; alt: string; url?: string; mobile?: boolean; eager?: boolean }
+const { slug, alt, url = "regnmed.no", eager = false } = Astro.props;
+---
+<div class="shot">
+  <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>{url}</span></div>
+  <picture>
+    <source srcset={`/screens/${slug}-dark.png`} media="(prefers-color-scheme: dark)" />
+    <img src={`/screens/${slug}-light.png`} alt={alt} width="1440" height="900" loading={eager ? "eager" : "lazy"} decoding="async" />
+  </picture>
+</div>

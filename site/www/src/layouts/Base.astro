@@ -1,0 +1,103 @@
+---
+import "@fontsource-variable/schibsted-grotesk";
+import "@fontsource-variable/jetbrains-mono";
+import "../styles/global.css";
+import { APP, DOCS, REPO } from "../data/links.js";
+interface Props { title: string; description: string; path?: string }
+const { title, description, path = Astro.url.pathname } = Astro.props;
+const full = title === "regnmed" ? "regnmed – regnskap du kan etterprøve" : `${title} – regnmed`;
+const url = new URL(path, "https://www.regnmed.no").href;
+const nav = [
+  ["/funksjoner/", "Funksjoner"],
+  ["/sikkerhet/", "Etterprøvbarhet"],
+  ["/regnskapsforere/", "Regnskapsførere"],
+  ["/revisorer/", "Revisorer"],
+  ["/priser/", "Priser"],
+];
+const here = Astro.url.pathname;
+---
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{full}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={url} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1b23" media="(prefers-color-scheme: dark)" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="nb_NO" />
+    <meta property="og:title" content={full} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={url} />
+    <meta property="og:image" content="https://www.regnmed.no/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a href="#main" class="sr" style="position:absolute;left:-9999px">Hopp til innhold</a>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="/"><img src="/brand/regnmed-merke.svg" alt="" width="28" height="28" />regnmed</a>
+        <nav class="nav" aria-label="Hovedmeny">
+          {nav.map(([h, l]) => <a href={h} aria-current={here.startsWith(h) ? "page" : undefined}>{l}</a>)}
+          <a href={DOCS}>Dokumentasjon</a>
+          <a class="btn primary" href={APP}>Logg inn</a>
+        </nav>
+        <details class="menu">
+          <summary>Meny</summary>
+          <nav aria-label="Mobilmeny">
+            {nav.map(([h, l]) => <a href={h}>{l}</a>)}
+            <a href={DOCS}>Dokumentasjon</a>
+            <a href={APP}>Logg inn</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+    <main id="main"><slot /></main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div class="stack">
+            <a class="brand" href="/"><img src="/brand/regnmed-merke.svg" alt="" width="28" height="28" />regnmed</a>
+            <p class="quiet" style="max-width:22rem">Regnskapssystem for det norske markedet. Hovedboken kan ikke endres i det stille, og du kan bevise det selv.</p>
+          </div>
+          <div>
+            <h3>Produkt</h3>
+            <ul>
+              <li><a href="/funksjoner/">Funksjoner</a></li>
+              <li><a href="/sikkerhet/">Etterprøvbarhet</a></li>
+              <li><a href="/agenter/">AI-agenter</a></li>
+              <li><a href="/priser/">Priser</a></li>
+              <li><a href="/status/">Status og veikart</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>For deg som er</h3>
+            <ul>
+              <li><a href="/#bedrift">Bedrift</a></li>
+              <li><a href="/regnskapsforere/">Regnskapsfører</a></li>
+              <li><a href="/revisorer/">Revisor</a></li>
+              <li><a href="/apen-kildekode/">Utvikler</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Ressurser</h3>
+            <ul>
+              <li><a href={DOCS}>Brukerveiledning</a></li>
+              <li><a href={`${DOCS}/utviklere/`}>API og integrasjon</a></li>
+              <li><a href={`${DOCS}/teknisk/`}>Teknisk dokumentasjon</a></li>
+              <li><a href={REPO}>Kildekode på GitHub</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="legal">
+          <span>© {new Date().getFullYear()} BogenTech AS</span>
+          <span>Åpen kildekode under AGPL-3.0</span>
+          <span>Nettstedet bruker ingen sporing og ingen informasjonskapsler.</span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

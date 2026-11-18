@@ -1,0 +1,25 @@
+---
+import Base from "../layouts/Base.astro";
+import { DOCS, REPO } from "../data/links.js";
+---
+<Base title="Åpen kildekode" description="regnmed er åpen kildekode under AGPL-3.0. Les hvordan hovedboken føres, kjør den selv, eller bidra og få abonnement.">
+  <section class="pagehead"><div class="wrap">
+    <p class="eyebrow">Åpen kildekode · AGPL-3.0</p>
+    <h1 style="margin-top:1rem;max-width:17ch">Les koden som fører regnskapet ditt.</h1>
+    <p class="lede">Kildekoden er åpen for at kunder, revisorer og sikkerhetsforskere skal kunne se hvordan hovedboken er bygget og kontrollere garantiene vi gir.</p>
+    <div class="btn-row" style="margin-top:2rem"><a class="btn primary" href={REPO}>Kildekode på GitHub</a><a class="btn" href={`${DOCS}/utviklere/`}>Dokumentasjon for utviklere</a></div>
+  </div></section>
+  <section class="section"><div class="wrap cols">
+    <article><h3>Er du kunde</h3><p>Du trenger ingen lisens fra oss. Du abonnerer på tjenesten på regnmed.no, og det er alt.</p></article>
+    <article><h3>Vil du kjøre selv</h3><p>Du kan kjøre og endre regnmed fritt. AGPL-3.0 krever at du gjør den komplette kildekoden tilgjengelig for brukerne dine, også de som bruker den over nettverk.</p></article>
+    <article><h3>Vil du bidra</h3><p>Bidra via pull request. Alle bidragsytere godtar en CLA, og betydelige bidrag kan gi gratis eller rabattert abonnement.</p></article>
+  </div></section>
+  <section class="section"><div class="wrap split">
+    <div class="stack" style="--s:1.25rem"><p class="eyebrow">Under panseret</p><h2>Rust, PostgreSQL og lite av alt annet</h2></div>
+    <div class="prose">
+      <p style="margin-top:0">regnmed er skrevet i Rust og bruker PostgreSQL 18. Pengebeløp er heltall i øre, aldri flyttall. Saldoer er alltid summer over posteringene, aldri lagret tilstand.</p>
+      <p>Systemet er bevisst lite. API-et holder seg under et minnebudsjett på 64 MB, og CI feiler hvis en tjeneste vokser seg for stor. Portalen laster på under 80 KB komprimert. Det holder prisen lav, og det gjør det enkelt å kjøre selv.</p>
+      <p>Hver milepæl oppdaterer <a href={`${DOCS}/teknisk/`}>den tekniske dokumentasjonen</a> i samme endring som koden, slik at dokumentasjonen alltid beskriver det som faktisk er bygget.</p>
+    </div>
+  </div></section>
+</Base>
