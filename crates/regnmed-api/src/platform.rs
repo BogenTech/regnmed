@@ -21,9 +21,10 @@
 //! `platform_member` row; strangers get 404, like everywhere else.
 
 use axum::extract::{Path, Query, Request, State};
+use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -69,6 +70,9 @@ pub fn platform_router(state: AppState) -> Router<AppState> {
         .route("/platform/overview", get(overview))
         .route("/platform/subscriptions", get(list_subscriptions))
         .route("/platform/settings", get(get_settings).put(put_settings))
+        .route("/platform/plans", get(list_plans))
+        .route("/platform/plans/{slug}", put(put_plan))
+        .route("/platform/plans/{slug}/prices", post(post_price))
         .route("/platform/companies", get(list_companies))
         .route("/platform/companies/{company_id}", get(company_detail))
         .route(
@@ -697,4 +701,115 @@ pub async fn firm_platform_access(
     crate::firm_members::require_firm_admin(&state, person.person_id, firm_id).await?;
     let rader = regnmed_db::platform_access_for_firm(&state.pool, firm_id).await?;
     Ok(Json(access_log_json(&rader)))
+}
+
+/// Packages and add-ons with their price history (migration 0093). Support
+/// may look; changing what is sold is systemadmin territory, like the other
+/// customer-facing registers.
+async fn list_plans(
+    State(state): State<AppState>,
+    Extension(_ctx): Extension<PlatformContext>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let plans = regnmed_db::plans::list_plans(&state.pool).await?;
+    Ok(Json(json!({ "plans": plans })))
+}
+
+fn plan_kind() -> String {
+    "plan".into()
+}
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+pub struct PlanRequest {
+    name: String,
+    #[serde(default = "plan_kind")]
+    kind: String,
+    #[serde(default = "yes")]
+    available: bool,
+    #[serde(default)]
+    audience: String,
+    #[serde(default)]
+    featured: bool,
+    #[serde(default)]
+    listed: bool,
+    voucher_limit: Option<i32>,
+    employee_limit: Option<i32>,
+    #[serde(default)]
+    features: Vec<String>,
+    #[serde(default)]
+    sort: i32,
+}
+
+/// A new insert-only version of a plan, or a new plan for a new slug.
+async fn put_plan(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlatformContext>,
+    Path(slug): Path<String>,
+    Json(body): Json<PlanRequest>,
+) -> Result<StatusCode, ApiError> {
+    ctx.require_systemadmin()?;
+    regnmed_db::plans::validate_slug(&slug).map_err(ApiError::BadRequest)?;
+    let input = regnmed_db::plans::PlanInput {
+        name: body.name,
+        kind: body.kind,
+        available: body.available,
+        audience: body.audience,
+        featured: body.featured,
+        listed: body.listed,
+        voucher_limit: body.voucher_limit,
+        employee_limit: body.employee_limit,
+        features: body.features,
+        sort: body.sort,
+    };
+    regnmed_db::plans::validate_input(&input).map_err(ApiError::BadRequest)?;
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, ctx.person_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct PriceRequest {
+    interval: String,
+    /// Øre, an integer: a `year` row is the whole year's amount.
+    price_ore: i64,
+    valid_from: NaiveDate,
+    source: String,
+}
+
+async fn post_price(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlatformContext>,
+    Path(slug): Path<String>,
+    Json(body): Json<PriceRequest>,
+) -> Result<StatusCode, ApiError> {
+    ctx.require_systemadmin()?;
+    use regnmed_db::plans::PriceRefused as R;
+    let today = chrono::Utc::now().date_naive();
+    match regnmed_db::plans::add_price(
+        &state.pool,
+        &slug,
+        &body.interval,
+        body.price_ore,
+        body.valid_from,
+        today,
+        &body.source,
+    )
+    .await?
+    {
+        Ok(()) => Ok(StatusCode::CREATED),
+        Err(why) => Err(ApiError::BadRequest(
+            match why {
+                R::UnknownPlan => "ukjent plan",
+                R::BadInterval => "intervallet må være month eller year",
+                R::Negative => "prisen kan ikke være negativ",
+                R::NoSource => "prisen må ha en kilde (hvorfor den settes)",
+                R::InThePast => "prisen kan ikke gjelde bakover i tid; velg i dag eller senere",
+                R::Duplicate => {
+                    "det finnes allerede en pris for denne planen, dette intervallet og denne dagen"
+                }
+            }
+            .to_string(),
+        )),
+    }
 }

@@ -176,6 +176,8 @@ pub fn router(state: AppState) -> Router {
         // Public by design: root hashes only — every independent copy of
         // a root is one more witness a database rewrite cannot reach.
         .route("/anchors", get(anchor::list_anchors))
+        // Public by design: what is for sale and at what price.
+        .route("/pricing", get(subscription::pricing))
         .route(
             "/companies/{company_id}/anchors",
             get(anchor::company_anchors),

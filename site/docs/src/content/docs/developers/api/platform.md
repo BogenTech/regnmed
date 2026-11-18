@@ -25,6 +25,9 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/platform/members` | plattformrolle |
 | DELETE | `/platform/members/{member_id}` | plattformrolle |
 | GET | `/platform/overview` | plattformrolle |
+| GET | `/platform/plans` | plattformrolle |
+| PUT | `/platform/plans/{slug}` | plattformrolle |
+| POST | `/platform/plans/{slug}/prices` | plattformrolle |
 | GET | `/platform/settings` | plattformrolle |
 | PUT | `/platform/settings` | plattformrolle |
 | GET | `/platform/subscriptions` | plattformrolle |

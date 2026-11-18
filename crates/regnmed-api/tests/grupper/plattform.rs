@@ -734,3 +734,221 @@ async fn the_icon_style_is_validated_and_served_platform_wide() {
     .await;
     assert_eq!(code, StatusCode::OK);
 }
+
+/// Packages and prices (migration 0093): systemadmin edits what is sold,
+/// support only looks, a company admin is a stranger, and a price can
+/// never be dated backwards or edited. The public list shows what applies
+/// today and what is announced.
+#[tokio::test]
+async fn packages_and_prices_are_edited_by_systemadmin_and_served_publicly() {
+    let Some((state, idp, company)) = setup().await else {
+        return;
+    };
+    let (_, sysadmin) = platform_person(&state, &idp, "systemadmin").await;
+    let (_, support) = platform_person(&state, &idp, "support").await;
+
+    // A company admin is a stranger to /platform/plans.
+    let sub = format!("admin|{}", Uuid::new_v4());
+    let admin_id = regnmed_db::ensure_person(&state.pool, &sub, Some("Admin"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin_id, "admin")
+        .await
+        .unwrap();
+    let admin = idp.token(&sub, "Admin");
+    assert_eq!(
+        status(&state, "GET", "/platform/plans", &admin, "").await,
+        StatusCode::NOT_FOUND
+    );
+
+    // Support looks but does not change.
+    assert_eq!(
+        status(&state, "GET", "/platform/plans", &support, "").await,
+        StatusCode::OK
+    );
+    let slug = format!("t{}", &Uuid::new_v4().simple().to_string()[..12]);
+    let plan = |listed: bool, kind: &str, available: bool| {
+        format!(
+            r#"{{"name":"Testpakke","kind":"{kind}","available":{available},"audience":"x","featured":false,"listed":{listed},"voucher_limit":150,"employee_limit":1,"features":["Alle funksjoner"],"sort":900}}"#
+        )
+    };
+    assert_eq!(
+        status(
+            &state,
+            "PUT",
+            &format!("/platform/plans/{slug}"),
+            &support,
+            &plan(false, "plan", true)
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+    let in_a_year = (Utc::now() + Duration::days(365)).date_naive();
+    let price = |from: &str, ore: i64| {
+        format!(r#"{{"interval":"month","price_ore":{ore},"valid_from":"{from}","source":"test"}}"#)
+    };
+    assert_eq!(
+        status(
+            &state,
+            "POST",
+            &format!("/platform/plans/{slug}/prices"),
+            &support,
+            &price(&in_a_year.to_string(), 100)
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+
+    // Validation: a plan cannot be «coming», the slug is strict, a price needs a plan.
+    for (uri, body) in [
+        (
+            format!("/platform/plans/{slug}"),
+            plan(false, "plan", false),
+        ),
+        (
+            format!("/platform/plans/{slug}"),
+            plan(false, "bundle", true),
+        ),
+        (
+            "/platform/plans/Bad_Slug".to_string(),
+            plan(false, "plan", true),
+        ),
+    ] {
+        assert_eq!(
+            status(&state, "PUT", &uri, &sysadmin, &body).await,
+            StatusCode::BAD_REQUEST,
+            "{uri} {body}"
+        );
+    }
+    assert_eq!(
+        status(
+            &state,
+            "POST",
+            &format!("/platform/plans/{slug}/prices"),
+            &sysadmin,
+            &price(&in_a_year.to_string(), 100)
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "no price for a plan that does not exist"
+    );
+
+    // Create it (listed, so the public list shows it) and add prices.
+    assert_eq!(
+        status(
+            &state,
+            "PUT",
+            &format!("/platform/plans/{slug}"),
+            &sysadmin,
+            &plan(true, "addon", false)
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+    let today = Utc::now().date_naive().to_string();
+    let prices = format!("/platform/plans/{slug}/prices");
+    let (code, why) = json_call(
+        &state,
+        "POST",
+        &prices,
+        &sysadmin,
+        &price("2020-01-01", 100),
+    )
+    .await;
+    assert_eq!(
+        code,
+        StatusCode::BAD_REQUEST,
+        "no retroactive prices: {why}"
+    );
+    assert_eq!(
+        status(&state, "POST", &prices, &sysadmin, &price(&today, 2900)).await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        status(&state, "POST", &prices, &sysadmin, &price(&today, 3900)).await,
+        StatusCode::BAD_REQUEST,
+        "one price per plan, interval and day: a price is never edited"
+    );
+    assert_eq!(
+        status(
+            &state,
+            "POST",
+            &prices,
+            &sysadmin,
+            &price(&in_a_year.to_string(), 4900)
+        )
+        .await,
+        StatusCode::CREATED
+    );
+    let no_source =
+        format!(r#"{{"interval":"month","price_ore":1,"valid_from":"{in_a_year}","source":" "}}"#);
+    assert_eq!(
+        status(&state, "POST", &prices, &sysadmin, &no_source).await,
+        StatusCode::BAD_REQUEST
+    );
+
+    // The public list: no bearer, add-ons apart from plans, today's price and the announced one.
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/pricing")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024 * 1024)
+        .await
+        .unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let find = |kind: &str, s: &str| {
+        list[kind]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["slug"] == s)
+            .cloned()
+    };
+    let mine = find("addons", &slug).expect("the listed add-on is public");
+    assert!(find("plans", &slug).is_none(), "an add-on is not a plan");
+    assert_eq!(mine["available"], false, "coming, not for sale");
+    assert_eq!(mine["in_force"], true);
+    assert_eq!(mine["price_ore_per_month"], 2900);
+    assert_eq!(mine["upcoming"]["price_ore_per_month"], 4900);
+    assert_eq!(mine["upcoming"]["valid_from"], in_a_year.to_string());
+    let basis = find("plans", "basis").expect("basis is listed");
+    assert_eq!(
+        basis["price_ore_per_month"], 4900,
+        "the prisvedtak is untouched"
+    );
+
+    // The console shows it with its history; nothing was rewritten.
+    let (_, all) = json_call(&state, "GET", "/platform/plans", &sysadmin, "").await;
+    let row = all["plans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["slug"] == slug)
+        .unwrap();
+    assert_eq!(row["prices"].as_array().unwrap().len(), 2);
+    let tampered = sqlx::query("update subscription_plan set name = 'x' where slug = $1")
+        .bind(&slug)
+        .execute(&state.pool)
+        .await;
+    assert!(tampered.is_err(), "plan versions are append-only");
+
+    // Leave the shared dev database as found: unlist the test add-on.
+    assert_eq!(
+        status(
+            &state,
+            "PUT",
+            &format!("/platform/plans/{slug}"),
+            &sysadmin,
+            &plan(false, "addon", false)
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+}

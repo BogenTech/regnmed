@@ -21,6 +21,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -607,4 +608,21 @@ mod tests {
         let stranger = json!({ "id": "in_3" });
         assert_eq!(invoice_subscription(&stranger), "");
     }
+}
+
+/// The public price list (no token): the listed plans and add-ons with the
+/// price that applies today and the next dated change. This is what the
+/// marketing site reads at build time, so the console is the one place
+/// packages and prices are edited.
+pub async fn pricing(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let today = chrono::Utc::now().date_naive();
+    let all = regnmed_db::plans::public_pricing(&state.pool, today).await?;
+    let (plans, addons): (Vec<_>, Vec<_>) = all.into_iter().partition(|p| p.kind == "plan");
+    let body = serde_json::json!({
+        "currency": "NOK",
+        "vat": "excluded",
+        "plans": plans,
+        "addons": addons,
+    });
+    Ok(([("cache-control", "public, max-age=300")], Json(body)).into_response())
 }

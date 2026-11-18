@@ -34,7 +34,7 @@ def right_of(handler):
         seg = seg[: nxt.start() + 10]
     return ", ".join(dict.fromkeys(slug.get(x, x) for x in re.findall(r"Right::(\w+)", seg)))
 
-PUBLIC = {"/terms", "/terms/versions", "/vilkar", "/vilkar/{version}", "/anchors", "/health"}
+PUBLIC = {"/pricing", "/terms", "/terms/versions", "/vilkar", "/vilkar/{version}", "/anchors", "/health"}
 SKIP = ("/", "/callback", "/assets/{*path}", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/ny", "/portal-config")
 
 def group(path):
@@ -47,7 +47,7 @@ def group(path):
         return "identity"
     if s in ("integrations","agents","agent"): return "agents"
     if p.startswith(("/chat",)): return "agents"
-    if p.startswith(("/me","/terms","/vilkar","/health","/firms","/directory","/registry")): return "identity"
+    if p.startswith(("/me","/pricing","/terms","/vilkar","/health","/firms","/directory","/registry")): return "identity"
     if s in ("invoices","invoice-templates","quotes","orders","products","inventory","parties","reskontro"): return "sales"
     if s == "reports": return "shares" if "aksjonaer" in p else "reports"
     if s in ("budgets","mva","period-lock"): return "reports" if s != "period-lock" else "ledger"

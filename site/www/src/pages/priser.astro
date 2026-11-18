@@ -1,36 +1,51 @@
 ---
 import Base from "../layouts/Base.astro";
 import { APP } from "../data/links.js";
-import { PLANS } from "../data/prices.js";
+import { loadPricing, priceLabel, fmtN } from "../data/pricing.js";
+const { plans, addons } = await loadPricing();
+const anyUpcoming = plans.some((p) => !p.in_force);
+const sized = plans.some((p) => p.voucher_limit);
 ---
 <Base title="Priser" description="Tre planer etter hvor mange bilag du har. Ingen funksjoner er låst bak en plan, og brukere koster aldri ekstra.">
   <section class="pagehead"><div class="wrap">
     <p class="eyebrow">Priser</p>
     <h1 style="margin-top:1rem;max-width:16ch">Du betaler etter størrelse, ikke etter funksjoner.</h1>
-    <p class="lede">Ingen funksjon er låst bak en plan, og brukere koster aldri ekstra. Planene skiller på størrelse: hvor mange bilag selskapet bokfører i året og hvor mange ansatte som kjøres i lønn.</p>
+    <p class="lede">Ingen funksjon er låst bak en plan, og brukere koster aldri ekstra.{sized && " Planene skiller på størrelse: hvor mange bilag selskapet bokfører i året og hvor mange ansatte som kjøres i lønn."}</p>
   </div></section>
   <section class="section"><div class="wrap stack" style="--s:2.5rem">
-    <div class="notice">
-      <b>Nye planer er ikke innført ennå.</b> I dag er abonnementet Basis til 49 kr og Standard til 99 kr per måned, og det gjelder til planene under tas i bruk. Hva som skjer med eksisterende abonnement avgjøres før innføringen. Vi varsler før noe endres, og ingen får høyere pris uten at du har fått beskjed.
-    </div>
-    <div class="plans three">
-      {PLANS.map((p) => (
+    {anyUpcoming && (
+      <div class="notice">
+        <b>Nye planer er ikke innført ennå.</b> Til de gjelder, er det gjeldende abonnement som gjelder. Hva som skjer med eksisterende abonnement avgjøres før innføringen. Vi varsler før noe endres, og ingen får høyere pris uten at du har fått beskjed.
+      </div>
+    )}
+    <div class={plans.length === 2 ? "plans" : "plans three"}>
+      {plans.map((p) => { const l = priceLabel(p); return (
         <div class={p.featured ? "plan feature" : "plan"}>
-          <h3>{p.name}</h3><div class="price num">{p.price}<small> kr/mnd per selskap</small></div>
-          <p class="cap">opptil {p.vouchers} bilag i året</p>
-          <ul><li>{p.audience}</li>{p.features.map((f) => <li>{f}</li>)}</ul>
+          <h3>{p.name}</h3><div class="price num">{l.main}<small>{l.unit}</small></div>
+          {l.note && <p class="cap">{l.note}</p>}
+          {p.voucher_limit && <p class="cap">opptil {fmtN(p.voucher_limit)} bilag i året</p>}
+          <ul>{p.audience && <li>{p.audience}</li>}{p.employee_limit != null && <li>Lønn for {p.employee_limit === 1 ? "1 ansatt" : `opptil ${fmtN(p.employee_limit)} ansatte`}</li>}{p.features.map((f) => <li>{f}</li>)}</ul>
           <p style="margin-top:1.5rem"><a class={p.featured ? "btn" : "btn primary"} style={p.featured ? "border-color:var(--paper);color:var(--paper)" : undefined} href={APP}>Prøv i 30 dager</a></p>
         </div>
-      ))}
+      ); })}
     </div>
-    <p class="quiet">Priser er per selskap per måned, uten mva. Over 10 000 bilag i året gir vi tilbud.</p>
+    <p class="quiet">Priser er per selskap per måned, uten mva.{sized && " Over den største planen gir vi tilbud."}</p>
 
     <div class="prose narrow">
-      <h2>Tillegg: bankkobling</h2>
-      <p>Direkte bankkobling, så bankbevegelsene hentes automatisk i stedet for fra fil, blir et valgfritt tillegg til en lav pris. <b>Den er ikke bygget ennå</b>, og tilbys ikke før den virker, så det finnes ingen pris ennå. I dag importerer du kontoutskrift som fil, og det er med i alle planer.</p>
+      {addons.length > 0 && <h2>Tilleggstjenester</h2>}
+      {addons.map((a) => { const l = priceLabel(a); return (
+        <div class="stack">
+          <h3>{a.name} {!a.available && <span class="quiet">(kommer)</span>}</h3>
+          <p>{a.audience}.{a.price_ore_per_month != null || a.upcoming ? <> <b>{l.main} kr/mnd</b> per selskap, uten mva.</> : null}{!a.available && <> <b>Den er ikke bygget ennå</b>, og kan ikke bestilles før den virker.</>}</p>
+          {a.features.length > 0 && <ul>{a.features.map((f) => <li>{f}</li>)}</ul>}
+        </div>
+      ); })}
+      <p>Tilleggstjenester kjøpes på toppen av en plan. I dag importerer du kontoutskrift som fil, og det er med i alle planer.</p>
 
+      {sized && (<>
       <h2>Hvordan grensene er tenkt</h2>
       <p>Grensene er ikke i kraft ennå, og de innføres sammen med planene. Tanken er at de er myke: passerer du antallet bilag, foreslår vi neste plan og varsler i god tid. Vi stopper ikke bokføringen din på grunn av en grense, og lesing og eksport er alltid åpent.</p>
+      </>)}
 
       <h2>Hva som skjer når prøveperioden går ut</h2>
       <p>Prøveperioden er 30 dager fra selskapet opprettes. Etter det følger en frist på 14 dager før tilgangen til å endre stanses.</p>

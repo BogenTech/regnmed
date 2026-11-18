@@ -36,6 +36,7 @@ export default defineConfig({
       "/chat": api,
       "/terms": api,
       "/vilkar": api,
+      "/pricing": api,
     },
   },
 });
