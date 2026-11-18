@@ -666,6 +666,26 @@ Oppdaterbar, ikke innsettings-bar som `agent_llm`: et spor over forkastede
 leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
 en forpliktelse.
 
+**Ingen blir spurt om den** (2026-11-18). Systemet har ÉN hemmelighet mot
+regnid — provisjoneringshemmeligheten (§8.6) — og med den lager regnmed en
+egen identitet til hver agent i bakgrunnen. En agent registrert for hånd med
+egen client_id har aldri gitt oss sin, og regnid lagrer bare en hash, så den
+kan ikke hentes. Før spurte «Gi modell»-dialogen eieren om
+«Klienthemmelighet fra regnid» — noe ingen kunde vet hva er, og i prod ble
+feltet lagret tomt fem ganger på rad mens agenten så ferdig satt opp ut.
+
+Nå finnes ikke feltet. Får en agent uten lagret hemmelighet en modell,
+provisjonerer `PUT …/llm` en ny identitet og flytter agenten dit: samme navn,
+ansikt, rolle, kontakt og instrukser, nytt grant, og det gamle grantet
+avsluttes SIST — feiler noe underveis, avsluttes det nye i stedet og den
+gamle agenten står urørt. Svaret bærer den nye `integration_id`. Prisen:
+den håndlagde klienten mister tilgangen (den lokale kopien av hemmeligheten
+slutter å virke), historikken deles på to identiteter med samme navn, og
+oppgaver adressert til den gamle identiteten må gis på nytt. Vakten er
+`a_model_for_an_agent_without_a_secret_moves_it_to_a_fresh_identity`
+(`integrasjon.rs`, mot en falsk regnid), sett feile med provisjoneringen
+slått av.
+
 **Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
 systemprompten av `role::prompt` (via `prompt_for_role`), og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
