@@ -199,14 +199,28 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
             && k["path"].as_str().unwrap().contains("/bokfor")),
         "de endrende kallene er logget: {log}"
     );
-    let (_, listing) = request(
-        &state,
-        "GET",
-        &format!("{base}/integrations"),
-        &admin_token,
-        None,
-    )
-    .await;
+    // The day counter is bumped from the same detached task, so it is
+    // polled for the same reason (CI read 2 of 3 on 2026-11-18).
+    let mut listing = serde_json::Value::Null;
+    for _ in 0..50 {
+        listing = request(
+            &state,
+            "GET",
+            &format!("{base}/integrations"),
+            &admin_token,
+            None,
+        )
+        .await
+        .1;
+        if listing["integrasjoner"][0]["kall_i_dag"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 3
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     let entry = &listing["integrasjoner"][0];
     assert_eq!(entry["navn"], "Nettbutikken");
     assert_eq!(entry["access"], "bokforing");
@@ -293,6 +307,18 @@ async fn a_machine_token_gets_only_what_an_admin_granted() {
     .await;
     assert_eq!(llm["tilgjengelig"], true, "testnøkkelen er satt: {llm}");
     assert!(llm["oppsett"].is_null(), "ingen leverandør ennå: {llm}");
+    // This agent came with its own client_id; give it the secret a
+    // hosted run needs, so the plain model path is what is under test
+    // here. The no-secret path has its own test below.
+    regnmed_db::agentllm::sett_klienthemmelighet(
+        &state.pool,
+        state.sealing_key.as_ref().unwrap(),
+        company,
+        integration_id.parse().unwrap(),
+        "regnid-klient-hemmelighet",
+    )
+    .await
+    .unwrap();
 
     let (status, body) = request(
         &state,
@@ -894,5 +920,253 @@ async fn an_agent_is_created_in_one_call_and_re_roled_without_losing_the_trail()
             .iter()
             .all(|i| i["system_prompt"].is_null()),
         "tom tekst fjerner instruksene: {listing}"
+    );
+}
+
+/// Giving a model to an agent whose secret regnmed does not hold -- one
+/// registered by hand with its own client_id -- asks the user for
+/// nothing (docs/agent.md §8.6): a fresh identity is provisioned in the
+/// background and the agent moves to it with its name, face, role and
+/// instructions. Found in prod on 2026-11-18, where a dialog asked an
+/// owner for a «klienthemmelighet» nobody had ever given them.
+#[tokio::test]
+async fn a_model_for_an_agent_without_a_secret_moves_it_to_a_fresh_identity() {
+    let idp = TestIdp::new();
+    let Some(mut state) = test_state(&idp).await else {
+        return;
+    };
+    // A stand-in for regnid's provisioning endpoint.
+    let provisioned = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let seen = provisioned.clone();
+    let mock = axum::Router::new().route(
+        "/provision/machine-client",
+        axum::routing::post(move |axum::Json(b): axum::Json<serde_json::Value>| {
+            let seen = seen.clone();
+            async move {
+                let id = b["client_id"].as_str().unwrap().to_string();
+                seen.lock().unwrap().push(id.clone());
+                axum::Json(json!({"client_id": id, "client_secret": "ny-hemmelighet"}))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    state.regnid = Some(regnmed_api::RegnidCfg {
+        client_id: "regnmed-provision".into(),
+        client_secret: "x".into(),
+        base_url: Some(format!("http://{addr}")),
+    });
+
+    let sub = format!("test|{}", Uuid::new_v4());
+    let person = regnmed_db::ensure_person(&state.pool, &sub, Some("Aud Admin"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Flytteagent AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, person, "admin")
+        .await
+        .unwrap();
+    let admin_token = idp.token(&sub, "Aud Admin");
+    let old_client = format!("haandlaget-{}", Uuid::new_v4());
+    let old = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &old_client,
+        "Kari Bokfører",
+        Some("kari@firma.no"),
+        "bokforing",
+        "Aud Admin",
+    )
+    .await
+    .unwrap();
+    regnmed_db::update_integration(
+        &state.pool,
+        company,
+        old,
+        "Kari Bokfører",
+        Some("kari@firma.no"),
+        Some("primary"),
+        Some("bilag"),
+        Some("Strøm bokføres på 6340."),
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/integrations/{old}/llm"),
+        &admin_token,
+        Some(json!({"leverandor": "openrouter", "modell": "m", "api_nokkel": "sk-x"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let new: Uuid = body["integration_id"].as_str().unwrap().parse().unwrap();
+    assert_ne!(new, old, "agenten skulle fått en ny identitet");
+    assert_eq!(
+        provisioned.lock().unwrap().len(),
+        1,
+        "én identitet provisjonert"
+    );
+
+    let grants = regnmed_db::list_integrations(&state.pool, company)
+        .await
+        .unwrap();
+    let now = grants.iter().find(|g| g.integration_id == new).unwrap();
+    assert!(now.valid_to.is_none());
+    assert_eq!(now.name, "Kari Bokfører");
+    assert_eq!(now.access, "bokforing");
+    assert_eq!(now.contact.as_deref(), Some("kari@firma.no"));
+    assert_eq!(now.avatar_icon.as_deref(), Some("bilag"));
+    assert_eq!(
+        now.system_prompt.as_deref(),
+        Some("Strøm bokføres på 6340.")
+    );
+    assert!(
+        now.client_secret_stored,
+        "den nye identiteten må ha hemmeligheten"
+    );
+    assert!(
+        now.llm.is_some(),
+        "modellen må ligge på den nye identiteten"
+    );
+    let then = grants.iter().find(|g| g.integration_id == old).unwrap();
+    assert!(
+        then.valid_to.is_some(),
+        "den gamle tilgangen skal være avsluttet"
+    );
+
+    // The worker can now run it: it has a model and a secret.
+    assert!(
+        regnmed_db::agentllm::hent_klientlegitimasjon(
+            &state.pool,
+            state.sealing_key.as_ref().unwrap(),
+            new
+        )
+        .await
+        .unwrap()
+        .is_some()
+    );
+
+    // An agent that HAS a secret keeps its identity.
+    let (status, body) = request(
+        &state,
+        "PUT",
+        &format!("/companies/{company}/integrations/{new}/llm"),
+        &admin_token,
+        Some(json!({"leverandor": "openrouter", "modell": "m2", "api_nokkel": "sk-y"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["integration_id"], new.to_string());
+    assert_eq!(provisioned.lock().unwrap().len(), 1, "ingen ny identitet");
+}
+
+/// The notification centre lists what waits for the caller -- agent
+/// questions -- across every company, with the queue's own guard, and
+/// forgets a question once it is answered (docs/agent.md §8.5).
+#[tokio::test]
+async fn the_notification_centre_lists_waiting_agent_questions() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let admin_sub = format!("test|{}", Uuid::new_v4());
+    let admin = regnmed_db::ensure_person(&state.pool, &admin_sub, Some("Aud Admin"), None)
+        .await
+        .unwrap();
+    let staff_sub = format!("test|{}", Uuid::new_v4());
+    let staff = regnmed_db::ensure_person(&state.pool, &staff_sub, Some("Are Ansatt"), None)
+        .await
+        .unwrap();
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Varsel AS")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, admin, "admin")
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, staff, "ansatt")
+        .await
+        .unwrap();
+    let client_id = format!("varsel-{}", Uuid::new_v4());
+    let agent = regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Mona Agent",
+        None,
+        "bokforing",
+        "Aud Admin",
+    )
+    .await
+    .unwrap();
+    let task = regnmed_db::agent_task::create_task(
+        &state.pool,
+        company,
+        Some(agent),
+        "Sett timesats 1700 kr.",
+        None,
+        "Aud Admin",
+        Some(admin),
+    )
+    .await
+    .unwrap();
+    let admin_token = idp.token(&admin_sub, "Aud Admin");
+    let staff_token = idp.token(&staff_sub, "Are Ansatt");
+    let machine = idp.token(&client_id, "");
+
+    let list = |token: String| {
+        let state = state.clone();
+        async move {
+            let (status, body) = request(&state, "GET", "/notifications", &token, None).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            body["varsler"].as_array().unwrap().clone()
+        }
+    };
+    assert!(
+        list(admin_token.clone()).await.is_empty(),
+        "nothing asked yet"
+    );
+
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{task}/svar"),
+        &machine,
+        Some(json!({"status": "sporsmal", "notat": "Fra hvilken dato?"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let waiting = list(admin_token.clone()).await;
+    assert_eq!(waiting.len(), 1, "{waiting:?}");
+    assert_eq!(waiting[0]["type"], "agent_sporsmal");
+    assert_eq!(waiting[0]["company_id"], company.to_string());
+    assert_eq!(waiting[0]["selskap"], "Varsel AS");
+    assert_eq!(waiting[0]["agent"], "Mona Agent");
+    assert_eq!(waiting[0]["sporsmal"], "Fra hvilken dato?");
+    // The queue's own guard: an employee cannot read it, so is not told.
+    assert!(
+        list(staff_token).await.is_empty(),
+        "ansatt saw an agent question"
+    );
+    // A machine's questions are its own output.
+    assert!(list(machine.clone()).await.is_empty());
+
+    // Answered: gone, with nothing stored to clear.
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{task}/svar"),
+        &admin_token,
+        Some(json!({"status": "pagar", "notat": "2027-01-01"}).to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        list(admin_token).await.is_empty(),
+        "an answered question stayed"
     );
 }

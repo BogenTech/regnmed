@@ -298,7 +298,14 @@ pub struct Message {
     pub task_status: Option<String>,
 }
 
-/// The newest 200 messages, or the first 200 after `since`; oldest first.
+/// One page of a conversation, oldest first.
+///
+/// Three ways to ask: the newest `limit` (`since` and `before` both None,
+/// the first load); the `limit` before a message (`before`, scrolling up
+/// into the history -- a long thread is never loaded whole); or the first
+/// `limit` after `since` (the live poll). `before` is a (created_at, id)
+/// cursor so two messages in the same microsecond are neither skipped nor
+/// repeated.
 ///
 /// `since` is honoured with five seconds of overlap: `created_at` is the
 /// transaction's start, so a message can commit after a later-stamped one
@@ -308,6 +315,8 @@ pub async fn messages(
     pool: &PgPool,
     conversation: Uuid,
     since: Option<DateTime<Utc>>,
+    before: Option<(DateTime<Utc>, Uuid)>,
+    limit: i64,
 ) -> Result<Vec<Message>> {
     let rows = sqlx::query(
         "select m.id, m.author_person_id, m.author_name, m.body, m.created_at, m.task_id,
@@ -326,16 +335,20 @@ pub async fn messages(
          from chat_message m
          where m.conversation_id = $1
            and ($2::timestamptz is null or m.created_at > $2 - interval '5 seconds')
-         -- The newest 200 on a full read; with `since`, the OLDEST 200 after
+           and ($3::timestamptz is null or (m.created_at, m.id) < ($3, $4))
+         -- Newest first when paging back; with `since`, the OLDEST after
          -- it, so a burst longer than a page is continued by the next call
          -- instead of leaving a hole in the middle.
          order by case when $2::timestamptz is null then m.created_at end desc,
                   case when $2::timestamptz is null then m.id end desc,
                   m.created_at, m.id
-         limit 200",
+         limit $5",
     )
     .bind(conversation)
     .bind(since)
+    .bind(before.map(|b| b.0))
+    .bind(before.map(|b| b.1))
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     let mut out: Vec<Message> = rows
@@ -353,6 +366,87 @@ pub async fn messages(
             })
         })
         .collect::<Result<_>>()?;
+    if since.is_none() {
+        out.reverse();
+    }
+    Ok(out)
+}
+
+/// An agent's task history in a company, as conversation messages: every
+/// task given to it outside the chat (from the Oppdrag card, or over the
+/// API) with the notes in its trail. Tasks that came from a conversation
+/// are left out -- their order and answers are chat messages already.
+///
+/// This is how the conversation with an agent in Meldinger shows the
+/// WHOLE history with it, wherever the work was given, without copying
+/// anything: the task trail stays the one record (0064), and this reads
+/// it. Paged and ordered exactly like [`messages`], so the caller can
+/// merge the two. A human's note has no person on record before 0092;
+/// its author id is then nil and `author_name` says who.
+pub async fn agent_history(
+    pool: &PgPool,
+    company_id: Uuid,
+    agent_person: Uuid,
+    since: Option<DateTime<Utc>>,
+    before: Option<(DateTime<Utc>, Uuid)>,
+    limit: i64,
+) -> Result<Vec<Message>> {
+    let rows = sqlx::query(
+        "with t as (
+             select o.id, o.melding, o.opprettet_av, o.created_at,
+                    coalesce(o.created_by_person, '00000000-0000-0000-0000-000000000000'::uuid)
+                        as giver,
+                    i.person_id as agent, i.navn as agent_name
+             from agent_oppgave o
+             join integration i on i.id = o.integration_id
+             where o.company_id = $1 and i.person_id = $2
+               and not exists (select 1 from chat_message m where m.task_id = o.id)
+         ), ev as (
+             select t.id, t.giver as author, t.opprettet_av as author_name, t.melding as body,
+                    t.created_at, t.id as task_id, true as is_order
+             from t
+             union all
+             select h.id,
+                    case when h.av = t.agent_name then t.agent else t.giver end,
+                    h.av, h.notat, h.created_at, t.id, false
+             from agent_oppgave_hendelse h join t on t.id = h.oppgave_id
+             where coalesce(h.notat, '') <> ''
+         )
+         select ev.id, ev.author, ev.author_name, ev.body, ev.created_at, ev.task_id,
+                case when ev.is_order then
+                    coalesce((select h.status from agent_oppgave_hendelse h
+                              where h.oppgave_id = ev.task_id
+                              order by h.created_at desc, h.id desc limit 1), 'ny') end
+                    as task_status
+         from ev
+         where ($3::timestamptz is null or ev.created_at > $3 - interval '5 seconds')
+           and ($4::timestamptz is null or (ev.created_at, ev.id) < ($4, $5))
+         order by case when $3::timestamptz is null then ev.created_at end desc,
+                  case when $3::timestamptz is null then ev.id end desc,
+                  ev.created_at, ev.id
+         limit $6",
+    )
+    .bind(company_id)
+    .bind(agent_person)
+    .bind(since)
+    .bind(before.map(|b| b.0))
+    .bind(before.map(|b| b.1))
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let mut out: Vec<Message> = rows
+        .iter()
+        .map(|r| Message {
+            id: r.get("id"),
+            author_person_id: r.get("author"),
+            author_name: r.get("author_name"),
+            body: r.get("body"),
+            created_at: r.get("created_at"),
+            documents: serde_json::json!([]),
+            task_id: r.get("task_id"),
+            task_status: r.get("task_status"),
+        })
+        .collect();
     if since.is_none() {
         out.reverse();
     }

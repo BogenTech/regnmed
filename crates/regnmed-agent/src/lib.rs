@@ -41,11 +41,12 @@ pub const CONCURRENT_TOOLS: usize = 4;
 pub const MAX_TURNS: usize = 12;
 
 /// The tool catalogue in the provider's format. Built from the same
-/// `TOOLS` table the MCP server serves, so an agent can never be
-/// offered a tool over one rail that does not exist on the other.
-pub fn tool_catalogue() -> Value {
+/// `TOOLS` table the MCP server serves, filtered the same way
+/// ([`Server::offered_tools`]), so an agent is offered the same tools
+/// over both rails.
+pub fn tool_catalogue(tools: &[&tool::Tool]) -> Value {
     Value::Array(
-        tool::TOOLS
+        tools
             .iter()
             .map(|v| {
                 json!({
@@ -101,46 +102,61 @@ impl Outcome {
 /// to finish, and it is deliberately short: a small model follows two
 /// rules better than eight.
 fn closing_rules() -> String {
-    "Når du er ferdig, reply med vanlig text som starter med FERDIG: og en kort \
+    "Når du er ferdig, svar med vanlig tekst som starter med FERDIG: og en kort \
      oppsummering av hva du gjorde.\n\
      Trenger du en avgjørelse et menneske må ta, eller mangler du en opplysning, \
-     reply med text som starter med SPØRSMÅL: og still ett konkret spørsmål. \
-     Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør.\n\
-     Kan oppgaven ikke gjøres, reply med text som starter med AVVIST: og si hvorfor.\n\
+     svar med tekst som starter med SPØRSMÅL: og still ett konkret spørsmål. \
+     Ikke gjett, og ikke avslutt med FERDIG når du egentlig spør. \
+     Spørsmålet leses av et menneske, ofte i en e-post: skriv det med vanlige ord, \
+     uten feltnavn og verktøynavn. Nevn ikke verktøyene du vil kalle (som \
+     `prosjekt_sats_sett`) eller feltene (som `valid_from`), og skriv beløp i \
+     kroner, ikke i øre.\n\
+     Kan oppgaven ikke gjøres, svar med tekst som starter med AVVIST: og si hvorfor.\n\
      Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven."
         .to_string()
 }
 
-/// Reads the marker off the model's closing text.
+/// Reads the marker off the model's closing text, or `None` when it
+/// carries none.
 ///
-/// Unmarked text that ENDS IN A QUESTION MARK is a question, whatever
-/// prefix the model forgot. Found with a real provider
-/// (gemini-2.5-flash-lite, 2026-10-29): it asked which date in 2026 was
-/// meant, and without this it was recorded `utfort` -- which is
-/// TERMINAL in the 0064 guard, so the task closed and the question was
-/// lost with it. The asymmetry decides the rule: being wrongly
-/// non-terminal is recoverable, because a human reads the note and
-/// closes it; being wrongly terminal is not.
-///
-/// Other unmarked text is still treated as done. A small model that did
-/// the work and forgot the prefix should not have its work recorded as
-/// a refusal, and the note carries the raw text either way.
-fn interpret(text: &str) -> Outcome {
+/// The worker does not GUESS a status from unmarked text any more. Until
+/// 2026-11-17 it did: unmarked meant done, later "done unless it holds a
+/// question mark" -- and each version lost a question a real model asked
+/// without the prefix (gemini-2.5-flash-lite 2026-10-29, then
+/// nemotron 2026-11-17 with the «?» inside bold text). `utfort` is TERMINAL in the
+/// 0064 guard, so a wrong guess closed the task and took the question
+/// with it. [`run_loop`] asks the model to mark the reply instead, and
+/// [`unmarked`] decides what is left.
+fn interpret(text: &str) -> Option<Outcome> {
     let t = text.trim();
     let after = |p: &str| t[p.len()..].trim().to_string();
     let u = t.to_uppercase();
     if u.starts_with("SPØRSMÅL:") || u.starts_with("SPORSMAL:") {
-        Outcome::Question(after("SPØRSMÅL:"))
+        Some(Outcome::Question(after("SPØRSMÅL:")))
     } else if u.starts_with("AVVIST:") {
-        Outcome::Refused(after("AVVIST:"))
+        Some(Outcome::Refused(after("AVVIST:")))
     } else if u.starts_with("FERDIG:") {
-        Outcome::Done(after("FERDIG:"))
-    } else if t.ends_with('?') {
-        Outcome::Question(t.to_string())
+        Some(Outcome::Done(after("FERDIG:")))
     } else {
-        Outcome::Done(t.to_string())
+        None
     }
 }
+
+/// A reply that stayed unmarked after being asked to mark it is a
+/// QUESTION: the one status that is not terminal. The asymmetry decides
+/// it -- wrongly open is recoverable (a human reads the note and closes
+/// the task), wrongly closed is not -- and a question is not a refusal,
+/// so work the model did is never recorded as one.
+fn unmarked(text: &str) -> Outcome {
+    Outcome::Question(text.trim().to_string())
+}
+
+/// What the model is told when it ends without a marker. It sees its own
+/// reply right above, so it only has to classify it, not redo it.
+const MARK_YOUR_REPLY: &str = "Svaret ditt over mangler merke, så oppgaven kan ikke avsluttes. \
+     Gjenta svaret med riktig merke først: SPØRSMÅL: hvis du spør om noe eller \
+     trenger en avgjørelse, FERDIG: hvis jobben er gjort, AVVIST: hvis den ikke \
+     kan gjøres. Ikke kall flere verktøy.";
 
 /// The agent's whole system message: the role prompt, then this
 /// agent's own instructions, then the protocol.
@@ -194,7 +210,7 @@ pub async fn run_loop(
     task: &str,
     history: &[HistoryLine],
 ) -> Result<Outcome> {
-    let katalog = tool_catalogue();
+    let katalog = tool_catalogue(&server.offered_tools().await);
     let mut messages = vec![
         Message::system(system_prompt(role_name, ekstra)),
         Message::bruker(task.to_string()),
@@ -209,6 +225,7 @@ pub async fn run_loop(
         });
     }
 
+    let mut asked_to_mark = false;
     for _ in 0..MAX_TURNS {
         let reply = model.tur(&messages, &katalog).await?;
 
@@ -217,7 +234,18 @@ pub async fn run_loop(
             if text.trim().is_empty() {
                 bail!("modellen svarte uten innhold og uten verktøykall");
             }
-            return Ok(interpret(&text));
+            if let Some(outcome) = interpret(&text) {
+                return Ok(outcome);
+            }
+            // Once: a model that ignores the reminder too is not helped
+            // by a third turn, and every turn is the customer's money.
+            if asked_to_mark {
+                return Ok(unmarked(&text));
+            }
+            asked_to_mark = true;
+            messages.push(Message::assistant(text));
+            messages.push(Message::bruker(MARK_YOUR_REPLY.to_string()));
+            continue;
         }
 
         // Echo the assistant turn back exactly as it came: providers
@@ -236,12 +264,16 @@ pub async fn run_loop(
         // (docs/integrations.md): an unbounded burst would earn the
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
-            let out = match tool::find(&calls.name) {
-                Some(v) => server.execute_tool(v, calls.arguments).await,
-                // An invented tool is the model's mistake, and it is told
-                // so in the same channel as a real result.
-                None => regnmed_mcp::ToolOutput {
-                    text: format!("ukjent verktøy «{}»", calls.name),
+            let out = match server.offered_tool(&calls.name).await {
+                Some(Ok(v)) => server.execute_tool(v, calls.arguments).await,
+                // An invented tool, or one outside the role, is the
+                // model's mistake, and it is told so in the same channel
+                // as a real result.
+                refused => regnmed_mcp::ToolOutput {
+                    text: match refused {
+                        Some(Err(why)) => why,
+                        _ => format!("ukjent verktøy «{}»", calls.name),
+                    },
                     failed: true,
                     image: None,
                 },
@@ -489,6 +521,22 @@ async fn report(
         Some(integration_id),
     )
     .await?;
+    // A question from a task given outside the chat would otherwise wait
+    // until somebody happened to open the card: the person who gave it is
+    // told by mail. (One that came from a conversation lands there.)
+    if let (Some(js), None, Outcome::Question(question)) = (chat, &mirrored, outcome)
+        && let Err(error) = regnmed_mail::notify_question(
+            js,
+            pool,
+            company_id,
+            task_id,
+            question,
+            std::env::var("PORTAL_BASE_URL").ok().as_deref(),
+        )
+        .await
+    {
+        eprintln!("could not mail the question on {task_id}: {error:#}");
+    }
     if let (Some(js), Some(posted)) = (chat, mirrored)
         && let Err(error) = regnmed_mail::chatbus::announce(
             js,
@@ -526,7 +574,7 @@ mod tests {
 
     #[test]
     fn the_catalogue_matches_the_tools_the_other_rail_serves() {
-        let katalog = tool_catalogue();
+        let katalog = tool_catalogue(&tool::TOOLS.iter().collect::<Vec<_>>());
         let name: Vec<&str> = katalog
             .as_array()
             .unwrap()
@@ -566,42 +614,56 @@ mod tests {
         assert_eq!(system_prompt("bokforing", Some("   ")), without);
     }
 
+    /// The worker's own prompt text is Norwegian prose a model reads and
+    /// imitates, so it is held to the same guard as the role prompts.
+    /// «reply med vanlig text» stood here unnoticed: the #134 rename
+    /// reached this file too, and the guard did not scan it.
+    #[test]
+    fn the_worker_prompt_text_stays_norwegian_and_asks_in_plain_words() {
+        for (what, text) in [
+            ("closing_rules", closing_rules()),
+            ("MARK_YOUR_REPLY", MARK_YOUR_REPLY.to_string()),
+        ] {
+            assert_eq!(regnmed_mcp::role::english_in_prose(&text), None, "{what}");
+        }
+        assert!(closing_rules().contains("uten feltnavn og verktøynavn"));
+    }
+
     #[test]
     fn the_closing_marker_decides_the_status() {
         assert_eq!(
             interpret("FERDIG: bokførte 3 bilag"),
-            Outcome::Done("bokførte 3 bilag".into())
+            Some(Outcome::Done("bokførte 3 bilag".into()))
         );
         assert_eq!(
             interpret("SPØRSMÅL: hvilken konto?"),
-            Outcome::Question("hvilken konto?".into())
+            Some(Outcome::Question("hvilken konto?".into()))
         );
         assert_eq!(
             interpret("AVVIST: mangler bilag"),
-            Outcome::Refused("mangler bilag".into())
+            Some(Outcome::Refused("mangler bilag".into()))
         );
-        // A small model that forgot the prefix still gets its work
-        // recorded as work, with its own words kept.
-        assert_eq!(
-            interpret("jeg bokførte alt sammen"),
-            Outcome::Done("jeg bokførte alt sammen".into())
-        );
+        // No marker, no guess: the loop asks the model to mark it.
+        assert_eq!(interpret("jeg bokførte alt sammen"), None);
     }
 
     #[test]
-    fn an_unmarked_question_does_not_close_the_task() {
-        // Verbatim from gemini-2.5-flash-lite through OpenRouter,
-        // 2026-10-29. Recorded as `utfort` it would have CLOSED the
-        // task — terminal in the 0064 guard — and taken the question
-        // with it.
-        let ekte = "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
-                    du er interessert i. Kan du vennligst oppgi en spesifikk dato?";
-        assert_eq!(interpret(ekte).status(), "sporsmal");
-        // A statement that merely mentions a question is still done.
-        assert_eq!(
-            interpret("Jeg svarte på spørsmålet ditt og bokførte bilaget.").status(),
-            "utfort"
-        );
+    fn an_unmarked_reply_never_closes_the_task() {
+        for text in [
+            // Verbatim, each once recorded `utfort` -- terminal in the
+            // 0064 guard -- and lost: gemini-2.5-flash-lite (2026-10-29)
+            // and nemotron-3.5-lightning:free (2026-11-17).
+            "Før jeg kan hente saldobalansen, må jeg vite hvilken dato i 2026 \
+             du er interessert i. Kan du vennligst oppgi en spesifikk dato?",
+            "For å sette en timesats må jeg ha en `valid_from`-dato.\n\n\
+             **Hvilken dato skal timesatsen gjelde fra?** (YYYY-MM-DD-format, ikke dagens dato).",
+            // Constructed: a question with no «?», and finished work.
+            "Oppgi datoen satsen skal gjelde fra",
+            "Jeg bokførte alt sammen.",
+        ] {
+            assert_eq!(interpret(text), None);
+            assert_eq!(unmarked(text).status(), "sporsmal", "{text}");
+        }
     }
 
     #[test]

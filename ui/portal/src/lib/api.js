@@ -40,8 +40,16 @@ export async function api(path, options = {}) {
     }
   }
   // A job's status is polled until it changes, so it is never cached.
-  // Nor is the chat, which is fetched again whenever the room says so.
-  if (path === "/me" || path.includes("/jobs/") || path.includes("/chat")) {
+  // Nor is the chat, which is fetched again whenever the room says so,
+  // nor an agent's tasks, polled while the agent works, nor the
+  // notification centre, which is fetched again on every chat event.
+  if (
+    path === "/me" ||
+    path.includes("/jobs/") ||
+    path.includes("/chat") ||
+    path.includes("/agent/oppgaver") ||
+    path === "/notifications"
+  ) {
     return request(path, options);
   }
   const hit = cache.get(path);

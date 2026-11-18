@@ -12,6 +12,28 @@ godt.
 Tilgangsmodellen står i [integrations.md](integrations.md) og
 [auth.md](auth.md); dette dokumentet er agentlaget oppå den.
 
+## Hvor kjører agenten?
+
+*Kort forklart, for den som møter spørsmålet i portalen.*
+
+En agent er en bruker: den har en rolle, den slipper bare til det rollen
+gir, og alt den gjør står i dens navn. Men et menneske leser meldingene
+sine selv — en agent trenger et program som kjører den. Det finnes to
+måter:
+
+- **regnmed kjører agenten.** Den har en språkmodell og en innlogging
+  lagret hos oss, og svarer på oppgaver og meldinger av seg selv. Slik
+  blir en agent du lager med «Ny agent» under Administrasjon → Brukere
+  og roller.
+- **Dere kjører agenten selv**, for eksempel på egen maskin gjennom
+  MCP-serveren (§2). Da henter den oppgavene sine selv når den kjører, og
+  regnmed kan ikke se om den gjør det. Står den ikke på, venter meldinger
+  og oppgaver til noen starter den.
+
+Portalen sier fra i samtalen når en agent er av den andre sorten, så en
+melding ikke venter i det stille. Vil du at regnmed skal kjøre den, gi
+den en modell under «Bytt modell», eller lag en ny med «Ny agent».
+
 ## 1. Prinsippet: en agent er en bruker
 
 Vi fant aldri opp en agent-tilgangsmodell, og det er grunnen til at
@@ -84,7 +106,7 @@ innenfor containergrensen på 64 MB, og dette gjør ikke det.
 
 ## 3. Verktøyene
 
-`crates/regnmed-mcp/src/verktoy.rs` er en **kuratert** liste på ~30
+`crates/regnmed-mcp/src/tool.rs` er en **kuratert** liste på ~55
 verktøy, ikke en generert en.
 
 #102 foreslo å generere verktøylisten fra samme rutetabell som
@@ -103,9 +125,110 @@ gang: `/settings/registrering` er POST-only, og registreringsstatus
 leses fra `/settings`.)
 
 Grupper: orientering, lesing av hovedboken, bilagsflyten
-(innboks → forslag → bokfør), salg, utlegg, migrering, og oppgaver.
+(innboks → forslag → bokfør), salg, utlegg, prosjekter og timer,
+migrering, og oppgaver.
 Utleggsverktøyene og hva en agent får gjøre med et utleggskrav står i
 [utlegg.md «Agenten»](utlegg.md).
+
+### Verktøymenyen per rolle (2026-11-17)
+
+En agent **tilbys** bare verktøyene rollen dens dekker. Hvert verktøy i
+tabellen navngir rettigheten endepunktet sjekker (`Tool::right`, sluggen
+slik `/me` lister den; `None` = alle får det), og
+`Server::offered_tools` slår opp agentens rettigheter i `/me` og filtrerer.
+Begge skinnene går gjennom samme funksjon: MCP-ens `tools/list` og
+workerens katalog viser samme meny for samme rolle.
+
+| Rolle på grantet | Verktøy tilbudt |
+| --- | --- |
+| `ansatt` | 16 — egne timer og utlegg, prosjektlisten, bilagsopplasting, egne oppgaver |
+| `les` | 31 — all lesing, ingen skriving utover `oppgave_svar` |
+| `bokforing` | 49 — alt unntatt migrering og timelås |
+| `admin` | 54 — hele tabellen |
+
+Grunnen er den samme som for at tabellen er kuratert: **en verktøyliste
+er en prompt**. En ansatt-agent som får 54 verktøy der 41 blir nektet,
+bruker turer og kundens penger på å oppdage det, og en liten modell
+slutter ikke nødvendigvis å prøve.
+
+Et verktøy utenfor menyen som likevel kalles ved navn, nektes **av
+menyen** (`Server::offered_tool`) med en setning modellen kan handle på
+— «hører ikke til rollen din» — framfor å koste en tur og en plass i
+ratebegrensningen for å få samme svar fra API-et. Begge skinnene.
+
+Menyen er likevel **ikke** en vakt. API-et avgjør fortsatt hvert kall
+(`access::require`). Det er derfor filteret faller tilbake til hele
+tabellen når `/me` ikke kan leses: et ødelagt token feiler på første kall
+uansett, og en tom meny ville gjemt hvorfor. Menyen leses **én gang per
+server** (én `/me` per oppgave i workeren, én per MCP-økt) og huskes ikke
+når lesingen feilet. En agent som får ny rolle midt i en MCP-økt ser den
+nye menyen etter omstart; API-et bruker den nye rollen med én gang.
+
+Rettigheten er den endepunktet sjekker **først**. Noen endepunkter krever
+mer for deler av jobben (`faktura_opprett` med timer krever også
+`TIMER_FAKTURER`); de tilbys på den første og nektes høylytt på resten.
+Egendefinerte roller (#60) får sin meny av sine egne rettigheter uten noe
+ekstra, siden filteret leser rettighetene og ikke rollenavnet.
+
+Vakten er `each_role_is_offered_exactly_the_tools_its_guard_lets_through`:
+for hver innebygde rolle kaller den **hvert** verktøy som deklarerer en
+rettighet, skriveverktøyene med, rett forbi menyen (`execute_tool`). Et
+skjult verktøy skal nektes med en 403 som navngir nøyaktig den
+deklarerte rettigheten; et tilbudt skal ikke nektes på den. Argumentene
+er bare velformede — tilfeldige id-er, et ukjent prosjekt — fordi axum
+kjører kropp- og query-uttrekk FØR vakten (docs/auth.md): en kropp som
+ikke lar seg lese gir 400 for alle og måler ingenting. Hva et tilbudt
+skriveverktøy så gjør (404 på id-en, 400 på prosjektet, eller ekte
+arbeid i et kasteselskap) er ved siden av. En ANDRE, argumentavhengig
+sjekk (et utlegg for en annen person krever `UTLEGG_GODKJENN`) er
+endepunktets egen og måles ikke her. Testen er sett feile på feil
+deklarasjon både for lesing (`prosjekter` med `TIMER_LAAS`) og skriving
+(`timer_registrer` med `TIMER_SKRIV_ALLE`).
+
+Oppgaveverktøyene (`oppgaver`, `oppgave`, `oppgave_svar`) tilbys **alle**
+agenter: en agent når sin egen kø på tilgang til selskapet alene (§5).
+
+### Timer og prosjekter (2026-11-16)
+
+Ansatt-prompten lovet «fører timer på prosjekt», og tabellen hadde
+ingen vei til det — en agent bedt om «før 8 timer på utvikling man–fre»
+spurte to ganger etter en prosjektkode den ikke kunne bruke. Nå dekker
+tabellen hele [timer.md](timer.md) og prosjektdelen av
+[dimensjoner.md](dimensjoner.md):
+
+| Verktøy | Endepunkt | Rettighet |
+| --- | --- | --- |
+| `prosjekter` | `GET …/dimensions` | `DIMENSJON_LES` |
+| `prosjekt_opprett`, `prosjekt_endre` | `POST …/dimensions`, `PUT …/dimensions/{kind}/{code}` | `DIMENSJON_SKRIV` |
+| `prosjekt_satser`, `prosjekt_sats_sett` | `GET/POST …/dimensions/prosjekt/{code}/satser` | `TIMER_SATS_SKRIV` |
+| `timer_liste` | `GET …/timesheet` (bærer også `locked_through`) | `TIMER_LES_EGNE` |
+| `timer_registrer` | `POST …/timesheet` | `TIMER_SKRIV_EGNE` |
+| `timer_endre`, `timer_slett` | `PUT/DELETE …/timesheet/{eid}` | `TIMER_SKRIV_EGNE` (andres: `_ALLE`) |
+| `timer_sammendrag`, `timer_ufakturert` | `GET …/timesheet/summary`, `…/unbilled` | `TIMER_RAPPORT_LES` |
+| `timer_fakturer` | `POST …/timesheet/invoice` | `TIMER_FAKTURER` |
+| `timer_las` | `PUT …/timesheet/lock` | `TIMER_LAAS` |
+
+`GET …/timesheet/lock` har ikke eget verktøy: `timer_liste` svarer med
+samme dato, og et verktøy som bare gjentar et annet er et valg en liten
+modell kan ta feil.
+
+**Hvem timene tilhører — avgjort: agenten selv.** En agent er sin egen
+`person` (§1), og `POST …/timesheet` fører for den personen tokenet
+beviser. Timer en agent registrerer står derfor med AGENTENS navn i
+timelisten, ikke med navnet til mennesket som ba om dem — og
+integrasjonstesten fester det (`person.kind = 'integrasjon'`). Det
+finnes ingen vei for å føre timer for en annen person, verken for
+mennesker eller maskiner, og tabellen finner ingen opp: en slik vei
+ville vært en ny autorisasjonsbeslutning (hvem får føre for hvem, og
+hvordan ser den ansatte det?), ikke et verktøy. Å *rette* andres
+føringer med `TIMER_SKRIV_ALLE` finnes allerede og gjelder agenten
+akkurat som et menneske. Skal en agent føre timer for en navngitt
+ansatt, er det en egen sak — modellen å låne er utleggets «på vegne av
+andre» ([utlegg.md](utlegg.md)).
+
+`timer_registrer` er **ikke idempotent** (en føring har ingen naturlig
+nøkkel — to like føringer samme dag kan være riktig). Beskrivelsen og
+ansatt-prompten sier derfor: kall `timer_liste` før et nytt forsøk.
 
 To konvensjoner er gjentatt i hvert skjema der de gjelder, fordi en
 liten modell ikke skal måtte utlede dem: **beløp er heltall øre**
@@ -186,6 +309,24 @@ få skrivetilgang når eieren vil det — #101 gjør det mulig — men
 `krev_for_maskin` finnes for at eieren skal kunne si «alt roboten fører
 skal jeg ha sett» uten å måtte velge mellom hjelp og kontroll.
 
+**En regel må stå der modellen handler** (2026-11-17). To grunnregler kom
+fra en ekte økt: en sats uten oppgitt dato skal ikke dateres i dag (timene
+som alt lå på prosjektet fikk den aldri), og timer bokfører ingenting (en
+bestilling om å «utgiftsføre» utviklingstimer ble ført uten et ord om
+det). Som grunnregler alene endret de **ingenting** hos en liten modell —
+`ekte_leverandor.rs` viste det. Satsverktøyet sa selv at `valid_from`
+«utelates = i dag», og verktøyet vant over regelen; ansatt-prosedyren
+sluttet før svaret, så regelen om timer kom aldri i spill. Først da
+regelen sto i verktøybeskrivelsen og i prosedyrens siste steg (og
+`valid_from` ble påkrevd i skjemaet), fulgte modellen den, tre kjøringer
+av tre. Lærdommen: en verktøybeskrivelse som motsier en grunnregel
+vinner, og en regel som ikke står i et steg, blir ikke fulgt.
+`every_role_knows_dated_values_and_that_hours_post_nothing` fester
+alle tre stedene; de to `ekte_leverandor`-scenariene
+(`a_real_model_does_not_date_a_rate_today_by_default`,
+`a_real_model_says_hours_are_not_bookkeeping`) prøver dem mot en ekte
+modell, for hånd.
+
 En vakt i kode: `each_role_names_the_tools_its_procedure_depends_on`
 krever at hvert verktøy en rolleprosedyre bygger på både **finnes** i
 tabellen og er **navngitt** i promptteksten. Å døpe om et verktøy uten
@@ -222,11 +363,18 @@ derfor skrevet ut framfor å finne opp en ny rettighet:
 - **Å GI** en oppgave krever `INTEGRASJON_ADMIN`, som
   `kan_delegeres` nekter en maskin. En agent kan altså ikke skrive sine
   egne ordrer — den ene egenskapen som gjør sporet verdt å lese.
-- **Å SVARE** krever `INTEGRASJON_LES` **og** å være den agenten
-  oppgaven er stilt til (eller et menneske som kan administrere
-  integrasjoner, så en ordre kan trekkes tilbake). En agent svarer ikke
-  for en annen agent, og ser ikke en annen agents ordrer — den ville
+- **En agent når sin EGEN kø** — leser den og svarer på den — på
+  tilgang til selskapet alene, uansett rolle. Oppgaven er stilt til
+  den; å kreve en rettighet til for å lese egne ordrer strandet bare de
+  smale rollene. Fram til 2026-11-17 krevde det `INTEGRASJON_LES`, som
+  `ansatt`-bunten ikke har, så en ansatt-agent over MCP kunne ikke se
+  hva den var bedt om. Den ser og svarer fortsatt bare på oppgaver stilt
+  til den eller til ingen; en annen agents ordrer gir 404 — den ville
   handlet på dem.
+- **Et menneske** leser køen med `INTEGRASJON_LES` og svarer (lukker,
+  trekker tilbake) med `INTEGRASJON_ADMIN`. Et menneske med samme smale
+  rolle som agenten får fortsatt 403: det er ikke agenten ordren er
+  stilt til.
 
 **Den andre døren inn i køen er Meldinger** (docs/meldinger.md, 2026-11-16):
 en melding til en agent oppretter en oppgave stilt til den, og agentens
@@ -258,7 +406,10 @@ ga mens du var borte står der. Tidene vises i brukerens egen tidssone.
 | Agent med `admin` kan migrere, men aldri utvide tilgang | `tests/grupper/integrasjon.rs` |
 | Et menneske må attestere det en maskin bokfører | `tests/grupper/attestering.rs` |
 | Hvert verktøy i tabellen treffer API-et som finnes | `tests/grupper/agent.rs` |
+| Hver rolle tilbys nøyaktig verktøyene vakten slipper gjennom | `tests/grupper/agent.rs` |
+| En agent når egen kø uansett rolle, aldri en annen agents | `tests/grupper/agent.rs` |
 | Bilaget navngir agenten, ikke et subject | `tests/grupper/agent.rs` |
+| Timer agenten fører, føres på agenten; låst dag nektes | `tests/grupper/agent.rs` |
 | En avsluttet oppgave kan ikke gjenåpnes | `tests/grupper/agent.rs` |
 | Hvert skjema er gyldig JSON, hver sti-plassholder er deklarert | `regnmed-mcp` (enhetstester) |
 | Hver rolle bærer grunnreglene og navngir verktøyene sine | `regnmed-mcp` (enhetstester) |
@@ -537,12 +688,32 @@ Oppdaterbar, ikke innsettings-bar som `agent_llm`: et spor over forkastede
 leverandørVALG er bevis verdt å ha, et spor over forkastede HEMMELIGHETER er
 en forpliktelse.
 
+**Ingen blir spurt om den** (2026-11-18). Systemet har ÉN hemmelighet mot
+regnid — provisjoneringshemmeligheten (§8.6) — og med den lager regnmed en
+egen identitet til hver agent i bakgrunnen. En agent registrert for hånd med
+egen client_id har aldri gitt oss sin, og regnid lagrer bare en hash, så den
+kan ikke hentes. Før spurte «Gi modell»-dialogen eieren om
+«Klienthemmelighet fra regnid» — noe ingen kunde vet hva er, og i prod ble
+feltet lagret tomt fem ganger på rad mens agenten så ferdig satt opp ut.
+
+Nå finnes ikke feltet. Får en agent uten lagret hemmelighet en modell,
+provisjonerer `PUT …/llm` en ny identitet og flytter agenten dit: samme navn,
+ansikt, rolle, kontakt og instrukser, nytt grant, og det gamle grantet
+avsluttes SIST — feiler noe underveis, avsluttes det nye i stedet og den
+gamle agenten står urørt. Svaret bærer den nye `integration_id`. Prisen:
+den håndlagde klienten mister tilgangen (den lokale kopien av hemmeligheten
+slutter å virke), historikken deles på to identiteter med samme navn, og
+oppgaver adressert til den gamle identiteten må gis på nytt. Vakten er
+`a_model_for_an_agent_without_a_secret_moves_it_to_a_fresh_identity`
+(`integrasjon.rs`, mot en falsk regnid), sett feile med provisjoneringen
+slått av.
+
 **Begge skinnene kjører samme kode.** Verktøykatalogen bygges av `VERKTOY`,
 systemprompten av `role::prompt` (via `prompt_for_role`), og kallet går gjennom
 `Server::execute_tool` — samme dispatcher som MCP-serveren. Transporten
 skiller; oppførselen skal ikke, og den sikreste måten å få to skinner til å
-oppføre seg likt er å gi dem samme kode. Testen fester det: katalogen har
-nøyaktig like mange verktøy som tabellen.
+oppføre seg likt er å gi dem samme kode. Begge filtrerer tabellen med
+`Server::offered_tools`, så samme rolle får samme meny (§3).
 
 **Rollen velger prompten — gjennom en tabell, ikke gjennom navnet**
 (rettet 2026-11-16). Tilgangen sier `bokforing`, prompten heter `bokforer`:
@@ -574,10 +745,15 @@ enn en som melder fra om en vegg.
 
 Modellen avslutter med en markør — `FERDIG:`, `SPØRSMÅL:` eller `AVVIST:` —
 som blir statusen køen alt kjenner (#103). Workeren finner ikke opp egne.
-Tekst uten markør leses som utført: en liten modell som gjorde jobben og
-glemte prefikset skal ikke få arbeidet sitt journalført som en nektelse, og
-notatet bærer råteksten uansett. `sporsmal` er ikke terminal i 0064-vakten,
-nettopp fordi agenten skal kunne fortsette når noen har svart.
+Tekst uten markør GJETTES IKKE: workeren sender svaret tilbake én gang med
+beskjed om å gjenta det med riktig markør, og modellen — som ser sitt eget
+svar rett over — klassifiserer det selv. Forblir svaret umerket, blir det
+`sporsmal`, aldri `utfort`. Bare en uttrykkelig `FERDIG:` lukker en oppgave.
+`sporsmal` er ikke terminal i 0064-vakten, nettopp fordi agenten skal kunne
+fortsette når noen har svart — og et menneske som ser at jobben faktisk er
+gjort, lukker den selv. Påminnelsen koster én ekstra tur, og bare når
+modellen glemte markøren. Vakten er `an_unmarked_reply_is_sent_back_to_be_marked` (`agent.rs`),
+sett feile med påminnelsen slått av.
 
 Leverandøren er OpenAI-kompatibel `/chat/completions` med `tools` —
 grunnen til at dette ble lite. OpenAI, OpenRouter og de fleste
@@ -641,10 +817,15 @@ at den finnes.
 **(a) Et ubesvart spørsmål lukket oppgaven.** `gemini-2.5-flash-lite` spurte
 hvilken dato i 2026 som var ment, uten `SPØRSMÅL:`-prefikset. Fallbacken
 leste umerket tekst som utført — og `utfort` er TERMINAL i 0064-vakten, så
-oppgaven ble lukket og spørsmålet forsvant med den. Umerket tekst som ender
-med spørsmålstegn tolkes nå som `sporsmal`. Asymmetrien avgjør regelen: å
-være feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet
-og lukker), å være feilaktig terminal er det ikke.
+oppgaven ble lukket og spørsmålet forsvant med den. Første retting leste
+umerket tekst med spørsmålstegn som `sporsmal`; det holdt til
+`nemotron-3.5-lightning:free` (2026-11-17) spurte i fet skrift med en
+parentes etter, og et spørsmål i ren prosa uten «?» ville sluppet gjennom
+uansett. Hver heuristikk over modellens fritekst taper mot neste modell, så
+workeren slutter å gjette: umerket tekst sendes tilbake for å merkes, og det som
+forblir umerket blir `sporsmal` (§8.3). Asymmetrien avgjør regelen: å være
+feilaktig IKKE-terminal er gjenopprettelig (et menneske leser notatet og
+lukker), å være feilaktig terminal er det ikke.
 
 **(b) En bokfører kunne ikke føre et bilag.** Bedt om å bokføre en kontant
 utgift svarte `gpt-4o-mini`: «Jeg kan ikke bokføre bilaget fordi jeg ikke
@@ -708,23 +889,105 @@ Verifisert i nettleseren hele veien: agenten spør, svaret sendes fra
 kortet, nyeste status blir `pagar`, og oppgaven er plukkbar av workeren
 igjen (sjekket i databasen, ikke i UI-et).
 
-#### Aldri kjørt ende-til-ende i clusteret
+#### Kjørt ende til ende i prod (2026-11-18, v0.15.0–v0.15.1)
 
-Workeren STARTER i test, leser den forseglede nøkkelen, spør databasen og
-avslutter rent — det er verifisert. Det som ikke er verifisert er en agent
-som faktisk ARBEIDER der: det krever en `client_credentials`-klient i test
-sin regnid og at noen logger inn i portalen og setter opp agenten, og begge
-delene er menneskearbeid som ikke kan gjøres herfra. Sløyfen selv er kjørt
-mot ekte modeller (§8.4), men ikke med token hentet i clusteret.
+Første gang en agent har ARBEIDET i et cluster: RegnmedAgent i BOGENTECH AS
+(rolle `bokforing`, `anthropic/claude-haiku-5.5` via OpenRouter), med token
+hentet av workeren i prod fra agentens egen identitet. Hele veien gikk
+gjennom portalen, køen og workeren — ingenting ble kjørt for hånd.
+
+- **Spørsmål i stedet for gjetning.** «La oss sette en timesats til
+  1650 kr på prosjekt 10001.», uten dato. Workeren plukket oppgaven 0,1 s
+  etter at den ble gitt; seks sekunder senere var den `sporsmal`: hvilken
+  dato satsen skal gjelde fra, hva gjeldende sats er, at førte timer
+  beholder sin, og at ingenting var satt ennå. Ingen rad i `prosjekt_sats`.
+- **Svaret fullførte jobben.** Svaret «2026-12-01» fra samtalen gjorde
+  oppgaven plukkbar igjen; ni sekunder senere sto satsen 165 000 øre fra
+  2026-12-01, bokført av RegnmedAgent, med den gamle satsen urørt, og
+  oppgaven var `utfort` med et notat om hva som ble gjort.
+- **Bare lesing.** «Hvor mange prosjekter har selskapet, og hva heter de?
+  Bare les, ikke endre noe.» ble `utfort` på fem sekunder med riktig svar,
+  og ingenting ble skrevet.
+
+Tre feil kom fram på veien dit, og ingen av dem kunne testene finne:
+(a) agenten var registrert for hånd og regnmed hadde ikke hemmeligheten
+dens — dialogen spurte eieren om den, og feltet ble lagret tomt fem ganger
+(nå provisjonerer regnmed en ny identitet i bakgrunnen, §8.3, #269);
+(b) oppgavelisten fulgte ikke agenten — den viste «ny» mens agenten spurte
+og «pågår» etter at den var ferdig, fordi en oppgave gitt fra kortet ikke
+har noen samtaletråd som melder fra (nå spør listen igjen mens en oppgave
+er `ny`/`pagar`, #270); og (c) en umerket avslutning kunne lukke en
+oppgave som utført (nå sendes den tilbake for å merkes, §8.4, #268).
+
+#### Et spørsmål varsles på e-post (2026-11-18)
+
+Når en agent svarer `sporsmal`, får den som GA oppgaven en e-post med
+oppgaven, spørsmålet og en lenke til samtalen. Før ventet spørsmålet til
+noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
+
+- **Til hvem:** personen som ga oppgaven. `opprettet_av` er bare et
+  visningsnavn og når ingen, så migrasjon 0092 legger til
+  `created_by_person`; den settes ved opprettelse, og tabellen er fortsatt
+  innsettings-bar. Adressen er den personen har NÅ (speilet fra IdP-en ved
+  innlogging). Har personen mistet tilgangen til selskapet siden, sendes
+  ingenting — e-posten bærer selskapets data. Enhver tilgang teller, ikke
+  `INTEGRASJON_LES` spesielt; tabellen fra rolle til rettighet bor i
+  `regnmed-api`, og workeren når den ikke.
+- **Ikke for oppgaver fra samtalen.** Kom oppgaven fra Meldinger, lander
+  spørsmålet der med ulest-merket sitt; en e-post per spørsmål ville vært
+  støy. Oppgaver gitt før 0092 har ingen person og varsles ikke.
+- **Begge skinnene:** den vertede workeren og API-et (en agent på kundens
+  egen maskin som svarer over MCP) kaller samme `regnmed_mail::notify_question`,
+  så regelen for hvem som varsles står ett sted
+  (`regnmed_db::agent_task::question_email`). Svaret er alt lagret når
+  e-posten sendes, så en kø som er nede feiler aldri agentens svar.
+- **Spørsmålet skrives for et menneske.** Den første e-posten i prod spurte
+  «Hvilken dato skal timesatsen … gjelde fra (`valid_from`)?» — et feltnavn
+  i en e-post til en eier. Regel 6 i grunnreglene, avslutningsreglene i
+  workeren og `notat`-feltet på `oppgave_svar` sier nå: vanlige ord, ingen
+  feltnavn eller verktøynavn, beløp i kroner. Med en gratismodell ble alle
+  tre spørsmålene i prøvebenken rene etterpå (før: «for å kalle
+  `prosjekt_sats_sett`», beløpet i øre). Samme runde fant «reply med vanlig
+  text» i workerens egne avslutningsregler — #134-skaden, i en fil
+  språkvakten ikke leste. Vakten er nå en delt funksjon
+  (`role::english_in_prose`) som også leser workerens tekst.
+- **Lenken** bygges av `PORTAL_BASE_URL`, som workeren nå også har (prod og
+  test); uten den sier e-posten hvor i portalen samtalen står.
+
+Vakten er `an_agents_question_is_mailed_to_whoever_gave_the_task`
+(`utsendelse.rs`, mot en ekte nats-server): e-posten kommer fram med
+spørsmål, oppgave og lenke, `utfort` sender ingen ny, en oppgave uten
+person varsler ingen, og en person uten tilgang varsles ikke. Sett feile med varslingen koblet fra.
+
+#### Varslingssenteret og markøren (2026-11-18)
+
+Ved siden av profilen står en bjelle med antallet spørsmål fra agenter som
+venter på DEG, på tvers av selskapene du når; listen lenker rett til
+samtalen. Ved innlogging sier en melding én gang hva som venter.
+Administrasjon i menyen og fanen «Oppdrag og integrasjoner» bærer det samme
+tallet for selskapet du står i.
+
+- **Utledet, aldri lagret.** `GET /notifications` lister oppgaver med
+  nyeste status `sporsmal`; når noen svarer, forsvinner varselet. Derfor
+  finnes ingen lest/ulest-tilstand å holde i takt, og bjella, markøren og
+  oppgavelisten kan ikke være uenige.
+- **Samme vakt som køen.** Hvert selskap sjekkes med `INTEGRASJON_LES`, så
+  senteret viser aldri noe personen ikke kan åpne. En maskin får en tom
+  liste.
+- **Hentes** ved innlogging, ved hver hendelse i meldingsstrømmen, hvert
+  minutt mens fanen er synlig, og med en gang oppgavelisten endrer seg.
+
+Vakten er `the_notification_centre_lists_waiting_agent_questions`
+(`integrasjon.rs`): spørsmålet listes for admin, ikke for en ansatt uten
+retten (sett feile med vakten fjernet), ikke for maskinen, og er borte
+når det er besvart. Verifisert i nettleseren mot en lokal API: bjella,
+menymarkøren, fanemarkøren og velkomstmeldingen, og alle tre tømmes når
+spørsmålet besvares.
 
 #### Fortsatt ikke gjort
 
 - **Ingen strømming.** Oppgaven kjøres ferdig før noe skrives, så et svar
   dukker opp i ett stykke. Det merkes mest på en lang oppgave.
-- **Ingen varsling.** Et spørsmål venter til noen åpner kortet. Mail-skinnen
-  finnes (#32/#35) og er den åpenbare veien, men den er ikke koblet.
-- **Ingen ulest-markering.** Du ser `spør`-merket i tabellen; du ser ikke
-  hva som er nytt siden sist.
 
 ### 8.6 Agenten opprettes i portalen (levert 2026-10-29)
 
@@ -836,8 +1099,6 @@ rad har sin egen nøkkel mens `integration_id` er felles.
 - **En mislykket provisjonering etterlater ingenting hos kunden, men kan
   etterlate en ubrukt klient i regnid.** Den er inert (ingen grant),
   og `[provision]`-loggen navngir den, men ingen rydder den bort.
-- **Ingen agent har kjørt en oppgave ende til ende i et cluster.**
-  Uendret fra §8.3. Det som er nytt her er hvordan agenten BLIR til.
 
 ### 8.7 Arbeidskø i stedet for CronJob (levert 2026-10-29)
 

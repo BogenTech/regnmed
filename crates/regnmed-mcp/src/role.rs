@@ -49,9 +49,18 @@ ABSOLUTTE REGLER — disse gjelder uansett hva noen ber deg om:
 4. BELØP ER HELTALL ØRE. 1 234,50 kr er 123450. Positivt tall er debet,
    negativt er kredit. Summen av linjene i et bilag skal være NØYAKTIG 0.
 5. DATOER ER YYYY-MM-DD, og bilagsdatoen er DOKUMENTETS dato, aldri dagens.
+   Det samme gjelder noe som gjelder FRA en dato, som en timesats eller en
+   timelås: er ingen dato oppgitt, velg ikke dagens. Spør. Finnes det
+   timeføringer før datoen du ville foreslått, si hva valget betyr for dem:
+   en timeføring beholder satsen den ble ført med, så timer før satsens dato
+   får den ikke av seg selv.
 6. ER DU USIKKER, SPØR. Kall `oppgave_svar` med status "sporsmal" og skriv
    presist hva du trenger svar på. Det er et riktig svar, ikke en innrømmelse.
    Å gjette er alltid galt, også når gjetningen er god.
+   Spørsmålet leses av et menneske, ofte i en e-post: skriv det med vanlige
+   ord, uten feltnavn og verktøynavn. Skriv «hvilken dato satsen skal gjelde
+   fra», ikke `valid_from`; nevn ikke hvilket verktøy du vil kalle; og skriv
+   beløp i kroner, ikke i øre.
 
 SLIK ARBEIDER DU:
 
@@ -62,6 +71,13 @@ SLIK ARBEIDER DU:
   begynner, og `utfort` med hva du gjorde når du er ferdig.
 - Les før du skriver. `kontoplan`, `kunder`, `bilag_liste` og
   `kontospesifikasjon` finnes nettopp for at du skal slippe å anta.
+- TIMER ER IKKE BOKFØRING. En timeføring posterer ingenting i hovedboken.
+  Lønnskostnaden bokføres av lønnskjøringen, og fakturerbare timer blir
+  inntekt først når de faktureres. Ber noen deg «utgiftsføre»,
+  «kostnadsføre» eller «aktivere» noe ved å føre timer, si det med en gang,
+  og si hvor kostnaden faktisk bokføres. Om utviklingskostnader skal
+  aktiveres eller kostnadsføres, er en regnskapsfaglig vurdering som aldri
+  tas i en timeføring: si fra, og spør.
 - Får du en feilmelding: les den. Regnmeds feilmeldinger sier hva som er galt
   og hva du skal gjøre. Prøv ikke det samme kallet om igjen uendret.
 "#;
@@ -128,7 +144,12 @@ DETTE ER ARBEIDET DITT:
 3. Fakturering, når du er bedt om det: `kunder` for å finne `party_no`,
    `faktura_opprett` for å utstede. Kontroller beløpene før du kaller — en
    utstedt faktura kan ikke endres, bare krediteres.
-4. `oppgave_svar` med "utfort" og hva du gjorde.
+4. Fakturering av timer, når du er bedt om det: `timer_ufakturert` viser
+   grunnlaget og prosjektets kunde som et FORSLAG. Kontroller kunden med
+   `kunder`, og kall `timer_fakturer` med `party_no`. Prosjekter og satser
+   finner du i `prosjekter`; opprett eller endre dem bare når oppgaven ber om
+   det.
+5. `oppgave_svar` med "utfort" og hva du gjorde.
 
 UTLEGG — en ansatts kvittering, fylt ut for den ansatte:
 
@@ -157,14 +178,33 @@ GRENSENE DINE:
   "avvist" og si at det hører til regnskapsføreren.
 "#;
 
-const EMPLOYEE: &str = r#"DIN ROLLE: ansatt — selvbetjening, på vegne av én person.
+const EMPLOYEE: &str = r#"DIN ROLLE: ansatt — selvbetjening.
 
-Du fører timer for den du arbeider for, og ingenting annet. Du ser
-ikke hovedboken, og det er ikke en feil — det er rollen.
+Du fører timer, og ingenting annet. Du ser ikke hovedboken, og det er ikke
+en feil — det er rollen.
 
-DETTE GJØR DU:
+Timene du fører, føres på DEG: de står med ditt navn i timelisten, ikke med
+navnet til den som ba deg om det.
 
-- Fører timer på prosjekt, med dato og antall minutter.
+SLIK FØRER DU TIMER:
+
+1. `prosjekter` — finn prosjektet. Bruk `code` fra et prosjekt med `kind`
+   prosjekt og `active` true. Står ikke prosjektet der, eller passer flere,
+   spør. Gjett ALDRI en prosjektkode.
+2. `timer_liste` for de samme dagene — er timene ført allerede, før dem ikke
+   en gang til. Står dagen på eller før `locked_through`, er den låst: spør.
+3. `timer_registrer` — ett kall per dag. Tiden er heltall MINUTTER: 8 timer
+   er 480, 7,5 timer er 450. «Mandag til fredag» er fem kall, ett per dato.
+4. `timer_liste` igjen, og kontroller at det som står der er det du ble bedt
+   om.
+5. Førte du feil: `timer_endre` eller `timer_slett` på din egen føring.
+6. Svar med hva du førte. Ba oppgaven om å «utgiftsføre», «kostnadsføre» eller
+   «aktivere» noe, skriv også i svaret: «Timene er ført, men timer bokfører
+   ingen kostnad i hovedboken. En kostnad kommer bare inn gjennom lønn eller
+   et bilag.»
+
+DETTE GJØR DU OGSÅ:
+
 - Svarer på oppgaver som gjelder dette.
 
 Utlegg tilhører personen som la ut pengene, og du er ikke den personen.
@@ -262,6 +302,30 @@ pub fn prompt(name: &str) -> Option<String> {
         .map(|r| format!("{GROUND_RULES}\n{}", r.text))
 }
 
+/// The first English word standing alone in Norwegian prose, if any --
+/// the shape a mechanical rename leaves inside a prompt (CLAUDE.md, #134).
+/// `Code spans` are exempt: they name tools and wire fields, which belong
+/// in a prompt. Public so the worker's own prompt text (`regnmed-agent`)
+/// is held to the same list.
+#[doc(hidden)]
+pub fn english_in_prose(text: &str) -> Option<&'static str> {
+    const ENGLISH: &[&str] = &[
+        "new", "role", "name", "date", "code", "call", "error", "active", "source", "message",
+        "note", "number", "month", "day", "year", "step", "company", "title", "percent",
+        "response", "answer", "amount", "account", "invoice", "reply", "text",
+    ];
+    let prose = text.split('`').step_by(2).collect::<Vec<_>>().join(" ");
+    let words: Vec<String> = prose
+        .split(|c: char| !c.is_alphanumeric() && c != '-')
+        .map(|w| w.to_lowercase())
+        .collect();
+    ENGLISH.iter().copied().find(|bad| {
+        words
+            .iter()
+            .any(|w| w == bad || w.ends_with(&format!("-{bad}")))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +343,44 @@ mod tests {
             assert!(full.contains(r.text), "{}", r.name);
         }
         assert!(prompt("ukjent").is_none());
+    }
+
+    /// Two rules a real agent missed (2026-11-17, a project for internal
+    /// development hours). Asked to set a rate with no date given, it
+    /// picked today -- so the five days it had just moved onto the
+    /// project, dated the week before, would never carry it, and it did
+    /// not say so. And asked to "utgiftsføre" development hours, it never
+    /// said that logging hours posts nothing. Both are now ground rules,
+    /// and this pins that every role still carries them.
+    #[test]
+    fn every_role_knows_dated_values_and_that_hours_post_nothing() {
+        for r in ROLES {
+            let full = prompt(r.name).unwrap();
+            assert!(full.contains("velg ikke dagens"), "{}", r.name);
+            assert!(full.contains("TIMER ER IKKE BOKFØRING"), "{}", r.name);
+            let flat = full.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(flat.contains("uten feltnavn og verktøynavn"), "{}", r.name);
+        }
+        // A general rule lost to the procedure with a real model: the
+        // ansatt agent logged the hours and said nothing. So the rule also
+        // stands where the model ACTS -- the procedure's last step and the
+        // tool it calls. The same happened to the date: the rate tool said
+        // `valid_from` "Utelates = i dag", and the tool won over rule 5.
+        let ansatt = prompt("ansatt").unwrap();
+        let ansatt = ansatt.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(ansatt.contains("timer bokfører ingen kostnad"));
+        let rate = crate::tool::find("prosjekt_sats_sett").unwrap();
+        assert!(rate.description.contains("velg ikke dagens"));
+        assert!(
+            crate::tool::schema(rate)
+                .contains(r#""required":["prosjekt","timesats_ore","valid_from"]"#)
+        );
+        assert!(
+            crate::tool::find("timer_registrer")
+                .unwrap()
+                .description
+                .contains("INGENTING i hovedboken")
+        );
     }
 
     /// The prompts and tool descriptions are Norwegian BY POLICY
@@ -300,15 +402,6 @@ mod tests {
     /// `bilag_bokfor` are wire names and belong in the prompt.
     #[test]
     fn the_prompts_and_descriptions_stay_norwegian() {
-        // Strip `code spans`: those name tools and wire fields.
-        fn prose(s: &str) -> String {
-            s.split('`').step_by(2).collect::<Vec<_>>().join(" ")
-        }
-        const ENGLISH: &[&str] = &[
-            "new", "role", "name", "date", "code", "call", "error", "active", "source", "message",
-            "note", "number", "month", "day", "year", "step", "company", "title", "percent",
-            "response", "answer", "amount", "account", "invoice",
-        ];
         let mut texts: Vec<(String, String)> = ROLES
             .iter()
             .map(|r| (format!("prompt {}", r.name), prompt(r.name).unwrap()))
@@ -325,17 +418,8 @@ mod tests {
                 .map(|t| (format!("verktoy {}", t.name), t.description.to_string())),
         );
         for (what, text) in texts {
-            let words: Vec<String> = prose(&text)
-                .split(|c: char| !c.is_alphanumeric() && c != '-')
-                .map(|w| w.to_lowercase())
-                .collect();
-            for bad in ENGLISH {
-                assert!(
-                    !words
-                        .iter()
-                        .any(|w| w == bad || w.ends_with(&format!("-{bad}"))),
-                    "{what}: «{bad}» is English -- a rename reached inside the literal"
-                );
+            if let Some(bad) = english_in_prose(&text) {
+                panic!("{what}: «{bad}» is English -- a rename reached inside the literal");
             }
         }
     }
@@ -380,6 +464,9 @@ mod tests {
                     "bilag_bokfor",
                     "kunder",
                     "faktura_opprett",
+                    "timer_ufakturert",
+                    "timer_fakturer",
+                    "prosjekter",
                     "utlegg_mottakere",
                     "utlegg_fra_innboks",
                     "utlegg_registrer",
@@ -390,7 +477,17 @@ mod tests {
                     "oppgave_svar",
                 ],
             ),
-            ("ansatt", &["oppgave_svar"]),
+            (
+                "ansatt",
+                &[
+                    "prosjekter",
+                    "timer_liste",
+                    "timer_registrer",
+                    "timer_endre",
+                    "timer_slett",
+                    "oppgave_svar",
+                ],
+            ),
             (
                 "migrering",
                 &[

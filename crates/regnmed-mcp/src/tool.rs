@@ -53,6 +53,12 @@ pub struct Tool {
     pub description: &'static str,
     pub method: &'static str,
     pub path: &'static str,
+    /// The right (slug, as `/me` lists them) the endpoint checks first.
+    /// An agent is only OFFERED tools whose right it holds, so a small
+    /// model is not handed fifty tools of which forty will be refused.
+    /// This is a menu, not a guard: the API still decides every call.
+    /// `None` = every agent gets it.
+    pub right: Option<&'static str>,
     pub body: Body,
     pub reply: Reply,
     /// JSON Schema, written out rather than built: the wording is the
@@ -72,6 +78,7 @@ pub const TOOLS: &[Tool] = &[
                       i en ny samtale: den sier hva du har lov til, så du ikke prøver noe som blir nektet.",
         method: "GET",
         path: "/me",
+        right: None,
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#,
@@ -85,6 +92,7 @@ pub const TOOLS: &[Tool] = &[
                       mva-registrert kan ikke legge mva på noe, og forsøket blir avvist.",
         method: "GET",
         path: "/companies/{selskap}/settings",
+        right: Some("SELSKAP_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -96,6 +104,7 @@ pub const TOOLS: &[Tool] = &[
                       et bilag — ikke gjett et kontonummer.",
         method: "GET",
         path: "/companies/{selskap}/accounts",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -106,6 +115,7 @@ pub const TOOLS: &[Tool] = &[
                       periode blir avvist; be et menneske om å åpne perioden, gjør det ikke selv.",
         method: "GET",
         path: "/companies/{selskap}/period-lock",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -117,6 +127,7 @@ pub const TOOLS: &[Tool] = &[
                       av et menneske først.",
         method: "GET",
         path: "/companies/{selskap}/attestering/policy",
+        right: Some("ATTESTERING_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -128,6 +139,7 @@ pub const TOOLS: &[Tool] = &[
                       dato, tekst og kontonummer/-navn.",
         method: "GET",
         path: "/companies/{selskap}/vouchers",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -143,6 +155,7 @@ pub const TOOLS: &[Tool] = &[
                       godkjent årsregnskap eller en tidligere rapport.",
         method: "GET",
         path: "/companies/{selskap}/reports/saldobalanse",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
@@ -155,6 +168,7 @@ pub const TOOLS: &[Tool] = &[
                       bilagshenvisning. Dette er rapporten du bruker når et tall ser rart ut.",
         method: "GET",
         path: "/companies/{selskap}/reports/kontospesifikasjon",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
@@ -169,6 +183,7 @@ pub const TOOLS: &[Tool] = &[
                       presentasjonsfortegn (inntekt positiv).",
         method: "GET",
         path: "/companies/{selskap}/reports/resultat",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
@@ -182,6 +197,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Balanse per en dato, gruppert etter NS 4102.",
         method: "GET",
         path: "/companies/{selskap}/reports/balanse",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["date"],"properties":{COMPANY,
@@ -194,6 +210,7 @@ pub const TOOLS: &[Tool] = &[
                       du får en tydelig feilmelding, ikke et galt tall.",
         method: "GET",
         path: "/companies/{selskap}/reports/mva",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["year","termin"],"properties":{COMPANY,
@@ -207,6 +224,7 @@ pub const TOOLS: &[Tool] = &[
                       og de to neste mva-fristene. Bruk denne når noen spør «hvordan går det».",
         method: "GET",
         path: "/companies/{selskap}/reports/nokkeltall",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -217,6 +235,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Kundereskontro: hva hver kunde skylder, med åpne poster.",
         method: "GET",
         path: "/companies/{selskap}/reports/kundespesifikasjon",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
@@ -227,6 +246,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Leverandørreskontro: hva selskapet skylder hver leverandør.",
         method: "GET",
         path: "/companies/{selskap}/reports/leverandorspesifikasjon",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
@@ -241,6 +261,7 @@ pub const TOOLS: &[Tool] = &[
                       som AVVIK-linjer, ikke som skjulte feil.",
         method: "GET",
         path: "/companies/{selskap}/reports/revisjon",
+        right: Some("RAPPORT_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -252,6 +273,7 @@ pub const TOOLS: &[Tool] = &[
                       Dette er arbeidskøen din.",
         method: "GET",
         path: "/companies/{selskap}/inbox",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -269,6 +291,7 @@ pub const TOOLS: &[Tool] = &[
                       si at dokumentet må leses av et menneske.",
         method: "GET",
         path: "/companies/{selskap}/inbox/{dokument}/forslag",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument"],"properties":{COMPANY,
@@ -281,6 +304,7 @@ pub const TOOLS: &[Tool] = &[
                       Filen hashes før sending, så en ny forsøk etter et tapt svar ikke blir to bilag.",
         method: "POST",
         path: "/companies/{selskap}/inbox",
+        right: Some("BILAG_LAST_OPP"),
         body: Body::FileBinary,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
@@ -297,6 +321,7 @@ pub const TOOLS: &[Tool] = &[
                       BOKFØR IKKE noe du er usikker på: svar på oppgaven med status «sporsmal» i stedet.",
         method: "POST",
         path: "/companies/{selskap}/inbox/{dokument}/bokfor",
+        right: Some("BILAG_BOKFOR"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument","journal_code","date","description","lines"],
@@ -328,6 +353,7 @@ pub const TOOLS: &[Tool] = &[
                       FØR IKKE noe du er usikker på: svar på oppgaven med status «sporsmal».",
         method: "POST",
         path: "/companies/{selskap}/vouchers",
+        right: Some("BILAG_BOKFOR"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["journal_code","date","description","lines"],
@@ -354,6 +380,7 @@ pub const TOOLS: &[Tool] = &[
                       er usikker på konteringen.",
         method: "POST",
         path: "/companies/{selskap}/inbox/{dokument}/avvis",
+        right: Some("BILAG_BOKFOR"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument","note"],"properties":{COMPANY,
@@ -368,6 +395,7 @@ pub const TOOLS: &[Tool] = &[
                       eller en reskontrolinje.",
         method: "GET",
         path: "/companies/{selskap}/parties",
+        right: Some("RESKONTRO_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -378,6 +406,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Utstedte fakturaer med restbeløp. `open: true` gir bare de med noe utestående.",
         method: "GET",
         path: "/companies/{selskap}/invoices",
+        right: Some("FAKTURA_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -389,6 +418,7 @@ pub const TOOLS: &[Tool] = &[
                       purreskritt etter inkassoregelverket.",
         method: "GET",
         path: "/companies/{selskap}/invoices/overdue",
+        right: Some("PURRING_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -401,6 +431,7 @@ pub const TOOLS: &[Tool] = &[
                       mva-registrert, utelat `vat_code` helt.",
         method: "POST",
         path: "/companies/{selskap}/invoices",
+        right: Some("FAKTURA_SKRIV"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["party_no","invoice_date","due_date","lines"],
@@ -428,6 +459,7 @@ pub const TOOLS: &[Tool] = &[
                       kontoplanen må avstemmes.",
         method: "POST",
         path: "/companies/{selskap}/import/saft/analyze",
+        right: Some("MIGRERING_ADMIN"),
         body: Body::File,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
@@ -443,6 +475,7 @@ pub const TOOLS: &[Tool] = &[
                       fil kan ikke importeres to ganger (innholdet hashes).",
         method: "POST",
         path: "/companies/{selskap}/import/saft",
+        right: Some("MIGRERING_ADMIN"),
         body: Body::File,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil"],"properties":{COMPANY,
@@ -457,6 +490,7 @@ pub const TOOLS: &[Tool] = &[
                       importerte. Sjekk denne før du importerer, så du ikke importerer det samme igjen.",
         method: "GET",
         path: "/companies/{selskap}/import/saft/log",
+        right: Some("BILAG_LES"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -468,6 +502,7 @@ pub const TOOLS: &[Tool] = &[
                       som lister det som ble funnet. Idempotent på organisasjonsnummer.",
         method: "POST",
         path: "/companies/{selskap}/import/contacts",
+        right: Some("MIGRERING_ADMIN"),
         body: Body::File,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
@@ -482,6 +517,7 @@ pub const TOOLS: &[Tool] = &[
                       veien, og hvilke kunder som vil bli opprettet.",
         method: "POST",
         path: "/companies/{selskap}/import/open-items",
+        right: Some("MIGRERING_ADMIN"),
         body: Body::File,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil","kind"],"properties":{COMPANY,
@@ -500,6 +536,7 @@ pub const TOOLS: &[Tool] = &[
                       tilhører alltid personen som la ut pengene — aldri deg selv.",
         method: "GET",
         path: "/companies/{selskap}/expenses/claimants",
+        right: Some("UTLEGG_GODKJENN"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
@@ -514,6 +551,7 @@ pub const TOOLS: &[Tool] = &[
                       som betalte, spør med `oppgave_svar` i stedet for å gjette.",
         method: "POST",
         path: "/companies/{selskap}/inbox/{dokument}/expense",
+        right: Some("BILAG_BOKFOR"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["dokument","person_id"],"properties":{COMPANY,
@@ -528,6 +566,7 @@ pub const TOOLS: &[Tool] = &[
                       `utlegg_send_inn`.",
         method: "POST",
         path: "/companies/{selskap}/expenses/receipts",
+        right: Some("UTLEGG_SKRIV_EGNE"),
         body: Body::FileBinary,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["fil","person_id"],"properties":{COMPANY,
@@ -542,6 +581,7 @@ pub const TOOLS: &[Tool] = &[
                       sendt inn ennå; «apne» de innsendte som venter på et menneske.",
         method: "GET",
         path: "/companies/{selskap}/expenses",
+        right: Some("UTLEGG_LES_EGNE"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -555,6 +595,7 @@ pub const TOOLS: &[Tool] = &[
                       `utlegg_forslag`, som leser tekstlaget.",
         method: "GET",
         path: "/companies/{selskap}/expenses/{utlegg}/receipt",
+        right: Some("UTLEGG_LES_EGNE"),
         body: Body::None,
         reply: Reply::Image,
         schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
@@ -567,6 +608,7 @@ pub const TOOLS: &[Tool] = &[
                       begrunnelse. Et forslag er ikke et faktum — sammenlign med bildet.",
         method: "GET",
         path: "/companies/{selskap}/expenses/{utlegg}/suggestion",
+        right: Some("UTLEGG_LES_EGNE"),
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
@@ -579,6 +621,7 @@ pub const TOOLS: &[Tool] = &[
                       Beløpet er hele beløpet MED mva, i heltall øre (249,50 kr = 24950).",
         method: "PUT",
         path: "/companies/{selskap}/expenses/{utlegg}",
+        right: Some("UTLEGG_SKRIV_EGNE"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["utlegg","dato","belop_ore","beskrivelse"],"properties":{COMPANY,
@@ -597,10 +640,252 @@ pub const TOOLS: &[Tool] = &[
                       ikke dem du har registrert. Svaret sier hva som mangler, om noe gjør det.",
         method: "POST",
         path: "/companies/{selskap}/expenses/{utlegg}/submit",
+        right: Some("UTLEGG_SKRIV_EGNE"),
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["utlegg"],"properties":{COMPANY,
             "utlegg":{"type":"string","description":"expense_id"}},"additionalProperties":false}"#,
+    },
+    // ---------- Prosjekter og timer ----------
+    //
+    // Whose hours: the caller's. `POST …/timesheet` writes for the
+    // person the token proves, and an agent is its own person (#101), so
+    // hours an agent registers stand under the AGENT's name. There is no
+    // create-for-someone-else on the API, and the table invents none
+    // (docs/agent.md §3 «Timer»).
+    Tool {
+        name: "prosjekter",
+        description: "Selskapets prosjekter og avdelinger: `kind` (prosjekt eller avdeling), \
+                      `code`, navn, om det er åpent (`active`), kunden prosjektet er knyttet til, \
+                      om timer på det er fakturerbare som standard, og DIN timesats på det i dag \
+                      (`min_timesats_ore`, heltall øre). Timer føres på et prosjekt med `kind` \
+                      prosjekt og `active` true — bruk `code` derfra, gjett aldri en prosjektkode.",
+        method: "GET",
+        path: "/companies/{selskap}/dimensions",
+        right: Some("DIMENSJON_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_opprett",
+        description: "Oppretter et prosjekt eller en avdeling. Koden er PERMANENT — den står i \
+                      hashkjeden på hvert bilag som bruker den — så velg den med omhu; navnet kan \
+                      endres senere. Opprett bare når oppgaven ber om det: finnes prosjektet \
+                      allerede i `prosjekter`, bruk det.",
+        method: "POST",
+        path: "/companies/{selskap}/dimensions",
+        right: Some("DIMENSJON_SKRIV"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["kind","code","name"],"properties":{COMPANY,
+            "kind":{"type":"string","enum":["prosjekt","avdeling"]},
+            "code":{"type":"string","description":"Kort, permanent kode, f.eks. P100"},
+            "name":{"type":"string","description":"Prosjektets navn"},
+            "kunde":{"type":"string","description":"Kundenummer (party_no fra «kunder») prosjektet gjelder. Bare for prosjekt."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_endre",
+        description: "Endrer et prosjekt eller en avdeling: navn, åpne/stenge (`active`), kunde \
+                      og om timer er fakturerbare som standard. Bare feltene du sender endres. \
+                      Koden kan ikke endres. Et stengt prosjekt tar ikke imot nye timer eller \
+                      posteringer.",
+        method: "PUT",
+        path: "/companies/{selskap}/dimensions/{kind}/{kode}",
+        right: Some("DIMENSJON_SKRIV"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["kind","kode"],"properties":{COMPANY,
+            "kind":{"type":"string","enum":["prosjekt","avdeling"]},
+            "kode":{"type":"string","description":"Koden fra «prosjekter»"},
+            "name":{"type":"string","description":"Nytt navn"},
+            "active":{"type":"boolean","description":"false stenger, true åpner igjen"},
+            "kunde":{"type":"string","description":"Kundenummer; tom tekst fjerner koblingen"},
+            "fakturerbar_default":{"type":"boolean"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_satser",
+        description: "Timesatsene på ett prosjekt med historikk: prosjektets standardsats og \
+                      personlige satser, hver med gyldig-fra-dato, i heltall øre per time. \
+                      Krever retten TIMER_SATS_SKRIV.",
+        method: "GET",
+        path: "/companies/{selskap}/dimensions/prosjekt/{prosjekt}/satser",
+        right: Some("TIMER_SATS_SKRIV"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["prosjekt"],"properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "prosjekt_sats_sett",
+        description: "Setter en ny timesats på et prosjekt fra en dato. Satsen er heltall ØRE per \
+                      time: 1 200 kr/t = 120000. Uten `person_id` er det prosjektets standardsats; \
+                      med er det den personens egen. Timer som allerede er ført beholder satsen de \
+                      ble ført med, så timer før `valid_from` får ikke denne satsen. Er ingen dato \
+                      oppgitt, spør — velg ikke dagens. Krever retten TIMER_SATS_SKRIV. Sett aldri \
+                      en sats oppgaven ikke har gitt deg.",
+        method: "POST",
+        path: "/companies/{selskap}/dimensions/prosjekt/{prosjekt}/satser",
+        right: Some("TIMER_SATS_SKRIV"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["prosjekt","timesats_ore","valid_from"],"properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"},
+            "timesats_ore":{"type":"integer","description":"Heltall øre per time"},
+            "person_id":{"type":"string","description":"Utelates = prosjektets standardsats"},
+            "valid_from":{"type":"string","description":"Gyldig fra, YYYY-MM-DD. Datoen oppgaven gir; er ingen gitt, spør i stedet for å kalle."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_liste",
+        description: "Timeføringene i en periode: dine egne, eller alle personers hvis rollen \
+                      har TIMER_LES_ALLE (`own` sier hvilke som er dine). Hver føring har \
+                      `entry_id`, dato, minutter, prosjekt og om den er fakturert. \
+                      `locked_through` er datoen timelisten er låst til og med — føringer på eller \
+                      før den kan ikke registreres, endres eller slettes.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet",
+        right: Some("TIMER_LES_EGNE"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
+            "from":{"type":"string","description":"Fra dato, YYYY-MM-DD"},
+            "to":{"type":"string","description":"Til og med dato, YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_registrer",
+        description: "Fører timer for ÉN dag på ett prosjekt. Timene føres på DEG — personen du \
+                      er logget inn som — og står med ditt navn i timelisten; du kan ikke føre \
+                      timer for en annen person. Tiden er heltall MINUTTER: 8 timer = 480, \
+                      7,5 timer = 450, høyst 1440. Flere dager er ett kall per dag \
+                      (mandag–fredag = fem kall). Kallet er IKKE idempotent: får du ikke svar, \
+                      kall `timer_liste` for dagen før du prøver igjen, ellers føres timene to ganger. \
+                      Timer bokfører INGENTING i hovedboken: ber oppgaven om å utgiftsføre eller \
+                      kostnadsføre noe ved å føre timer, si i svaret at timene ikke er bokført som \
+                      kostnad.",
+        method: "POST",
+        path: "/companies/{selskap}/timesheet",
+        right: Some("TIMER_SKRIV_EGNE"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["dato","minutter","prosjekt"],"properties":{COMPANY,
+            "dato":{"type":"string","description":"Dagen timene gjelder, YYYY-MM-DD"},
+            "minutter":{"type":"integer","minimum":1,"maximum":1440,"description":"Heltall minutter: 8 timer = 480"},
+            "prosjekt":{"type":"string","description":"Prosjektkoden fra «prosjekter»"},
+            "beskrivelse":{"type":"string","description":"Hva arbeidet gjaldt, kort. Valgfri."},
+            "fakturerbar":{"type":"boolean","description":"Utelates = prosjektets standard"},
+            "timesats_ore":{"type":"integer","description":"Utelat. Prosjektets sats gjelder; en egen sats virker bare med retten TIMER_SATS_SKRIV og bare når oppgaven gir deg den."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_endre",
+        description: "Retter en timeføring. ALLE feltene skrives slik du sender dem — send dato, \
+                      minutter, prosjekt og `fakturerbar` sammen slik de står i timer_liste, også de \
+                      som ikke endres — et utelatt `fakturerbar` blir prosjektets standard. Du kan rette dine \
+                      egne føringer; andres bare med retten TIMER_SKRIV_ALLE. En føring som er \
+                      fakturert eller ligger i en låst periode kan ikke endres.",
+        method: "PUT",
+        path: "/companies/{selskap}/timesheet/{timeforing}",
+        right: Some("TIMER_SKRIV_EGNE"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["timeforing","dato","minutter","prosjekt"],"properties":{COMPANY,
+            "timeforing":{"type":"string","description":"entry_id fra timer_liste"},
+            "dato":{"type":"string","description":"YYYY-MM-DD"},
+            "minutter":{"type":"integer","minimum":1,"maximum":1440,"description":"Heltall minutter"},
+            "prosjekt":{"type":"string","description":"Prosjektkoden"},
+            "beskrivelse":{"type":"string"},
+            "fakturerbar":{"type":"boolean","description":"Utelates = prosjektets standard"},
+            "timesats_ore":{"type":"integer","description":"Utelat, som i timer_registrer"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_slett",
+        description: "Sletter en timeføring som ble ført feil. Samme grenser som timer_endre: \
+                      dine egne, andres bare med TIMER_SKRIV_ALLE, aldri fakturert eller i en \
+                      låst periode.",
+        method: "DELETE",
+        path: "/companies/{selskap}/timesheet/{timeforing}",
+        right: Some("TIMER_SKRIV_EGNE"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["timeforing"],"properties":{COMPANY,
+            "timeforing":{"type":"string","description":"entry_id fra timer_liste"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_sammendrag",
+        description: "Timer per prosjekt i en periode, for alle personer: minutter i alt, \
+                      fakturerbare minutter, og ufakturert og fakturert beløp i heltall øre. \
+                      Bruk denne når noen spør hvor mye som er ført på et prosjekt.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet/summary",
+        right: Some("TIMER_RAPPORT_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["from","to"],"properties":{COMPANY,
+            "from":{"type":"string","description":"YYYY-MM-DD"},
+            "to":{"type":"string","description":"YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_ufakturert",
+        description: "Fakturagrunnlaget: fakturerbare timer som ikke er fakturert ennå, gruppert \
+                      per prosjekt og sats, med prosjektets kunde som FORSLAG og hvem som førte \
+                      hva (`entry_ids` per person). Les denne før du kaller timer_fakturer.",
+        method: "GET",
+        path: "/companies/{selskap}/timesheet/unbilled",
+        right: Some("TIMER_RAPPORT_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY,
+            "prosjekt":{"type":"string","description":"Bare dette prosjektet"},
+            "through":{"type":"string","description":"Bare timer til og med denne datoen, YYYY-MM-DD"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_fakturer",
+        description: "Utsteder en faktura for ufakturerte timer og merker dem fakturert i samme \
+                      transaksjon. Fakturaen er UFORANDERLIG straks den er utstedt — en feil rettes \
+                      med kreditnota. Kunden (`party_no`) velger DU; prosjektets kunde i \
+                      timer_ufakturert er bare et forslag. `entry_ids` fakturerer akkurat de \
+                      føringene; er én av dem allerede fakturert, feiler hele kallet. \
+                      Er selskapet ikke mva-registrert, utelat `vat_code` helt.",
+        method: "POST",
+        path: "/companies/{selskap}/timesheet/invoice",
+        right: Some("TIMER_FAKTURER"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["party_no"],"properties":{COMPANY,
+            "party_no":{"type":"string","description":"Kundenummer fra «kunder»"},
+            "prosjekt":{"type":"string","description":"Bare timer på dette prosjektet"},
+            "through":{"type":"string","description":"Bare timer til og med denne datoen, YYYY-MM-DD"},
+            "entry_ids":{"type":"array","items":{"type":"string"},"description":"Akkurat disse føringene, fra timer_ufakturert"},
+            "vat_code":{"type":"string"},
+            "invoice_date":{"type":"string","description":"YYYY-MM-DD. Utelates = i dag."},
+            "due_date":{"type":"string","description":"YYYY-MM-DD. Utelates = fakturadato + 14 dager."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "timer_las",
+        description: "Låser timelisten til og med en dato (månedslås, før lønn eller \
+                      fakturering): ingen kan registrere, endre eller slette føringer på eller før \
+                      den. En TIDLIGERE dato enn dagens lås gjenåpner — det gjør du ALDRI, be et \
+                      menneske. Lås aldri uten at oppgaven ber om det. \
+                      Krever retten TIMER_LAAS. Nåværende lås står i timer_liste.",
+        method: "PUT",
+        path: "/companies/{selskap}/timesheet/lock",
+        right: Some("TIMER_LAAS"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["locked_through"],"properties":{COMPANY,
+            "locked_through":{"type":"string","description":"Siste låste dag, YYYY-MM-DD — vanligvis månedens siste dag"},
+            "note":{"type":"string","description":"Hvorfor, f.eks. «Lønn oktober kjørt»"}},
+            "additionalProperties":false}"#,
     },
     // ---------- Oppgaver ----------
     Tool {
@@ -610,6 +895,7 @@ pub const TOOLS: &[Tool] = &[
                       eller til ingen bestemt.",
         method: "GET",
         path: "/companies/{selskap}/agent/oppgaver",
+        right: None,
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","properties":{COMPANY,
@@ -621,6 +907,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Én oppgave med hele sporet av hva som er svart på den.",
         method: "GET",
         path: "/companies/{selskap}/agent/oppgaver/{oppgave}",
+        right: None,
         body: Body::None,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["oppgave"],"properties":{COMPANY,
@@ -636,12 +923,13 @@ pub const TOOLS: &[Tool] = &[
                       `sporsmal` og `avvist`.",
         method: "POST",
         path: "/companies/{selskap}/agent/oppgaver/{oppgave}/svar",
+        right: None,
         body: Body::Json,
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["oppgave","status"],"properties":{COMPANY,
             "oppgave":{"type":"string","description":"oppgave_id"},
             "status":{"type":"string","enum":["pagar","sporsmal","utfort","avvist"]},
-            "notat":{"type":"string","description":"Hva du gjorde, eller hva du trenger svar på"}},
+            "notat":{"type":"string","description":"Hva du gjorde, eller hva du trenger svar på. Et menneske leser det, ofte i en e-post: vanlige ord, ingen feltnavn eller verktøynavn"}},
             "additionalProperties":false}"#,
     },
 ];
@@ -657,6 +945,14 @@ pub fn schema(v: &Tool) -> String {
 
 pub fn find(name: &str) -> Option<&'static Tool> {
     TOOLS.iter().find(|v| v.name == name)
+}
+
+/// The tools an agent holding `rights` is offered (see [`Tool::right`]).
+pub fn offered(rights: &[String]) -> Vec<&'static Tool> {
+    TOOLS
+        .iter()
+        .filter(|t| t.right.is_none_or(|r| rights.iter().any(|h| h == r)))
+        .collect()
 }
 
 #[cfg(test)]

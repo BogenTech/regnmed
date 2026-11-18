@@ -13,6 +13,7 @@
   import Oppdragsliste from "./Oppdragsliste.svelte";
   import Byraliste from "./Byraliste.svelte";
   import Agentoppgaver from "./Agentoppgaver.svelte";
+  import { hentVarsler } from "../../lib/varsler.svelte.js";
 
   let { companyId } = $props();
 
@@ -74,6 +75,38 @@
     oppdrag = agent = null;
     lastOppdrag(id);
     if (serAgenter) lastAgent(id);
+  });
+
+  // When this card's list changes -- an answer sent, or the agent asking --
+  // the bell and the menu marker follow at once instead of within a minute.
+  const sporsmalHer = $derived(
+    agent?.oppgaver?.filter((o) => o.status === "sporsmal").length ?? null,
+  );
+  $effect(() => {
+    if (sporsmalHer !== null) hentVarsler();
+  });
+
+  // An agent answers in the background, and a task given from this card
+  // has no chat thread to announce it -- so while one is being worked on
+  // (`ny`/`pagar`), the list asks again. `sporsmal` waits for a human and
+  // the rest are final, so nothing polls once the agent is done. A failed
+  // poll keeps what is shown: the next one, or a reload, says more.
+  const arbeider = $derived(
+    !!agent?.oppgaver?.some((o) => o.status === "ny" || o.status === "pagar"),
+  );
+  $effect(() => {
+    if (!arbeider) return;
+    const id = companyId;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const o = await api("/companies/" + id + "/agent/oppgaver?apne=false");
+        if (id === companyId && agent && !agent.error) agent = { ...agent, oppgaver: o.oppgaver };
+      } catch {
+        // keep the list as it is
+      }
+    }, 4000);
+    return () => clearInterval(timer);
   });
 
   // The directory is the same for every company, and only for whoever

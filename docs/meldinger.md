@@ -152,7 +152,7 @@ tidsstempel. Klienten fjerner duplikater på id.
 | `GET /chat/contacts` | hvem jeg kan skrive til, med hvordan (`links`: `colleague`, `agent`, `accountant`, `firm_colleague`, `client`) |
 | `GET /chat/conversations` | mine samtaler, nyeste melding først, med uleste |
 | `POST /chat/conversations` | åpne `{person_id, company_id?}` — `company_id` for en agent |
-| `GET /chat/conversations/{id}?since=` | meldingene, motparten og `attach_to` |
+| `GET /chat/conversations/{id}?since=&before=&before_id=&limit=` | én side med meldinger (nyeste 30 som standard), motparten, `attach_to` og `older` |
 | `POST /chat/conversations/{id}/messages` | `{text, documents}` — til en agent blir det en oppgave |
 | `POST /chat/conversations/{id}/read` | `{until}` — merket flyttes bare framover |
 | `GET /chat/unread` | `{unread, conversations}` til knappen i navbaren |
@@ -178,6 +178,32 @@ tidsstempel. Klienten fjerner duplikater på id.
   samtale åpnes — men ikke på berøringsskjerm, der fokus betyr et
   tastatur over halve samtalen.
 
+### 7.1 Hele historikken med en agent, og lange tråder i sider (2026-11-18)
+
+**Samtalen med en agent er hele historikken med den**, også oppgavene som
+ble gitt fra Oppdrag-kortet (eller over API-et) og aldri var en melding.
+I prod hadde tre oppgaver med RegnmedAgent gått den veien, og Meldinger sa
+«Ingen samtaler ennå». Nå leses oppgavesporet inn i samtalen
+(`chat::agent_history`): bestillingen, og hvert notat i sporet — agentens
+spørsmål og svar, menneskets svar — i tidsrekkefølge med chatmeldingene.
+Ingenting kopieres; sporet (0064) er fortsatt den ene kilden. Oppgaver som
+kom fra en samtale hoppes over, siden de alt ER meldinger der.
+
+- **Bare for den som kan lese køen** (`INTEGRASJON_LES`), samme vakt som
+  Oppdrag-kortet.
+- **Samtalen finnes der man leter.** Har du historikk med en agent uten
+  en samtale ennå, åpnes den når samtalelisten hentes (`open` er en
+  upsert på paret), og listen viser historikkens nyeste linje.
+- **Hvem som sa det.** Før 0092 lagret en oppgave bare giverens NAVN; har
+  den samme navn som deg, vises den som din.
+
+**Ingen tråd sendes hel.** Hver samtale — med en agent, en kollega eller
+byrået — åpnes med de nyeste 30 meldingene, og eldre hentes én side om
+gangen når man ruller opp (eller trykker «Vis eldre meldinger», for
+tastaturet). Markøren er `(created_at, id)`, så to meldinger i samme
+mikrosekund verken hoppes over eller kommer to ganger; rulleposisjonen
+holdes når en side legges til over. `older` sier om det finnes mer.
+
 ## 8. Ikke bygget ennå
 
 | Hva | Sak |
@@ -196,7 +222,11 @@ hvem fra begge sider, en fremmed agent som ikke synes, byråets valgte
 kontakt (bare admin velger, bare egne medlemmer), kvittering til agenten
 → oppgave → spørsmål tilbake → svar som fortsetter samme oppgave,
 sortering etter nyeste melding, uleste, utenforstående = 404, og
-samtalen som forsvinner når oppdraget avsluttes. `an_agent_that_cannot_run_says_so_in_the_conversation`: en agent
+samtalen som forsvinner når oppdraget avsluttes.
+`an_agents_task_history_is_its_conversation_and_long_threads_page`: en
+oppgave gitt fra kortet blir samtalen (bestilling, spørsmål, svar,
+resultat i rekkefølge, siste linje i listen), og siden + markøren henter
+resten uten hull — sett feile med flettingen slått av. `an_agent_that_cannot_run_says_so_in_the_conversation`: en agent
 regnmed ikke kjører, får ingen hendelse og `runs_here: false`; med lagret
 hemmelighet men uten modell svarer den med et spørsmål som havner i
 samtalen.

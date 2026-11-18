@@ -127,3 +127,27 @@ pub async fn publish(js: &jetstream::Context, mail: &OutboundMail) -> Result<()>
         .context("waiting for JetStream publish ack")?;
     Ok(())
 }
+
+/// Tells the person who gave a task that the agent asked a question
+/// (docs/agent.md §8.5). Both rails call it -- the hosted worker and the
+/// API, where an agent on the customer's own machine reports -- so the
+/// rule for who is told lives in one place
+/// ([`regnmed_db::agent_task::question_email`]). Returns whether a mail
+/// was queued; nobody to tell is not an error.
+pub async fn notify_question(
+    js: &jetstream::Context,
+    pool: &sqlx::PgPool,
+    company_id: Uuid,
+    task_id: Uuid,
+    question: &str,
+    portal_base: Option<&str>,
+) -> Result<bool> {
+    let Some(payload) =
+        regnmed_db::agent_task::question_email(pool, company_id, task_id, question, portal_base)
+            .await?
+    else {
+        return Ok(false);
+    };
+    publish(js, &OutboundMail::from_payload(Uuid::now_v7(), &payload)).await?;
+    Ok(true)
+}
