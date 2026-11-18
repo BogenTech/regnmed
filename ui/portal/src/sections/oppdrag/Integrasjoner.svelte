@@ -2,7 +2,8 @@
   // Maskin-tilgang: en integrasjon er en person av typen «integrasjon»,
   // så tilgangsoppslag og revisjonsspor er de samme som for mennesker.
   // Tilbakekalling virker straks (valid_to er eksklusiv).
-  import { post, send } from "../../lib/api.js";
+  import { api, post, send } from "../../lib/api.js";
+  import { naadd } from "../../lib/pakke.js";
   import { formatDate, formatTime } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
@@ -21,6 +22,20 @@
     kanOpprette = false,
     onDone,
   } = $props();
+
+  // The package limit shown up front; the server refuses regardless.
+  let pakke = $state(null);
+  $effect(() => {
+    const id = companyId;
+    void integrasjoner?.length; // read again after the list changes: the count is what fills up
+    pakke = null;
+    api("/companies/" + id + "/subscription")
+      .then((s) => {
+        if (companyId === id) pakke = s;
+      })
+      .catch(() => {});
+  });
+  let fullt = $derived(!!pakke?.bruk && naadd(pakke.bruk.integrasjoner, pakke.bruk.integrasjoner_grense));
 
   // Icons an agent can wear: the sections whose work it would do. The
   // set is the portal's own (ikoner.js) — no icon library, same rule as
@@ -377,8 +392,16 @@
   {:else}
     <p class="text-sm opacity-70 mb-3">Ingen agenter eller integrasjoner ennå.</p>
   {/if}
+  {#if fullt}
+    <p class="text-sm mb-2" role="note">
+      Pakken {pakke.pakke?.navn ?? ""} har plass til {pakke.bruk.integrasjoner_grense}
+      {pakke.bruk.integrasjoner_grense === 1 ? "integrasjon eller agent" : "integrasjoner og agenter"}. Bytt til
+      en større pakke under
+      <a class="link" href={"#/c/" + companyId + "/admin/abonnement"}>Abonnement</a> for å legge til flere.
+    </p>
+  {/if}
   {#if kanOpprette}
-    <button class="btn btn-sm btn-primary" onclick={nyAgent}>Ny agent</button>
+    <button class="btn btn-sm btn-primary" onclick={nyAgent} disabled={fullt}>Ny agent</button>
     <p class="text-xs opacity-60 mt-1">
       Agenten får sin egen identitet automatisk. Har du alt en agent som kjører på din egen
       maskin, kan du
@@ -405,7 +428,7 @@
           {/each}
         </select>
       </label>
-      <button class="btn btn-sm" disabled={opptatt}>
+      <button class="btn btn-sm" disabled={opptatt || fullt}>
         {#if opptatt}<span class="loading loading-spinner loading-xs"></span>{/if}
         Gi tilgang
       </button>

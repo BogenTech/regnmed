@@ -85,6 +85,45 @@ pub async fn open_coverage(
     Ok(id)
 }
 
+/// Moves a company to another plan in one transaction: the open coverage ends
+/// and a new one starts the day it ends (never overlapping, never a gap). The
+/// old row keeps its plan, so what was billed when stays readable.
+pub async fn switch_plan(
+    pool: &PgPool,
+    company_id: Uuid,
+    plan: &str,
+    today: NaiveDate,
+    note: &str,
+    by: &str,
+) -> Result<NaiveDate> {
+    ensure!(!note.trim().is_empty(), "byttet må ha en referanse");
+    let mut tx = pool.begin().await?;
+    let ended: Option<NaiveDate> = sqlx::query_scalar(
+        "update abonnement set valid_to = greatest($2, valid_from + 1)
+         where company_id = $1 and valid_to is null
+         returning valid_to",
+    )
+    .bind(company_id)
+    .bind(today)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let from = ended.unwrap_or(today);
+    sqlx::query(
+        "insert into abonnement (id, company_id, plan, valid_from, valid_to, note, created_by)
+         values ($1,$2,$3,$4,null,$5,$6)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(company_id)
+    .bind(plan)
+    .bind(from)
+    .bind(note.trim())
+    .bind(by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(from)
+}
+
 /// Ends the open coverage: sets `valid_to` (EXCLUSIVE) on the company's
 /// open row. History is never touched.
 ///

@@ -5,10 +5,10 @@
 // data/pricing.js. Same shape as the API.
 export const FALLBACK = {
   plans: [
-    { slug: "basis", name: "Basis", kind: "plan", available: true, audience: "Selvbetjent", featured: false, voucher_limit: null, employee_limit: null, features: ["Alle funksjoner", "Dokumentasjon som support"], price_ore_per_month: 4900, in_force: true, upcoming: null },
-    { slug: "standard", name: "Standard", kind: "plan", available: true, audience: "Med e-postsupport", featured: true, voucher_limit: null, employee_limit: null, features: ["Alle funksjoner", "Support på e-post"], price_ore_per_month: 9900, in_force: true, upcoming: null },
+    { slug: "basis", name: "Basis", kind: "plan", available: true, audience: "Selvbetjent", featured: false, voucher_limit: null, employee_limit: null, integration_limit: null, features: ["Alle funksjoner", "Dokumentasjon som support"], price_ore_per_month: 4900, in_force: true, upcoming: null },
+    { slug: "standard", name: "Standard", kind: "plan", available: true, audience: "Med e-postsupport", featured: true, voucher_limit: null, employee_limit: null, integration_limit: null, features: ["Alle funksjoner", "Support på e-post"], price_ore_per_month: 9900, in_force: true, upcoming: null },
   ],
   addons: [
-    { slug: "bank", name: "Bankkobling", kind: "addon", available: false, audience: "Henter bankbevegelsene automatisk i stedet for fra fil", featured: false, voucher_limit: null, employee_limit: null, features: [], price_ore_per_month: null, in_force: false, upcoming: null },
+    { slug: "bank", name: "Bankkobling", kind: "addon", available: false, audience: "Henter bankbevegelsene automatisk i stedet for fra fil", featured: false, voucher_limit: null, employee_limit: null, integration_limit: null, features: [], price_ore_per_month: null, in_force: false, upcoming: null },
   ],
 };

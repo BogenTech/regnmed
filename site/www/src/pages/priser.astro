@@ -10,7 +10,7 @@ const sized = plans.some((p) => p.voucher_limit);
   <section class="pagehead"><div class="wrap">
     <p class="eyebrow">Priser</p>
     <h1 style="margin-top:1rem;max-width:16ch">Du betaler etter størrelse, ikke etter funksjoner.</h1>
-    <p class="lede">Ingen funksjon er låst bak en plan, og brukere koster aldri ekstra.{sized && " Planene skiller på størrelse: hvor mange bilag selskapet bokfører i året og hvor mange ansatte som kjøres i lønn."}</p>
+    <p class="lede">Brukere koster aldri ekstra, og bokføringen stoppes aldri.{sized && " Pakkene skiller på størrelse: bilag i året, ansatte i lønn og integrasjoner."}</p>
   </div></section>
   <section class="section"><div class="wrap stack" style="--s:2.5rem">
     {anyUpcoming && (
@@ -24,7 +24,7 @@ const sized = plans.some((p) => p.voucher_limit);
           <h3>{p.name}</h3><div class="price num">{l.main}<small>{l.unit}</small></div>
           {l.note && <p class="cap">{l.note}</p>}
           {p.voucher_limit && <p class="cap">opptil {fmtN(p.voucher_limit)} bilag i året</p>}
-          <ul>{p.audience && <li>{p.audience}</li>}{p.employee_limit != null && <li>Lønn for {p.employee_limit === 1 ? "1 ansatt" : `opptil ${fmtN(p.employee_limit)} ansatte`}</li>}{p.features.map((f) => <li>{f}</li>)}</ul>
+          <ul>{p.audience && <li>{p.audience}</li>}{p.employee_limit != null && <li>Lønn for {p.employee_limit === 1 ? "1 ansatt" : `opptil ${fmtN(p.employee_limit)} ansatte`}</li>}{p.integration_limit != null && <li>{p.integration_limit === 0 ? "Ingen integrasjoner eller agenter" : `Opptil ${fmtN(p.integration_limit)} integrasjoner og agenter`}</li>}{p.features.map((f) => <li>{f}</li>)}</ul>
           <p style="margin-top:1.5rem"><a class={p.featured ? "btn" : "btn primary"} style={p.featured ? "border-color:var(--paper);color:var(--paper)" : undefined} href={APP}>Prøv i 30 dager</a></p>
         </div>
       ); })}
@@ -43,8 +43,8 @@ const sized = plans.some((p) => p.voucher_limit);
       <p>Tilleggstjenester kjøpes på toppen av en plan. I dag importerer du kontoutskrift som fil, og det er med i alle planer.</p>
 
       {sized && (<>
-      <h2>Hvordan grensene er tenkt</h2>
-      <p>Grensene er ikke i kraft ennå, og de innføres sammen med planene. Tanken er at de er myke: passerer du antallet bilag, foreslår vi neste plan og varsler i god tid. Vi stopper ikke bokføringen din på grunn av en grense, og lesing og eksport er alltid åpent.</p>
+      <h2>Hva grensene betyr</h2>
+      <p><b>Bokføringen stoppes aldri.</b> Går du over antallet bilag i pakken, får du beskjed i portalen og forslag om en større pakke. Lønn og integrasjoner har en fast grense: når pakken er full, må du bytte pakke for å legge til flere ansatte eller agenter. Lesing og eksport er alltid åpent, og du kan bytte pakke selv under Abonnement.</p>
       </>)}
 
       <h2>Hva som skjer når prøveperioden går ut</h2>

@@ -923,6 +923,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(subscription::card_setup),
         )
         .route(
+            "/companies/{company_id}/subscription/change",
+            axum::routing::post(subscription::change_plan),
+        )
+        .route(
             "/companies/{company_id}/subscription/cancel",
             axum::routing::post(subscription::cancel_subscription),
         )

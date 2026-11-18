@@ -5,7 +5,8 @@
   import { post } from "../../lib/api.js";
   import { formatDate, kr } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
-  import { bekreft } from "../../lib/dialog.svelte.js";
+  import { bekreft, skjema } from "../../lib/dialog.svelte.js";
+  import { bruktekst, minsteSomPasser } from "../../lib/pakke.js";
   import { harRett, loadMe } from "../../lib/me.svelte.js";
   import Card from "../../components/Card.svelte";
 
@@ -15,7 +16,19 @@
   let plan = $state(untrack(() => abo.planer?.[0]?.plan || ""));
   let interval = $state("month");
   // One action at a time: a double click must not open two checkouts.
-  let opptatt = $state(null); // "kort" | "start" | "opp"
+  let opptatt = $state(null); // "kort" | "start" | "opp" | "bytt"
+
+  let bruk = $derived(abo.bruk);
+  let forslag = $derived(minsteSomPasser(abo.planer, bruk));
+  // A plan's limits in one line, for the plan list and the change dialog.
+  const grenser = (p) =>
+    [
+      p.bilag_grense != null ? "opptil " + p.bilag_grense + " bilag/år" : "ubegrenset bilag",
+      p.ansatte_grense != null ? p.ansatte_grense + " i lønn" : null,
+      p.integrasjoner_grense != null ? p.integrasjoner_grense + " integrasjoner" : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
 
   let statusTekst = $derived(
     {
@@ -78,6 +91,46 @@
     }
   }
 
+  // Bytt pakke: kortabonnement (Stripe) byttes via drift, serveren sier fra.
+  async function byttPakke() {
+    if (opptatt) return;
+    const andre = (abo.planer || []).filter((p) => p.plan !== abo.pakke?.slug);
+    if (!andre.length) {
+      toast("Det finnes ingen annen pakke å bytte til nå", false);
+      return;
+    }
+    const svar = await skjema(
+      "Bytt pakke",
+      [
+        {
+          navn: "plan",
+          etikett: "Ny pakke",
+          type: "select",
+          standard: (andre.find((p) => p.plan === forslag?.plan) ?? andre[0]).plan,
+          valg: andre.map((p) => [p.plan, p.navn + ", " + kr(p.pris_ore_per_mnd) + " kr/mnd eks. mva (" + grenser(p) + ")"]),
+        },
+      ],
+      {
+        ok: "Bytt pakke",
+        melding:
+          (forslag ? "Den minste pakken som passer bruken i dag er " + forslag.navn + ". " : "") +
+          "Byttet gjelder fra i dag, og prisen følger den nye pakken.",
+      },
+    );
+    if (!svar) return;
+    opptatt = "bytt";
+    try {
+      const res = await post("/companies/" + companyId + "/subscription/change", { plan: svar.plan });
+      toast("Pakken er byttet fra " + formatDate(res.fra), true);
+      await loadMe(true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      opptatt = null;
+    }
+  }
+
   async function siOpp() {
     if (opptatt) return;
     // Bevisst friksjon: en oppsigelse skal ikke skje ved et uhell.
@@ -122,14 +175,45 @@
   {:else if loper}
     <p class="text-sm mb-2">
       Løpende {abo.abonnement.interval === "year" ? "årsabonnement" : "månedsabonnement"} på planen
-      <b>{abo.abonnement.plan}</b>. Det fornyes automatisk til du sier det opp.
+      <b>{abo.pakke?.navn ?? abo.abonnement.plan}</b>. Det fornyes automatisk til du sier det opp.
     </p>
   {/if}
 
+  {#if abo.pakke || bruk}
+    <div class="text-sm mb-3">
+      {#if abo.pakke}<p>Pakke: <b>{abo.pakke.navn}</b></p>{/if}
+      {#if bruk}
+        <ul class="mt-1 space-y-0.5">
+          <li class={bruk.over_bilag ? "text-warning font-medium" : ""}>
+            {bruktekst(bruk.bilag, bruk.bilag_grense, "bilag i år")}
+          </li>
+          <li>{bruktekst(bruk.ansatte, bruk.ansatte_grense, "ansatte i lønn")}</li>
+          <li>{bruktekst(bruk.integrasjoner, bruk.integrasjoner_grense, "integrasjoner og agenter")}</li>
+        </ul>
+        {#if bruk.over_bilag}
+          <p class="mt-2">
+            Selskapet har flere bilag enn pakken er laget for. Bokføringen fortsetter som før{forslag
+              ? ", men " + forslag.navn + " passer bedre"
+              : ""}.
+          </p>
+        {/if}
+      {/if}
+    </div>
+  {/if}
+
   <p class="text-sm opacity-70 mb-3">
-    Alt er inkludert i begge planer; forskjellen er supportkanalen. Selv om abonnementet sperres,
+    Alle funksjoner er med i alle pakker; pakkene skiller på størrelse. Selv om abonnementet sperres,
     kan du alltid lese, eksportere og styre selskapet: hovedboken tas aldri som gissel.
   </p>
+
+  {#if kanStyre && abo.pakke && abo.status === "aktiv"}
+    <div class="mb-3">
+      <button class="btn btn-sm btn-outline" disabled={!!opptatt} onclick={byttPakke}>
+        {#if opptatt === "bytt"}<span class="loading loading-spinner loading-xs"></span>{/if}
+        Bytt pakke
+      </button>
+    </div>
+  {/if}
 
   {#if !kanStyre}
     <p class="text-xs opacity-60">Abonnementet styres av selskapets administrator.</p>
@@ -140,7 +224,7 @@
           <legend class="fieldset-legend">Plan</legend>
           <select class="select select-sm" bind:value={plan}>
             {#each abo.planer || [] as p (p.plan)}
-              <option value={p.plan}>{p.plan}, {pris(p)} eks. mva</option>
+              <option value={p.plan}>{p.navn ?? p.plan}, {pris(p)} eks. mva ({grenser(p)})</option>
             {/each}
           </select>
         </fieldset>

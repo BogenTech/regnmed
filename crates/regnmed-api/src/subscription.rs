@@ -51,27 +51,18 @@ pub async fn subscription_status(
         Status::Blocked { since } => Some(since),
     };
     let card = regnmed_db::subscription::card_for(&state.pool, company_id).await?;
-    let prices = regnmed_db::subscription::list_prices(&state.pool).await?;
-    // Newest price in force per plan, monthly and yearly. A plan without
-    // its own yearly row is billed 12 × the monthly price (the same rule
-    // as `price_with_vat`), so the yearly figure shown is what is charged.
     let today = chrono::Utc::now().date_naive();
-    let newest = |plan: &str, interval: &str| {
-        prices
-            .iter()
-            .find(|p| p.plan == plan && p.interval == interval && p.valid_from <= today)
-            .map(|p| p.price_ore_per_month)
-    };
-    let mut plans: Vec<&str> = prices.iter().map(|p| p.plan.as_str()).collect();
-    plans.dedup();
-    let planer: Vec<serde_json::Value> = plans
-        .into_iter()
-        .filter_map(|plan| {
-            let month = newest(plan, "month")?;
-            let year = newest(plan, "year").unwrap_or(month * 12);
-            Some(json!({ "plan": plan, "pris_ore_per_mnd": month, "pris_ore_per_ar": year }))
-        })
-        .collect();
+    let current = regnmed_db::plans::plan_for_company(&state.pool, company_id).await?;
+    let planer = choosable_plans(&state, today, current.as_ref().map(|c| c.slug.as_str())).await?;
+    let usage = regnmed_db::plans::usage(
+        &state.pool,
+        company_id,
+        regnmed_core::fiscal_year::of(today),
+    )
+    .await?;
+    let limit =
+        |f: fn(&regnmed_db::plans::CompanyPlan) -> Option<i32>| current.as_ref().and_then(f);
+    let bilag_grense = limit(|c| c.voucher_limit);
     // The Stripe subscription, when the company is on that rail. Its
     // presence is what tells the portal to offer "si opp" rather than
     // "kontakt drift" — companies from before the Stripe rail keep the
@@ -81,6 +72,18 @@ pub async fn subscription_status(
         "status": status.slug(),
         "dato": date.map(|d| d.to_string()),
         "planer": planer,
+        "pakke": current.as_ref().map(|c| json!({ "slug": c.slug, "navn": c.name })),
+        // Soft for vouchers (bookkeeping is never blocked), hard for employees
+        // and integrations (refused where they are created: plans::ensure_room).
+        "bruk": {
+            "bilag": usage.vouchers,
+            "bilag_grense": bilag_grense,
+            "ansatte": usage.employees,
+            "ansatte_grense": limit(|c| c.employee_limit),
+            "integrasjoner": usage.integrations,
+            "integrasjoner_grense": limit(|c| c.integration_limit),
+            "over_bilag": bilag_grense.is_some_and(|g| usage.vouchers > i64::from(g)),
+        },
         "kort": card.filter(|k| k.active).map(|k| json!({ "brand": k.brand, "last4": k.last4 })),
         "kort_mulig": state.stripe.is_some(),
         "abonnement": abo.map(|a| json!({
@@ -230,9 +233,15 @@ pub async fn start_subscription(
             "intervallet må være «month» eller «year»".into(),
         ));
     }
-    regnmed_db::subscription::price_on(&state.pool, &request.plan, today)
-        .await
-        .map_err(|_| ApiError::BadRequest("ukjent plan".into()))?;
+    // Only a plan that is for sale today: listed, a package (not an add-on),
+    // with a price in force. Grandfathered plans are kept, never sold anew.
+    if !choosable_plans(&state, today, None)
+        .await?
+        .iter()
+        .any(|p| p["plan"] == request.plan.as_str())
+    {
+        return Err(ApiError::BadRequest("planen kan ikke velges".into()));
+    }
 
     if regnmed_db::subscription::stripe_abo_for(&state.pool, company_id)
         .await?
@@ -653,4 +662,101 @@ static PRICING_CACHE: std::sync::Mutex<Option<(std::time::Instant, String)>> =
 
 pub fn invalidate_pricing_cache() {
     *PRICING_CACHE.lock().unwrap() = None;
+}
+
+/// The plans a company may choose, with today's price and limits: listed packages
+/// with a month price in force, plus `keep` (the company's current plan, which may
+/// be grandfathered and no longer listed) so its own price stays visible. A plan
+/// without its own yearly row is billed 12 x the monthly price (`price_with_vat`).
+async fn choosable_plans(
+    state: &AppState,
+    today: chrono::NaiveDate,
+    keep: Option<&str>,
+) -> Result<Vec<serde_json::Value>, ApiError> {
+    let plans = regnmed_db::plans::list_plans(&state.pool).await?;
+    Ok(plans
+        .iter()
+        .filter(|p| p.kind == "plan" && (p.listed || Some(p.slug.as_str()) == keep))
+        .filter_map(|p| {
+            let price = |interval: &str| {
+                p.prices
+                    .iter()
+                    .filter(|x| x.interval == interval && x.valid_from <= today)
+                    .max_by_key(|x| x.valid_from)
+                    .map(|x| x.price_ore_per_month)
+            };
+            let month = price("month")?;
+            Some(json!({
+                "plan": p.slug,
+                "navn": p.name,
+                "pris_ore_per_mnd": month,
+                "pris_ore_per_ar": price("year").unwrap_or(month * 12),
+                "bilag_grense": p.voucher_limit,
+                "ansatte_grense": p.employee_limit,
+                "integrasjoner_grense": p.integration_limit,
+                "funksjoner": p.features,
+                "fremhevet": p.featured,
+            }))
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+pub struct ChangeRequest {
+    plan: String,
+}
+
+/// Switches an invoiced company to another package from today. A card
+/// (Stripe) subscription is changed by support for now: Stripe owns its
+/// renewal, so a switch there is a price change on the Stripe subscription.
+pub async fn change_plan(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Json(request): Json<ChangeRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::CompanyAdmin).await?;
+    let today = chrono::Utc::now().date_naive();
+    if !choosable_plans(&state, today, None)
+        .await?
+        .iter()
+        .any(|p| p["plan"] == request.plan.as_str())
+    {
+        return Err(ApiError::BadRequest("planen kan ikke velges".into()));
+    }
+    if regnmed_db::subscription::stripe_abo_for(&state.pool, company_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::BadRequest(
+            "abonnementet betales med kort; ta kontakt med oss for å bytte pakke".into(),
+        ));
+    }
+    let Some(current) = regnmed_db::plans::plan_for_company(&state.pool, company_id).await? else {
+        return Err(ApiError::BadRequest(
+            "selskapet har ikke et aktivt abonnement ennå; velg pakke når du starter abonnementet"
+                .into(),
+        ));
+    };
+    if current.slug == request.plan {
+        return Err(ApiError::BadRequest(
+            "selskapet er allerede på denne pakken".into(),
+        ));
+    }
+    let name = person.name.as_deref().unwrap_or(&person.sub);
+    let from = regnmed_db::subscription::switch_plan(
+        &state.pool,
+        company_id,
+        &request.plan,
+        today,
+        &format!(
+            "pakkebytte {} -> {} i portalen av {name}",
+            current.slug, request.plan
+        ),
+        name,
+    )
+    .await?;
+    Ok(Json(
+        json!({ "plan": request.plan, "fra": from.to_string() }),
+    ))
 }

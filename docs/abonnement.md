@@ -355,10 +355,24 @@ Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
   som er på pakken, og API-et krever `confirm_existing` når det er noen. Grandfathering
   er gratis bare for en ny `slug`. Typen (pakke eller tillegg) til en `slug` kan ikke
   endres etter første versjon.
-- **Grensene er beskrivende.** Ingenting måler eller håndhever dem ennå. De
-  finnes slik at prissiden og konsollen sier det samme, og slik at den dagen
-  håndhevingen bygges leser den tallet kunden ble vist. Det samme gjelder at
-  kjøp av en tilleggstjeneste ennå ikke er bygget som dekningsrad.
+- **Grensene håndheves slik (brukerbeslutning 2026-11-18):** bokføringen stoppes
+  aldri. Over bilaggrensen (bilag i inneværende regnskapsår, importjournalen IMP
+  ikke medregnet) er bare en opplysning: `GET …/subscription` svarer `over_bilag`,
+  og portalen foreslår den minste pakken som passer. **Ansatte i lønn og
+  integrasjoner/agenter har en hard grense**: en ny ansatt eller et nytt
+  integrasjonsgrant over grensen avvises med en melding som navngir pakken
+  (`plans::ensure_room`, kjørt i samme transaksjon som innsettingen, etter en lås på
+  selskapsraden, så to samtidige forespørsler ikke begge tar siste plass). Grensene
+  leses fra pakken selskapet har dekning på i dag. **Prøveperioden og selskaper uten
+  dekning har ingen grenser**, og de gamle pakkene `basis` og `standard` har heller
+  ingen, så eksisterende kunder merker ingenting (grandfathering).
+- **Pakkebytte**: `POST …/subscription/change` (selskapsadmin) avslutter dagens
+  dekning og starter den nye samme dag den gamle slutter, i én transaksjon; den gamle
+  raden beholder sin plan, så det fakturerte er lesbart. Et kortabonnement (Stripe)
+  byttes foreløpig av oss, siden Stripe eier fornyelsen.
+- **Bare det som er til salgs kan velges**: oppstart og bytte godtar bare en listet
+  pakke (ikke et tillegg) med en månedspris som gjelder i dag. En gammel pakke selskapet
+  allerede står på vises fortsatt med sin pris, men kan ikke velges på nytt.
 - **Offentlig**: `GET /pricing` (åpent) gir listede pakker og tillegg med dagens
   pris og neste daterte endring. Svaret mellomlagres 30 sekunder per prosess og nullstilles ved hver endring.
   Nettsiden leser det ved bygg og bygges på nytt hver sjette time (faller tilbake til

@@ -60,7 +60,8 @@
     { navn: "name", etikett: "Navn" },
     { navn: "audience", etikett: "Passer for", valgfri: true },
     { navn: "voucher_limit", etikett: "Grense for bilag i året", valgfri: true, hjelp: "Tomt = uten grense. Grensene er myke og stopper aldri bokføring." },
-    { navn: "employee_limit", etikett: "Grense for ansatte i lønn", valgfri: true, hjelp: "Tomt = uten grense." },
+    { navn: "employee_limit", etikett: "Grense for ansatte i lønn", valgfri: true, hjelp: "Tomt = uten grense. Over grensen nektes nye ansatte." },
+    { navn: "integration_limit", etikett: "Grense for integrasjoner og agenter", valgfri: true, hjelp: "Tomt = uten grense. 0 = ingen. Over grensen nektes nye." },
     { navn: "features", etikett: "Det som følger med (én per linje)", type: "textarea", valgfri: true },
     { navn: "sort", etikett: "Rekkefølge", valgfri: true, hjelp: "Lavest først. Tomt = 0." },
     { navn: "featured", etikett: "Fremhevet på nettsiden", type: "checkbox" },
@@ -88,7 +89,7 @@
       ...f,
       standard:
         f.navn === "features" ? (p.features ?? []).join("\n")
-        : f.navn === "voucher_limit" || f.navn === "employee_limit" ? (p[f.navn] ?? "")
+        : f.navn === "voucher_limit" || f.navn === "employee_limit" || f.navn === "integration_limit" ? (p[f.navn] ?? "")
         : f.navn === "sort" ? String(p.sort ?? 0)
         : p[f.navn] ?? f.standard ?? "",
     }));
@@ -166,7 +167,7 @@
     <thead>
       <tr>
         <th>{addon ? "Tjeneste" : "Pakke"}</th><th>Nettsiden</th>
-        {#if addon}<th>Status</th>{:else}<th>Bilag/år</th><th>Ansatte</th>{/if}
+        {#if addon}<th>Status</th>{:else}<th>Bilag/år</th><th>Ansatte</th><th>Integrasjoner</th>{/if}
         <th>Pris nå</th><th>Kommer</th><th></th>
       </tr>
     </thead>
@@ -188,6 +189,7 @@
           {:else}
             <td>{grense(p.voucher_limit)}</td>
             <td>{grense(p.employee_limit)}</td>
+            <td>{grense(p.integration_limit)}</td>
           {/if}
           <td>
             {pris(m.current)} <span class="opacity-60">/mnd</span>
@@ -258,7 +260,7 @@
     </div>
     <div class="text-xs opacity-70">
       {p.audience}
-      {#if !addon}<br />Bilag: {grense(p.voucher_limit)} · Ansatte: {grense(p.employee_limit)}{/if}
+      {#if !addon}<br />Bilag: {grense(p.voucher_limit)} · Ansatte: {grense(p.employee_limit)} · Integrasjoner: {grense(p.integration_limit)}{/if}
     </div>
     {#if p.features?.length}
       <ul class="text-xs list-disc ml-4 mt-1">

@@ -24,6 +24,7 @@ pub struct PlanInput {
     pub listed: bool,
     pub voucher_limit: Option<i32>,
     pub employee_limit: Option<i32>,
+    pub integration_limit: Option<i32>,
     pub features: Vec<String>,
     pub sort: i32,
 }
@@ -47,6 +48,7 @@ pub struct Plan {
     pub listed: bool,
     pub voucher_limit: Option<i32>,
     pub employee_limit: Option<i32>,
+    pub integration_limit: Option<i32>,
     pub features: Vec<String>,
     pub sort: i32,
     pub set_by: Option<Uuid>,
@@ -99,6 +101,9 @@ pub fn validate_input(input: &PlanInput) -> Result<(), String> {
     if input.voucher_limit.is_some_and(|v| v <= 0) {
         return Err("bilagsgrensen må være større enn 0, eller tom for ingen grense".into());
     }
+    if input.integration_limit.is_some_and(|v| v < 0) {
+        return Err("grensen for integrasjoner kan ikke være negativ".into());
+    }
     if input.employee_limit.is_some_and(|v| v < 0) {
         return Err("ansattgrensen kan ikke være negativ".into());
     }
@@ -138,8 +143,8 @@ pub async fn save_plan(pool: &PgPool, slug: &str, input: &PlanInput, by: Uuid) -
     sqlx::query(
         "insert into subscription_plan
             (slug, name, kind, available, audience, featured, listed, voucher_limit,
-             employee_limit, features, sort, set_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+             employee_limit, features, sort, set_by, integration_limit)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
     )
     .bind(slug)
     .bind(input.name.trim())
@@ -155,6 +160,7 @@ pub async fn save_plan(pool: &PgPool, slug: &str, input: &PlanInput, by: Uuid) -
     ))
     .bind(input.sort)
     .bind(by)
+    .bind(input.integration_limit)
     .execute(pool)
     .await?;
     Ok(())
@@ -251,7 +257,7 @@ fn features_of(v: serde_json::Value) -> Vec<String> {
 pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
     let rows = sqlx::query(
         "select distinct on (slug) slug, name, kind, available, audience, featured, listed, voucher_limit,
-                employee_limit, features, sort, set_by, created_at
+                employee_limit, integration_limit, features, sort, set_by, created_at
          from subscription_plan order by slug, created_at desc, id desc",
     )
     .fetch_all(pool)
@@ -292,6 +298,7 @@ pub async fn list_plans(pool: &PgPool) -> Result<Vec<Plan>> {
                 listed: r.get("listed"),
                 voucher_limit: r.get("voucher_limit"),
                 employee_limit: r.get("employee_limit"),
+                integration_limit: r.get("integration_limit"),
                 features: features_of(r.get("features")),
                 sort: r.get("sort"),
                 set_by: r.get("set_by"),
@@ -320,6 +327,7 @@ pub struct PublicPlan {
     pub featured: bool,
     pub voucher_limit: Option<i32>,
     pub employee_limit: Option<i32>,
+    pub integration_limit: Option<i32>,
     pub features: Vec<String>,
     /// The month price valid today; `None` when the plan has none yet.
     pub price_ore_per_month: Option<i64>,
@@ -361,10 +369,139 @@ pub async fn public_pricing(pool: &PgPool, today: NaiveDate) -> Result<Vec<Publi
                 featured: p.featured,
                 voucher_limit: p.voucher_limit,
                 employee_limit: p.employee_limit,
+                integration_limit: p.integration_limit,
                 features: p.features,
             }
         })
         .collect())
+}
+
+/// The package a company is on today and its limits; `None` in trial or without
+/// coverage, which means no limits (the trial is the whole product).
+#[derive(Debug, Clone, Serialize)]
+pub struct CompanyPlan {
+    pub slug: String,
+    pub name: String,
+    pub voucher_limit: Option<i32>,
+    pub employee_limit: Option<i32>,
+    pub integration_limit: Option<i32>,
+}
+
+pub async fn plan_for_company<'e, E: sqlx::PgExecutor<'e>>(
+    ex: E,
+    company_id: Uuid,
+) -> Result<Option<CompanyPlan>> {
+    let row = sqlx::query(
+        "select a.plan, p.name, p.voucher_limit, p.employee_limit, p.integration_limit
+         from abonnement a
+         left join lateral (
+             select name, voucher_limit, employee_limit, integration_limit
+             from subscription_plan where slug = a.plan
+             order by created_at desc, id desc limit 1
+         ) p on true
+         where a.company_id = $1 and a.valid_from <= current_date
+           and (a.valid_to is null or a.valid_to > current_date)
+         order by a.valid_from desc limit 1",
+    )
+    .bind(company_id)
+    .fetch_optional(ex)
+    .await?;
+    Ok(row.map(|r| {
+        let slug: String = r.get("plan");
+        CompanyPlan {
+            name: r
+                .get::<Option<String>, _>("name")
+                .unwrap_or_else(|| slug.clone()),
+            slug,
+            voucher_limit: r.get("voucher_limit"),
+            employee_limit: r.get("employee_limit"),
+            integration_limit: r.get("integration_limit"),
+        }
+    }))
+}
+
+/// What a company uses of its limits: vouchers this fiscal year (the import
+/// journal excluded: history brought in is not this year's activity), active
+/// employees and active integration grants.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Usage {
+    pub vouchers: i64,
+    pub employees: i64,
+    pub integrations: i64,
+}
+
+pub async fn usage(pool: &PgPool, company_id: Uuid, fiscal_year: i32) -> Result<Usage> {
+    let r = sqlx::query(
+        "select
+            (select count(*) from voucher v join journal j on j.id = v.journal_id
+              where v.company_id = $1 and v.fiscal_year = $2 and j.code <> 'IMP') vouchers,
+            (select count(*) from employee
+              where company_id = $1 and (ansatt_til is null or ansatt_til >= current_date)) employees,
+            (select count(*) from integration_grant
+              where company_id = $1 and revoked_by is null
+                and (valid_to is null or valid_to > current_date)) integrations",
+    )
+    .bind(company_id)
+    .bind(fiscal_year)
+    .fetch_one(pool)
+    .await?;
+    Ok(Usage {
+        vouchers: r.get("vouchers"),
+        employees: r.get("employees"),
+        integrations: r.get("integrations"),
+    })
+}
+
+/// Refuses one more of something the package caps. Runs inside the caller's
+/// transaction after locking the company row, so two concurrent requests
+/// cannot both take the last place. Bookkeeping itself is never capped.
+pub async fn ensure_room(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    what: Capped,
+) -> Result<()> {
+    sqlx::query("select 1 from company where id = $1 for update")
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await?;
+    let Some(plan) = plan_for_company(&mut **tx, company_id).await? else {
+        return Ok(());
+    };
+    let (limit, count_sql, noun_one, noun_many) = match what {
+        Capped::Employees => (
+            plan.employee_limit,
+            "select count(*) from employee where company_id = $1
+               and (ansatt_til is null or ansatt_til >= current_date)",
+            "ansatt i lønn",
+            "ansatte i lønn",
+        ),
+        Capped::Integrations => (
+            plan.integration_limit,
+            "select count(*) from integration_grant where company_id = $1
+               and revoked_by is null and (valid_to is null or valid_to > current_date)",
+            "integrasjon eller agent",
+            "integrasjoner og agenter",
+        ),
+    };
+    let Some(limit) = limit else { return Ok(()) };
+    let used: i64 = sqlx::query_scalar(count_sql)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    ensure!(
+        used < i64::from(limit),
+        "Pakken «{}» har plass til {} {}. Bytt til en større pakke under Abonnement for å legge til flere.",
+        plan.name,
+        limit,
+        if limit == 1 { noun_one } else { noun_many }
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Capped {
+    Employees,
+    Integrations,
 }
 
 #[cfg(test)]
@@ -381,6 +518,7 @@ mod tests {
             listed: true,
             voucher_limit: Some(150),
             employee_limit: Some(1),
+            integration_limit: Some(0),
             features: vec!["Alle funksjoner".into()],
             sort: 1,
         }

@@ -71,18 +71,8 @@ På Oversikt finner du snarveiene «Ny faktura», «Last opp bilag» og «Regist
 
 ## Prøvetid og abonnement
 
-Et nytt selskap har 30 dagers prøvetid. Deretter trengs et abonnement:
+Et nytt selskap har 30 dagers prøvetid uten grenser. Deretter velger du en pakke. Pakkene og prisene står på [regnmed.no/priser](https://www.regnmed.no/priser/), og beskrives under [Abonnement og priser](/brukerveiledning/abonnement-og-priser/).
 
-:::note
-Nye planer (Liten, Standard og Stor etter antall bilag) er foreslått, men ikke innført. Tabellen under er det som gjelder i dag. Se [priser](https://www.regnmed.no/priser/).
-:::
-
-
-| Plan | Pris | Innhold |
-| --- | --- | --- |
-| Basis | 49 kr per måned | Alt er med, selvbetjent. Dokumentasjonen er supporten. |
-| Standard | 99 kr per måned | Alt er med, pluss support på e-post. |
-
-Prisen gjelder selskapet, ikke antall brukere. Planen og betalingsintervall (månedlig eller årlig) ser og styrer administratoren under Administrasjon → Abonnement.
+Prisen gjelder selskapet, ikke antall brukere. Pakken, bruken av grensene og betalingsintervallet ser og styrer administratoren under Administrasjon → Abonnement, der du også kan bytte pakke.
 
 Når abonnementet utløper, er det en frist på 14 dager før selskapet sperres. En sperre stopper **endringer**, som en låst periode. Lesing, rapporter, nedlasting og SAF-T-eksport virker alltid, og det gjør også styringen av tilganger og firmaopplysninger. Hovedboken tas aldri som gissel.

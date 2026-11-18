@@ -1240,3 +1240,191 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
         "dekningen skulle vært avsluttet, ikke bare abonnementsraden"
     );
 }
+
+/// Package guardrails (docs/abonnement.md §7, user decision 2026-11-18):
+/// bookkeeping is never blocked — going over the voucher limit is only
+/// reported — while an employee or an integration beyond the package is
+/// refused where it is created. Trial has no limits, an unlisted plan or an
+/// add-on cannot be chosen, and switching to a bigger package lifts the cap.
+#[tokio::test]
+async fn package_limits_refuse_employees_and_integrations_but_never_bookkeeping() {
+    let Some((state, _idp, company, admin)) = config().await else {
+        return;
+    };
+    let base = format!("/companies/{company}");
+    let employee = |nin: &str| {
+        format!(
+            r#"{{"fodselsnummer":"{nin}","navn":"Ansatt {nin}","ansatt_fra":"2026-01-01","manedslonn_ore":5000000,"trekk_type":"prosent","trekk_prosent_bp":3000}}"#
+        )
+    };
+    // Trial: no package, no limits.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/employees"),
+        &admin,
+        &employee("03048810003"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+
+    // A small package: 1 voucher, 1 employee, no integrations.
+    let by = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("sys|{}", Uuid::new_v4()),
+        Some("Sys"),
+        None,
+    )
+    .await
+    .unwrap();
+    let slug = format!("t{}", &Uuid::new_v4().simple().to_string()[..12]);
+    let mut input = regnmed_db::plans::PlanInput {
+        name: "Testliten".into(),
+        kind: "plan".into(),
+        available: true,
+        audience: String::new(),
+        featured: false,
+        listed: true,
+        voucher_limit: Some(1),
+        employee_limit: Some(1),
+        integration_limit: Some(0),
+        features: vec![],
+        sort: 990,
+    };
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+        .await
+        .unwrap();
+    let today = Utc::now().date_naive();
+    regnmed_db::plans::add_price(
+        &state.pool,
+        &slug,
+        "month",
+        4900,
+        today,
+        today,
+        "test",
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    // An add-on, or a plan without a price, cannot be chosen.
+    let (code, _) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription"),
+        &admin,
+        r#"{"plan":"bank"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription"),
+        &admin,
+        &format!(r#"{{"plan":"{slug}"}}"#),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+
+    // Payroll is capped: the employee from the trial fills the one place.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/employees"),
+        &admin,
+        &employee("26829398612"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+    assert!(
+        why["error"].as_str().unwrap().contains("Testliten"),
+        "{why}"
+    );
+
+    // Integrations are capped at zero.
+    let grant = format!(
+        r#"{{"client_id":"c-{slug}","navn":"Nettbutikken","kontakt":"x@test.invalid","access":"bokforing"}}"#
+    );
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/integrations"),
+        &admin,
+        &grant,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+
+    // Bookkeeping is never capped: two vouchers on a one-voucher package.
+    for account in ["1920", "1950"] {
+        let (code, why) = call(
+            &state,
+            "POST",
+            &format!("{base}/accounts"),
+            &admin,
+            &format!(r#"{{"number":"{account}"}}"#),
+        )
+        .await;
+        assert!(code.is_success(), "{why}");
+    }
+    for n in 0..2 {
+        let voucher = format!(
+            r#"{{"journal_code":"GL","date":"{today}","description":"Bilag {n}","lines":[{{"account":"1920","amount_ore":100}},{{"account":"1950","amount_ore":-100}}]}}"#
+        );
+        let (code, why) = call(
+            &state,
+            "POST",
+            &format!("{base}/vouchers"),
+            &admin,
+            &voucher,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "posting is never blocked: {why}");
+    }
+    let (_, status) = call(&state, "GET", &format!("{base}/subscription"), &admin, "").await;
+    assert_eq!(status["pakke"]["slug"], slug.as_str());
+    assert_eq!(status["bruk"]["bilag"], 2);
+    assert_eq!(status["bruk"]["bilag_grense"], 1);
+    assert_eq!(status["bruk"]["over_bilag"], true, "reported, not refused");
+    assert_eq!(status["bruk"]["ansatte"], 1);
+    assert!(
+        status["planer"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["plan"] != "bank"),
+        "an add-on is never offered as a package"
+    );
+
+    // Switching to Basis (no limits) lifts the cap.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription/change"),
+        &admin,
+        r#"{"plan":"basis"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+    let switched: Vec<String> = sqlx::query_scalar(
+        "select plan from abonnement where company_id = $1 order by valid_from, created_at",
+    )
+    .bind(company)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        switched,
+        vec![slug.clone(), "basis".to_string()],
+        "the old row keeps its plan"
+    );
+
+    // Leave the shared dev database as found: unlist the test package.
+    input.listed = false;
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+        .await
+        .unwrap();
+}
