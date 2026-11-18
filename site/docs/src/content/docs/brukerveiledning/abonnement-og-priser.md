@@ -9,6 +9,11 @@ sidebar:
 
 Alt er inkludert i begge planene. Brukere koster aldri, og det er ingen bilagsgrenser eller moduler som må kjøpes til.
 
+:::note
+Nye planer (Liten, Standard og Stor etter antall bilag) er foreslått, men ikke innført. Tabellen under er det som gjelder i dag. Se [priser](https://www.regnmed.no/priser/).
+:::
+
+
 | Plan | Pris per selskap | Forskjellen |
 | --- | --- | --- |
 | Basis | 49 kr per måned | Selvbetjent. Dokumentasjonen er supporten. |

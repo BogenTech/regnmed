@@ -73,6 +73,11 @@ På Oversikt finner du snarveiene «Ny faktura», «Last opp bilag» og «Regist
 
 Et nytt selskap har 30 dagers prøvetid. Deretter trengs et abonnement:
 
+:::note
+Nye planer (Liten, Standard og Stor etter antall bilag) er foreslått, men ikke innført. Tabellen under er det som gjelder i dag. Se [priser](https://www.regnmed.no/priser/).
+:::
+
+
 | Plan | Pris | Innhold |
 | --- | --- | --- |
 | Basis | 49 kr per måned | Alt er med, selvbetjent. Dokumentasjonen er supporten. |
