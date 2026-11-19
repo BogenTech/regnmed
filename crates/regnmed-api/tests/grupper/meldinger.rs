@@ -272,6 +272,20 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     .await;
     assert_eq!(status, StatusCode::OK, "{opened}");
     let with_agent = opened["conversation_id"].as_str().unwrap().to_string();
+    // The task card's «Skriv til …» opens this same conversation, from the
+    // agent's person id on its grant.
+    let (_, grants) = call(
+        &state,
+        "GET",
+        &format!("/companies/{company}/integrations"),
+        &anne.token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        grants["integrasjoner"][0]["person_id"], agent["person_id"],
+        "{grants}"
+    );
 
     let response = router(state.clone())
         .oneshot(

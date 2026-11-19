@@ -76,9 +76,9 @@
     if (serAgenter) lastAgent(id);
   });
 
-  // An agent answers in the background, and a task given from this card
-  // has no chat thread to announce it -- so while one is being worked on
-  // (`ny`/`pagar`), the list asks again. `sporsmal` waits for a human and
+  // An agent answers in the background, and nothing announces it to this
+  // card -- so while a task is being worked on (`ny`/`pagar`), the list
+  // asks again. `sporsmal` waits for a human and
   // the rest are final, so nothing polls once the agent is done. A failed
   // poll keeps what is shown: the next one, or a reload, says more.
   const arbeider = $derived(

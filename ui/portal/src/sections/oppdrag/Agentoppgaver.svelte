@@ -5,6 +5,7 @@
   // agent er bedt om og hvor det endte, for den som skal se etter.
   // Bestillingen er uforanderlig og svarene et innsettings-bart spor, så
   // det finnes ingen «rediger»-knapp, og det er med vilje.
+  import { untrack } from "svelte";
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
@@ -47,11 +48,7 @@
   let apnet = $state(null);
   let spor = $state(null);
 
-  async function visSpor(o) {
-    spor = null;
-    apnet = apnet === o.oppgave_id ? null : o.oppgave_id;
-    if (!apnet) return;
-    const id = apnet;
+  async function lastSpor(id) {
     try {
       const svar = await api("/companies/" + companyId + "/agent/oppgaver/" + id);
       if (id === apnet) spor = svar.historikk;
@@ -59,6 +56,20 @@
       toast(error.message, false);
     }
   }
+
+  function visSpor(o) {
+    spor = null;
+    apnet = apnet === o.oppgave_id ? null : o.oppgave_id;
+    if (apnet) lastSpor(apnet);
+  }
+
+  // The list asks again while an agent works (Oppdrag.svelte); an open
+  // trail follows its row instead of showing the task as it was.
+  const sist = $derived(oppgaver.find((o) => o.oppgave_id === apnet)?.siste_tidspunkt);
+  $effect(() => {
+    sist;
+    untrack(() => apnet && spor && lastSpor(apnet));
+  });
 
   // The conversation is between the reader and the agent; opening it is
   // idempotent, so this is also how an existing one is found.
