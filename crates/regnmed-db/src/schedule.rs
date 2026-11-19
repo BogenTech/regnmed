@@ -24,6 +24,12 @@ pub struct Rules {
     /// Most runs a day. For the bank fetch: banks limit how often data may
     /// be read without the user present (commonly four times a day).
     pub max_per_day: usize,
+    /// A SQL condition on the company (`$1`) that says whether there is
+    /// anything to run at all. When it is false a due schedule moves on
+    /// without creating a job, so a schedule with nothing left to do does
+    /// not write a row every night — and starts again by itself the day the
+    /// condition holds.
+    pub applies: &'static str,
 }
 
 /// The kinds that can be scheduled. Adding one is a line here plus its
@@ -33,6 +39,14 @@ pub fn rules(kind: Kind) -> Option<Rules> {
         Kind::BankSync => Some(Rules {
             name: "Automatisk henting fra banken",
             max_per_day: 4,
+            // A live connection, and the add-on that pays for it.
+            applies: "exists (select 1 from bank_connection b
+                        where b.company_id = $1 and b.ended_at is null
+                          and b.session_id is not null and b.valid_until > now())
+                  and exists (select 1 from company_addon a
+                        where a.company_id = $1 and a.addon = 'bank'
+                          and a.valid_from <= current_date
+                          and (a.valid_to is null or a.valid_to > current_date))",
         }),
         Kind::SaftImport | Kind::AuditReport => None,
     }
@@ -193,8 +207,13 @@ pub async fn set(
 /// a due run becomes exactly one job.
 ///
 /// Time that was missed (the worker was down) is not made up for: a schedule
-/// that is overdue runs once and continues from now. And a schedule whose
+/// that is overdue runs once and continues from now. A schedule whose
 /// previous job has not finished gets no second one on top of it.
+///
+/// Two things make a due schedule move on WITHOUT a job: the kind says there
+/// is nothing to run (`Rules::applies`), and a blocked subscription — a
+/// blocked company's data is not changed by hand, so it is not changed by a
+/// schedule either (docs/abonnement.md).
 pub async fn enqueue_due(pool: &PgPool) -> Result<Vec<Uuid>> {
     let mut tx = pool.begin().await?;
     let due = sqlx::query(
@@ -211,6 +230,16 @@ pub async fn enqueue_due(pool: &PgPool) -> Result<Vec<Uuid>> {
     for r in &due {
         let (schedule_id, company_id, kind): (Uuid, Uuid, String) =
             (r.get("id"), r.get("company_id"), r.get("kind"));
+        let Some(rules) = Kind::parse(&kind).and_then(rules) else {
+            continue;
+        };
+        let applies: bool = sqlx::query_scalar(&format!("select {}", rules.applies))
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if !applies || crate::subscription::blocked(&mut *tx, company_id).await? {
+            continue;
+        }
         let job_id = Uuid::now_v7();
         let created = sqlx::query(
             "insert into job (id, company_id, kind, created_by, schedule_id)

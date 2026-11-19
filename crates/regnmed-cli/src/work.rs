@@ -43,9 +43,11 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     };
 
     if once {
-        // Drain what is waiting, then exit (an operator's or a test's tool).
-        sweep(&pool, &name, &slots, &runtime).await;
-        let _ = slots.acquire_many(concurrency.max(1) as u32).await?;
+        // Drain what is waiting, then exit (an operator's or a test's tool):
+        // sweep, wait for what was started, and again until a sweep starts nothing.
+        while sweep(&pool, &name, &slots, &runtime).await > 0 {
+            drop(slots.acquire_many(concurrency.max(1) as u32).await?);
+        }
         return Ok(());
     }
 
@@ -104,13 +106,14 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
 /// Turns due schedules into jobs (docs/jobs.md, «Tidsplaner»), then claims
 /// and starts jobs while there are free slots and claimable jobs. Every
 /// replica does this; `skip locked` keeps two of them from taking the same
-/// schedule or the same job.
+/// schedule or the same job. Returns how many jobs it started.
 async fn sweep(
     pool: &PgPool,
     name: &str,
     slots: &Arc<Semaphore>,
     runtime: &regnmed_db::job::Runtime,
-) {
+) -> usize {
+    let mut started = 0;
     match regnmed_db::schedule::enqueue_due(pool).await {
         Ok(jobs) if jobs.is_empty() => {}
         Ok(jobs) => println!("{} scheduled job(s) created", jobs.len()),
@@ -123,14 +126,17 @@ async fn sweep(
     }
     loop {
         let Ok(permit) = slots.clone().try_acquire_owned() else {
-            return;
+            return started;
         };
         match regnmed_db::job::claim_next(pool, name).await {
-            Ok(Some(job)) => spawn_job(pool, name, job, permit, runtime),
-            Ok(None) => return,
+            Ok(Some(job)) => {
+                spawn_job(pool, name, job, permit, runtime);
+                started += 1;
+            }
+            Ok(None) => return started,
             Err(e) => {
                 eprintln!("the sweep could not claim: {e:#}");
-                return;
+                return started;
             }
         }
     }

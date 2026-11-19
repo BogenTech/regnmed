@@ -755,19 +755,42 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     .execute(&state.pool)
     .await
     .unwrap();
-    regnmed_db::schedule::enqueue_due(&state.pool)
-        .await
-        .unwrap();
-    let job_id: Uuid =
-        sqlx::query_scalar("select id from job where company_id = $1 and kind = 'bank_sync'")
-            .bind(company)
-            .fetch_one(&state.pool)
+    // Another test's call may be the one that takes this schedule; its job is
+    // visible when that transaction commits, so look until there is one.
+    for _ in 0..250 {
+        regnmed_db::schedule::enqueue_due(&state.pool)
             .await
             .unwrap();
-    let claimed = regnmed_db::job::claim(&state.pool, job_id, "test-worker")
+        let there: bool = sqlx::query_scalar(
+            "select exists (select 1 from job where company_id = $1 and kind = 'bank_sync')",
+        )
+        .bind(company)
+        .fetch_one(&state.pool)
         .await
-        .unwrap()
         .unwrap();
+        if there {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    // The database is shared with every other test: the job is taken over by
+    // id rather than claimed, so a worker in another test that got to it first
+    // cannot make this one fail.
+    let job_id: Uuid = sqlx::query_scalar(
+        "update job set status = 'running', claimed_by = 'test-worker', attempts = 1,
+                        started_at = now(), heartbeat_at = now()
+         where company_id = $1 and kind = 'bank_sync' returning id",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    let claimed = regnmed_db::job::Claimed {
+        id: job_id,
+        company_id: company,
+        kind: "bank_sync".into(),
+        created_by: "tidsplan".into(),
+    };
     let runtime = regnmed_db::job::Runtime {
         bank: state.bank_feed.clone(),
     };
@@ -947,6 +970,43 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
         after["nye"], 0,
         "the renewed consent does not re-import the account's history"
     );
+
+    // A consent past its date is not asked of the bank at all: the connection
+    // ends, exactly as when the bank says the consent is gone.
+    sqlx::query("update bank_connection set valid_until = now() - interval '1 hour' where id = $1")
+        .bind(renewed)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let asked = shared.lock().unwrap().transactions.len();
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/bank/feed/{renewed}/sync"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+    assert_eq!(shared.lock().unwrap().transactions.len(), asked);
+    let reason: Option<String> =
+        sqlx::query_scalar("select end_reason from bank_connection where id = $1")
+            .bind(renewed)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(reason.as_deref(), Some("samtykke utlopt"));
+    // Connected again, for the rest of the test.
+    let renewed = connect(&state, &base, &admin).await;
+    let (code, _) = call(
+        &state,
+        "POST",
+        &complete,
+        &admin,
+        json!({ "code": "ok", "state": renewed }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
 
     // The bank says the consent is gone: the connection ends, with a message to connect again.
     shared.lock().unwrap().expired = true;

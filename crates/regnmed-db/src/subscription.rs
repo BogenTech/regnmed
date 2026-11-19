@@ -14,8 +14,8 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 /// The facts the status rule needs, fetched in one query.
-async fn facts(
-    pool: &PgPool,
+async fn facts<'e>(
+    db: impl sqlx::PgExecutor<'e>,
     company_id: Uuid,
     today: NaiveDate,
 ) -> Result<(NaiveDate, bool, Option<NaiveDate>)> {
@@ -32,7 +32,7 @@ async fn facts(
     )
     .bind(company_id)
     .bind(today)
-    .fetch_optional(pool)
+    .fetch_optional(db)
     .await?
     .context("ukjent selskap")?;
     Ok((
@@ -43,9 +43,9 @@ async fn facts(
 }
 
 /// Today's status for one company.
-pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
+pub async fn status_for<'e>(db: impl sqlx::PgExecutor<'e>, company_id: Uuid) -> Result<Status> {
     let today = Utc::now().date_naive();
-    let (created, covered, last_end) = facts(pool, company_id, today).await?;
+    let (created, covered, last_end) = facts(db, company_id, today).await?;
     Ok(regnmed_core::subscription::status(
         created, covered, last_end, today,
     ))
@@ -53,8 +53,8 @@ pub async fn status_for(pool: &PgPool, company_id: Uuid) -> Result<Status> {
 
 /// Should writing actions be refused? Called from the access guard on
 /// changing rettigheter — one seam, like the rest of the guard.
-pub async fn blocked(pool: &PgPool, company_id: Uuid) -> Result<bool> {
-    Ok(status_for(pool, company_id).await?.blocked())
+pub async fn blocked<'e>(db: impl sqlx::PgExecutor<'e>, company_id: Uuid) -> Result<bool> {
+    Ok(status_for(db, company_id).await?.blocked())
 }
 
 /// Starts coverage from `fra`. Open-ended when `til` is None.

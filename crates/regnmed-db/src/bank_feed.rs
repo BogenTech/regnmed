@@ -430,61 +430,83 @@ pub async fn record_fetch(
         }
     }
 
-    let mut tx = pool.begin().await?;
-    const SEEN: &str = "insert into bank_feed_seen
-        (account_id, key, statement_id, booking_date, amount_ore, absorbed)
-        values ($1,$2,$3,$4,$5,$6)";
-    for ((key, line), statement_id) in &absorbed {
-        sqlx::query(SEEN)
-            .bind(connection.account_id)
-            .bind(key.as_str())
-            .bind(statement_id)
-            .bind(line.booking_date)
-            .bind(line.amount_ore)
-            .bind(true)
-            .execute(&mut *tx)
-            .await?;
-    }
-    if !new.is_empty() {
-        let statement = Camt053Statement {
-            statement_ref: format!("feed:{}:{}", connection.id, Uuid::now_v7()),
-            iban: None,
-            from_date: new.iter().map(|(_, l)| l.booking_date).min(),
-            to_date: new.iter().map(|(_, l)| l.booking_date).max(),
-            // A feed has no statement balances: absent, never zero (like CSV).
-            opening_ore: None,
-            closing_ore: None,
-            transactions: new
-                .iter()
-                .map(|(_, l)| Line {
-                    booking_date: l.booking_date,
-                    amount_ore: l.amount_ore,
-                    description: l.description.clone(),
-                    reference: l.reference.clone(),
-                })
-                .collect(),
-        };
-        let statement_id = crate::bank::insert_statement_in(
-            &mut tx,
-            connection.company_id,
-            connection.account_id,
-            &statement,
-            "bankkobling",
-        )
-        .await?;
-        for (key, line) in &new {
+    // Written as one unit. If another fetch of the same account (a scheduled run
+    // and «Hent nå» at the same moment) wrote these keys first, this one loses
+    // on the primary key, rolls back whole, and has nothing new to report.
+    let written: Result<()> = async {
+        let mut tx = pool.begin().await?;
+        const SEEN: &str = "insert into bank_feed_seen
+            (account_id, key, statement_id, booking_date, amount_ore, absorbed)
+            values ($1,$2,$3,$4,$5,$6)";
+        for ((key, line), statement_id) in &absorbed {
             sqlx::query(SEEN)
                 .bind(connection.account_id)
                 .bind(key.as_str())
                 .bind(statement_id)
                 .bind(line.booking_date)
                 .bind(line.amount_ore)
-                .bind(false)
+                .bind(true)
                 .execute(&mut *tx)
                 .await?;
         }
+        if !new.is_empty() {
+            let statement = Camt053Statement {
+                statement_ref: format!("feed:{}:{}", connection.id, Uuid::now_v7()),
+                iban: None,
+                from_date: new.iter().map(|(_, l)| l.booking_date).min(),
+                to_date: new.iter().map(|(_, l)| l.booking_date).max(),
+                // A feed has no statement balances: absent, never zero (like CSV).
+                opening_ore: None,
+                closing_ore: None,
+                transactions: new
+                    .iter()
+                    .map(|(_, l)| Line {
+                        booking_date: l.booking_date,
+                        amount_ore: l.amount_ore,
+                        description: l.description.clone(),
+                        reference: l.reference.clone(),
+                    })
+                    .collect(),
+            };
+            let statement_id = crate::bank::insert_statement_in(
+                &mut tx,
+                connection.company_id,
+                connection.account_id,
+                &statement,
+                "bankkobling",
+            )
+            .await?;
+            for (key, line) in &new {
+                sqlx::query(SEEN)
+                    .bind(connection.account_id)
+                    .bind(key.as_str())
+                    .bind(statement_id)
+                    .bind(line.booking_date)
+                    .bind(line.amount_ore)
+                    .bind(false)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(())
     }
-    tx.commit().await?;
+    .await;
+    if let Err(e) = written {
+        let lost_race = e
+            .downcast_ref::<sqlx::Error>()
+            .and_then(|e| e.as_database_error())
+            .and_then(|d| d.code())
+            .as_deref()
+            == Some("23505");
+        if !lost_race {
+            return Err(e);
+        }
+        return Ok(SyncSummary {
+            new: 0,
+            auto_matched: 0,
+        });
+    }
     sqlx::query(
         "update bank_connection set last_synced_at = now(), last_error = null where id = $1",
     )
@@ -551,6 +573,14 @@ pub async fn sync(
 ) -> Result<std::result::Result<SyncSummary, regnmed_gov::bankfeed::FeedError>> {
     use regnmed_gov::bankfeed::FeedError;
     if connection.valid_until <= Utc::now() {
+        // The same ending as when the bank says so: the user must connect again.
+        end(
+            pool,
+            connection.company_id,
+            connection.id,
+            "samtykke utlopt",
+        )
+        .await?;
         return Ok(Err(FeedError::ConsentGone("expired by date".into())));
     }
     let today = Utc::now().date_naive();

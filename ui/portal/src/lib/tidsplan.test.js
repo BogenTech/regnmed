@@ -42,7 +42,7 @@ test("the last run's outcome: counts, the first error, a failure, in progress, n
     feil: true,
   });
   assert.deepEqual(sistTekst({ status: "failed", feil: "ukjent jobb" }, "19.11"), {
-    tekst: "Sist 19.11: feilet: ukjent jobb",
+    tekst: "Sist 19.11: hentingen feilet. Prøv «Hent nå», eller ta kontakt hvis det gjentar seg.",
     feil: true,
   });
 });

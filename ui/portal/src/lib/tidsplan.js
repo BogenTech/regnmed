@@ -37,7 +37,8 @@ export function sistTekst(sist, naar) {
   if (!sist) return null;
   if (sist.status === "queued" || sist.status === "running") return { tekst: "Henter nå …", feil: false };
   const foran = "Sist" + (naar ? " " + naar : "") + ": ";
-  if (sist.status === "failed") return { tekst: foran + "feilet" + (sist.feil ? ": " + sist.feil : ""), feil: true };
+  // The job's own error text is for the operator (English, from the worker): never shown here.
+  if (sist.status === "failed") return { tekst: foran + "hentingen feilet. Prøv «Hent nå», eller ta kontakt hvis det gjentar seg.", feil: true };
   const r = sist.resultat ?? {};
   if (r.feil?.length) return { tekst: foran + r.feil[0], feil: true };
   const nye = r.nye ?? 0;

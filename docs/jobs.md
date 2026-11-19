@@ -100,6 +100,14 @@ bygges ikke to ganger.
   gang og fortsetter fra nå.
 - **Aldri oppå en uferdig kjøring.** Har planens forrige jobb ikke blitt ferdig,
   lages ingen ny.
+- **Ingenting å gjøre gir ingen jobb.** Hver type sier selv når det finnes noe å
+  kjøre (`Rules::applies`; for `bank_sync`: en levende kobling med gyldig
+  samtykke OG tillegget som betaler for den). Holder det ikke, flyttes planen
+  videre uten at en jobbrad skrives, og den begynner igjen av seg selv den dagen
+  vilkåret holder. Det samme gjelder et sperret abonnement: et sperret selskaps
+  data endres ikke for hånd, og da heller ikke av en tidsplan
+  (docs/abonnement.md). Testet i `regnmed-db/tests/schedule.rs`, begge vaktene
+  sett feile.
 - **Hvilke typer som kan planlegges, og hvor ofte, står i koden**
   (`schedule::rules`), ikke i tabellen. En type som ikke står der kan ikke få en
   plan. Hvilken rettighet det krever å endre en plan avgjøres per type i API-et:
@@ -118,6 +126,14 @@ pause blir stående slik også når bankkoblingen fornyes.
 En jobb kan trenge mer enn databasen: `job::Runtime` bærer det prosessen har
 (i dag bankleverandørene), bygget én gang ved oppstart av arbeideren og av
 API-et fra samme miljøvariabler.
+
+`regnmed work --once` tømmer køen: den feier, venter på det den startet og feier
+igjen til et feiebrett ikke starter noe, så jobber utover samtidighetsgrensen og
+jobber fra planer som forfalt underveis også blir med.
+
+**Ikke bygget:** opprydding av gamle jobbrader (en nattlig plan skriver én rad
+per selskap per døgn; tabellen har ingen slettevei, og hva som skal beholdes er
+en egen avgjørelse) og paginering av `GET /platform/schedules`.
 
 Uten arbeider (lokal utvikling uten `regnmed work`) forfaller ingenting:
 tidsplanene spørres bare av arbeiderens feiebrett.

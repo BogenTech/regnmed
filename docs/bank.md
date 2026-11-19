@@ -125,6 +125,15 @@ opp bankens dagskvote — den står i resultatets `feil`, på norsk. Arbeideren
 trenger de samme leverandørinnstillingene som API-et: begge leser dem fra den
 valgfrie hemmeligheten `bank-feed` (`ENABLEBANKING_APP_ID`, `ENABLEBANKING_KEY`).
 
+Planen skriver ingen jobb når det ikke er noe å hente fra: uten en levende
+kobling, uten tillegget, eller mens abonnementet er sperret, flyttes den bare
+videre — og begynner igjen av seg selv når vilkåret holder. Et samtykke som er
+gått ut på dato spørres det ikke banken om: koblingen avsluttes
+(`samtykke utlopt`), akkurat som når banken selv sier at samtykket er borte, og
+brukeren må koble til på nytt. To hentinger som kappløper om de samme linjene
+(«Hent nå» mens nattjobben kjører) gir ikke en feil: den som taper, melder null
+nye, og linjene står der én gang.
+
 **Ikke bygget:** varsel før samtykket utløper, kjøp og fakturering av tillegget,
 og saldo fra banken (utdraget har ingen inn-/utgående saldo, som CSV).
 **Kjente begrensninger:**
