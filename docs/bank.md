@@ -37,10 +37,16 @@ blokk i `main.rs`. Testen kjører med to leverandører.
 **Første leverandør: Enable Banking.** Aggregatoren holder eIDAS-sertifikatene;
 vi har en applikasjons-id og en RSA-nøkkel og signerer en kort JWT per kall
 (`regnmed-gov::enablebanking`). Valgt først fordi den har sandkasse og lar oss
-teste mot egne kontoer i produksjon før kontrakt. **Feltnavnene følger den
-publiserte API-referansen (lest 2026-11-19) og er IKKE prøvd mot ekte trafikk
-ennå** — første ekte økt skal fanges og legges i testene (Stripe-lærdommen,
-CLAUDE.md punkt 56).
+teste mot egne kontoer i produksjon før kontrakt. **Transaksjonslisten er prøvd
+mot ekte trafikk**: et svar fra Nordea (BogenTechs egen konto, 2026-11-19) ligger
+anonymisert i `docs/bank/enablebanking-nordea-transactions.json`, og testen
+`a_real_nordea_response_reads_as_the_statement_shows_it` leser det
+(Stripe-lærdommen, CLAUDE.md punkt 56). Det lærte oss tre ting API-referansen
+ikke sier: beløp kommer som `"11"` og `"5.5"`, ikke bare med to desimaler;
+`reference_number` er Nordeas arkivreferanse («600101 100003 Ovf»), ikke KID;
+og en ventende post har verken `booking_date` eller `entry_reference`. Svaret
+på `/sessions` (kontolisten ved tilkobling) er fortsatt bare lest i
+referansen.
 
 **Veiene inn til norske banker (kartlagt 2026-11-19, priser ikke offentlige):**
 

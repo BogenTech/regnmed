@@ -225,16 +225,9 @@ impl Client {
                     None,
                 )
                 .await?;
-            for t in json["transactions"].as_array().into_iter().flatten() {
-                if t["status"].as_str() != Some("BOOK") {
-                    continue;
-                }
-                out.push(feed_tx(t)?);
-            }
-            continuation = json["continuation_key"]
-                .as_str()
-                .filter(|k| !k.is_empty())
-                .map(str::to_string);
+            let (txs, next) = transactions_page(&json)?;
+            out.extend(txs);
+            continuation = next;
             if continuation.is_none() {
                 return Ok(out);
             }
@@ -284,6 +277,23 @@ impl BankFeed for Client {
     fn end_session<'a>(&'a self, session_id: &'a str) -> Fut<'a, ()> {
         Box::pin(Client::end_session(self, session_id))
     }
+}
+
+/// One page of `/accounts/{uid}/transactions`: the booked lines and the
+/// key to the next page, if any.
+fn transactions_page(json: &Value) -> Result<(Vec<FeedTx>, Option<String>)> {
+    let mut out = Vec::new();
+    for t in json["transactions"].as_array().into_iter().flatten() {
+        if t["status"].as_str() != Some("BOOK") {
+            continue;
+        }
+        out.push(feed_tx(t)?);
+    }
+    let next = json["continuation_key"]
+        .as_str()
+        .filter(|k| !k.is_empty())
+        .map(str::to_string);
+    Ok((out, next))
 }
 
 /// One provider transaction -> the neutral shape. A transaction we cannot
@@ -356,6 +366,43 @@ mod tests {
         assert_eq!(tx.amount, "1250.00");
         assert_eq!(tx.description, "Nordlys Kontor AS · Faktura 1042 KID 10420");
         assert_eq!(tx.reference.as_deref(), Some("10420"));
+    }
+
+    #[test]
+    fn a_real_nordea_response_reads_as_the_statement_shows_it() {
+        // Captured from Nordea through Enable Banking on 2026-11-19 (the
+        // first real traffic), names, accounts, references and amounts
+        // scrubbed; every key and value format is the bank's own.
+        let json: Value = serde_json::from_str(include_str!(
+            "../../../docs/bank/enablebanking-nordea-transactions.json"
+        ))
+        .unwrap();
+        let (txs, next) = transactions_page(&json).unwrap();
+        assert_eq!(next, None);
+        // The pending card settlement (no booking date) is not a line yet.
+        assert_eq!(txs.len(), 5);
+        assert!(txs.iter().all(|t| t.entry_reference.is_some()));
+
+        // Nordea sends "11", "5.5" and "3.21": whole kroner and one decimal
+        // are as real as two.
+        let ore: Vec<i64> = txs
+            .iter()
+            .map(|t| {
+                regnmed_core::bankfeed::to_transaction(t)
+                    .unwrap()
+                    .amount_ore
+            })
+            .collect();
+        assert_eq!(ore, [-1100, -250000, 750000, -550, 321]);
+
+        // Interest is booked on 31.12 with value date 1.1: the booking date wins.
+        assert_eq!(txs[4].booking_date.to_string(), "2025-12-31");
+        assert_eq!(
+            txs[2].description,
+            "KARI NORDMANN · 600101 100003 Ovf Lån fra eier"
+        );
+        // `reference_number` is Nordea's archive reference, not a KID.
+        assert_eq!(txs[2].reference.as_deref(), Some("600101 100003 Ovf"));
     }
 
     #[test]
