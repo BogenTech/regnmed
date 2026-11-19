@@ -21,7 +21,6 @@
   import Periode from "../periode/Periode.svelte";
   import Kundevilkar from "./Kundevilkar.svelte";
   import { gjoremal } from "./admin.js";
-  import { ventendeSporsmal } from "../../lib/varsler.svelte.js";
 
   let { companyId, extra } = $props();
 
@@ -181,14 +180,6 @@
     >
       <Ikon navn={ikonNavn} />
       {navn}
-      {#if slug === "oppdrag" && ventendeSporsmal(companyId) > 0}
-        <span
-          class="badge badge-xs badge-warning"
-          aria-label="{ventendeSporsmal(companyId)} venter på svar"
-        >
-          {ventendeSporsmal(companyId)}
-        </span>
-      {/if}
     </a>
   {/each}
 </nav>

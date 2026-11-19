@@ -8,7 +8,6 @@
   import { SEKSJONER, ANSATT_MENY, FLYTTET_TIL_ADMIN } from "../lib/meny.js";
   import Ikon from "./Ikon.svelte";
   import { chat } from "../lib/chat.svelte.js";
-  import { ventendeSporsmal } from "../lib/varsler.svelte.js";
 
   let { companyId, section, children } = $props();
 
@@ -22,10 +21,6 @@
   // still light up the Administrasjon entry.
   let aktiv = $derived(FLYTTET_TIL_ADMIN[section] ? "admin" : section);
   let aktivLabel = $derived(SEKSJONER.find(([slug]) => slug === aktiv)?.[1] || aktiv);
-
-  // Agent questions waiting for a person here (the notification centre's
-  // list, kept fresh by App).
-  let sporsmal = $derived(ventendeSporsmal(companyId));
 
   // Phone: the menu is a list behind a button that names where you are,
   // instead of a strip of 18 sections that hides the current one.
@@ -106,16 +101,6 @@
           >
             <Ikon navn={slug} />
             {label}
-            {#if slug === "admin" && sporsmal > 0}
-              <span
-                class="badge badge-sm badge-warning ml-auto"
-                aria-label="{sporsmal} {sporsmal === 1
-                  ? 'spørsmål fra en agent venter'
-                  : 'spørsmål fra agenter venter'}"
-              >
-                {sporsmal}
-              </span>
-            {/if}
             {#if slug === "meldinger" && chat.unread > 0}
               <span
                 class="badge badge-sm badge-primary ml-auto"

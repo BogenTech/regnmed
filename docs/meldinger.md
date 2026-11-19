@@ -155,7 +155,9 @@ tidsstempel. Klienten fjerner duplikater på id.
 | `GET /chat/conversations/{id}?since=&before=&before_id=&limit=` | én side med meldinger (nyeste 30 som standard), motparten, `attach_to` og `older` |
 | `POST /chat/conversations/{id}/messages` | `{text, documents}` — til en agent blir det en oppgave |
 | `POST /chat/conversations/{id}/read` | `{until}` — merket flyttes bare framover |
-| `GET /chat/unread` | `{unread, conversations}` til knappen i navbaren |
+| `GET /chat/unread` | `{unread, conversations}` — antallet alene |
+| `POST /chat/read-all` | alle samtalene mine er lest (bjellas «Marker alle som lest») |
+| `GET /notifications` | bjella: `{varsler: [{type: "melding", conversation_id, fra, agent, tekst, tidspunkt, uleste}]}`, én rad per samtale med uleste |
 | `GET /chat/stream` | SSE, hendelse `message` uten innhold |
 | `GET /firms/{fid}/contacts` | byråets valgte kontakter per oppdrag (byråmedlem) |
 | `PUT /firms/{fid}/engagements/{eid}/contacts` | `{person_ids}` — byråets admin; tom liste = administratorene |
@@ -204,6 +206,34 @@ tastaturet). Markøren er `(created_at, id)`, så to meldinger i samme
 mikrosekund verken hoppes over eller kommer to ganger; rulleposisjonen
 holdes når en side legges til over. `older` sier om det finnes mer.
 
+### 7.2 Bjella er meldingene, og agenten er en kollega (2026-11-19)
+
+Bjella pekte først på agentspørsmål under Administrasjon → Oppdrag, og
+oppgavekortet der hadde sin egen samtaleboks. Det ga to steder å snakke
+med samme agent — og et svar skrevet i kortet kom aldri inn i samtalen i
+Meldinger. Nå er regelen én: **all kommunikasjon med en agent skjer i
+Meldinger, som med en kollega.**
+
+- **Bjella lister uleste meldinger**, én rad per samtale, og lenker rett
+  til samtalen. Et spørsmål fra en agent er en melding fra agenten
+  (`mirror_task_answer`), så det trenger ingen egen varseltype. `type` på
+  hver rad gir rom for andre ting som trenger et blikk senere.
+- **Utledet av lesemerkene, aldri lagret for seg.** Å åpne samtalen
+  flytter `read_until` og fjerner varselet; «Marker alle som lest» flytter
+  alle merkene (`POST /chat/read-all`). Bjella, menymerket på Meldinger og
+  samtalelisten leser samme rader og kan ikke være uenige. Markøren på
+  Administrasjon og fanen «Oppdrag og integrasjoner» er fjernet.
+- **Kortet «Agentenes oppgaver» er sporet, ikke samtalen.** Det har en
+  «Skriv til …»-knapp per agent som åpner samtalen, og en tabell over hva
+  hver agent er bedt om og hvor det endte. Bestillingen vises slik den
+  ble skrevet (`fra_melding`), ikke som ordren med kontekst pakket rundt;
+  «Spor» viser hendelsene og ordren slik agenten fikk den. Kortet kan
+  trekke en oppgave tilbake, men ikke gi eller besvare en.
+- **Oppgaver gitt over API-et** (`POST …/agent/oppgaver`) finnes fortsatt
+  og vises i samtalen (§7.1), men besvares over API-et: et svar i
+  Meldinger fortsetter bare oppgaver som kom fra samtalen. Giveren varsles
+  fortsatt på e-post når agenten spør (docs/agent.md §8.5).
+
 ## 8. Ikke bygget ennå
 
 | Hva | Sak |
@@ -221,7 +251,9 @@ holdes når en side legges til over. `older` sier om det finnes mer.
 hvem fra begge sider, en fremmed agent som ikke synes, byråets valgte
 kontakt (bare admin velger, bare egne medlemmer), kvittering til agenten
 → oppgave → spørsmål tilbake → svar som fortsetter samme oppgave,
-sortering etter nyeste melding, uleste, utenforstående = 404, og
+sortering etter nyeste melding, uleste, bjella (agentens spørsmål er
+Evas varsel og ingen andres, borte når hun svarer, og tømt av
+«Marker alle som lest»), utenforstående = 404, og
 samtalen som forsvinner når oppdraget avsluttes.
 `an_agents_task_history_is_its_conversation_and_long_threads_page`: en
 oppgave gitt fra kortet blir samtalen (bestilling, spørsmål, svar,
