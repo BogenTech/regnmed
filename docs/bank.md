@@ -166,6 +166,17 @@ enn å importere halvt.
   Statements are dokumentasjon: insert-only for the app role, and
   re-import of the same bank statement id (`Stmt/Id`) is rejected —
   imports are idempotent.
+  A DIFFERENT file covering days already on the account (an overlapping
+  export, or days the bank connection fetched) is not a second copy
+  either: each line already there — same day, same amount, from any
+  file or the bank connection — is skipped one for one, and the answer
+  says how many (`skipped`). The bank connection applies the same rule
+  the other way. Counting one for one keeps a file exported at noon and a
+  later full-day export right: the afternoon's second payment of the same
+  amount still comes in. What day-and-amount cannot see is two files that
+  each hold a DIFFERENT payment of the same amount on the same day —
+  bank exports of a day are supersets of each other, so this needs a
+  hand-edited file.
 - `bank_transaction` — statement lines. Amounts are stored in **ledger
   sign for the bank account**: money in (CRDT) = debit = positive, so a
   bank transaction equals its ledger entry exactly.

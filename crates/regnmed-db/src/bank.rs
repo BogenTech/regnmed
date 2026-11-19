@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
 use regnmed_core::bank::{BankTx, OpenEntry, propose_matches, suggest_entries};
-use regnmed_core::camt053::Camt053Statement;
+use regnmed_core::camt053::{Camt053Statement, Camt053Transaction};
 use regnmed_core::money::Ore;
 use regnmed_core::voucher::{EntryDraft, VoucherDraft};
 use sqlx::{PgPool, Row};
@@ -19,7 +19,10 @@ const MATCH_WINDOW_DAYS: i64 = 5;
 #[derive(Debug)]
 pub struct ImportSummary {
     pub statement_id: Uuid,
+    /// Lines imported.
     pub transactions: usize,
+    /// Lines already on the account, from another file or the bank connection.
+    pub skipped: usize,
     pub auto_matched: usize,
 }
 
@@ -46,14 +49,68 @@ pub async fn import_statement(
             .get("id");
 
     let mut tx = pool.begin().await?;
+    // A line already on the account — same day, same amount, from another file
+    // or the bank connection — is skipped one for one, so an overlapping export
+    // or a file covering fetched days does not count a payment twice. The bank
+    // connection applies the same rule the other way (`bank_feed::record_fetch`).
+    // shortcut: two imports of the same account at the same moment can both
+    // miss each other's lines; lock the account if that is ever seen.
+    let dates: Vec<NaiveDate> = statement
+        .transactions
+        .iter()
+        .map(|t| t.booking_date)
+        .collect();
+    let mut on_account: std::collections::HashMap<(NaiveDate, i64), i64> = sqlx::query(
+        "select t.booking_date, t.amount_ore, count(*) n
+         from bank_transaction t join bank_statement s on s.id = t.statement_id
+         where s.account_id = $1 and t.booking_date = any($2)
+         group by t.booking_date, t.amount_ore",
+    )
+    .bind(account_id)
+    .bind(&dates)
+    .fetch_all(&mut *tx)
+    .await?
+    .iter()
+    .map(|r| ((r.get("booking_date"), r.get("amount_ore")), r.get("n")))
+    .collect();
+    let new: Vec<Camt053Transaction> = statement
+        .transactions
+        .iter()
+        .filter(
+            |t| match on_account.get_mut(&(t.booking_date, t.amount_ore)) {
+                Some(left) if *left > 0 => {
+                    *left -= 1;
+                    false
+                }
+                _ => true,
+            },
+        )
+        .map(|t| Camt053Transaction {
+            booking_date: t.booking_date,
+            amount_ore: t.amount_ore,
+            description: t.description.clone(),
+            reference: t.reference.clone(),
+        })
+        .collect();
+    let skipped = statement.transactions.len() - new.len();
+    let filtered = Camt053Statement {
+        statement_ref: statement.statement_ref.clone(),
+        iban: statement.iban.clone(),
+        from_date: statement.from_date,
+        to_date: statement.to_date,
+        opening_ore: statement.opening_ore,
+        closing_ore: statement.closing_ore,
+        transactions: new,
+    };
     let statement_id =
-        insert_statement_in(&mut tx, company_id, account_id, statement, imported_by).await?;
+        insert_statement_in(&mut tx, company_id, account_id, &filtered, imported_by).await?;
     tx.commit().await?;
 
     let auto_matched = auto_match(pool, company_id, account_id, imported_by).await?;
     Ok(ImportSummary {
         statement_id,
-        transactions: statement.transactions.len(),
+        transactions: filtered.transactions.len(),
+        skipped,
         auto_matched,
     })
 }
