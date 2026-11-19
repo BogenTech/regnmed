@@ -74,6 +74,70 @@ Logikken bor i `regnmed-db::job`, så arbeideren og API-et kjører samme
 kode. Uten NATS (lokal utvikling, integrasjonstestene) kjører API-et
 jobben selv i bakgrunnen; i clusterne er køen alltid konfigurert.
 
+## Tidsplaner
+
+En tidsplan sier NÅR en type jobb kjører av seg selv for et selskap (migrasjon
+0097, `regnmed-db::schedule`). Planleggeren er generell og kjører ingenting selv:
+når en plan forfaller, lager arbeideren en helt vanlig `job`-rad, og derfra eier
+jobbmaskineriet over den — grepet én gang, hjerteslag, nye forsøk, så mange
+replikaer man vil. Alt som kan være en jobb kan tidsplanlegges, og garantiene
+bygges ikke to ganger.
+
+- **`schedule`-raden er konfigurasjon**: type, daglige klokkeslett i norsk tid,
+  aktiv/pause, hvem som endret sist. Den er redigerbar; det som faktisk kjørte er
+  jobbradene (`job.schedule_id`), og de er historikken. `next_run_at` er
+  driftstilstand som `job.status`.
+- **Neste kjøring regnes ett sted**, i SQL-funksjonen `schedule_next(times,
+  after)`: neste av klokkeslettene, strengt etter `after`, i `Europe/Oslo` (så
+  03:15 er 03:15 sommer som vinter). Brukt både når planen lagres og når den
+  forfaller.
+- **Hver replika spør ved hvert feiebrett** (`schedule::enqueue_due`, hvert 30.
+  sekund). I ÉN transaksjon flyttes planen til neste tidspunkt og jobbraden
+  skrives, eller ingen av delene. Replikaer som spør samtidig tar ulike planer
+  (`skip locked`), og en forfalt kjøring blir nøyaktig én jobb (testet med 16
+  samtidige).
+- **Tapt tid tas ikke igjen.** Var arbeideren nede i tre døgn, kjører planen én
+  gang og fortsetter fra nå.
+- **Aldri oppå en uferdig kjøring.** Har planens forrige jobb ikke blitt ferdig,
+  lages ingen ny.
+- **Ingenting å gjøre gir ingen jobb.** Hver type sier selv når det finnes noe å
+  kjøre (`Rules::applies`; for `bank_sync`: en levende kobling med gyldig
+  samtykke OG tillegget som betaler for den). Holder det ikke, flyttes planen
+  videre uten at en jobbrad skrives, og den begynner igjen av seg selv den dagen
+  vilkåret holder. Det samme gjelder et sperret abonnement: et sperret selskaps
+  data endres ikke for hånd, og da heller ikke av en tidsplan
+  (docs/abonnement.md). Testet i `regnmed-db/tests/schedule.rs`, begge vaktene
+  sett feile.
+- **Hvilke typer som kan planlegges, og hvor ofte, står i koden**
+  (`schedule::rules`), ikke i tabellen. En type som ikke står der kan ikke få en
+  plan. Hvilken rettighet det krever å endre en plan avgjøres per type i API-et:
+  den samme som det krever å gjøre det planen gjør for hånd.
+
+| Type | Hva | Høyst per døgn | Endres med | Opprettes |
+|---|---|---|---|---|
+| `bank_sync` | henter fra banken for alle selskapets koblinger (docs/bank.md) | 4 (bankene begrenser henting uten at brukeren er til stede) | `BANK_AVSTEM` | når en bankkobling fullføres, til et nattlig standardtidspunkt spredt per selskap (02:00–04:59) |
+
+`GET /companies/{id}/schedules` viser selskapets planer med neste kjøring og
+utfallet av den siste; `PUT /companies/{id}/schedules/{kind}` setter klokkeslett
+og pause. `GET /platform/schedules` er oversikten i plattformkonsollen (hva som
+kjører når og hvordan det gikk; ingen regnskapsdata). En plan som er satt på
+pause blir stående slik også når bankkoblingen fornyes.
+
+En jobb kan trenge mer enn databasen: `job::Runtime` bærer det prosessen har
+(i dag bankleverandørene), bygget én gang ved oppstart av arbeideren og av
+API-et fra samme miljøvariabler.
+
+`regnmed work --once` tømmer køen: den feier, venter på det den startet og feier
+igjen til et feiebrett ikke starter noe, så jobber utover samtidighetsgrensen og
+jobber fra planer som forfalt underveis også blir med.
+
+**Ikke bygget:** opprydding av gamle jobbrader (en nattlig plan skriver én rad
+per selskap per døgn; tabellen har ingen slettevei, og hva som skal beholdes er
+en egen avgjørelse) og paginering av `GET /platform/schedules`.
+
+Uten arbeider (lokal utvikling uten `regnmed work`) forfaller ingenting:
+tidsplanene spørres bare av arbeiderens feiebrett.
+
 ## Drift
 
 Deployment `regnmed-worker` (`deploy/shared/job-worker.yaml`) kjører

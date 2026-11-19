@@ -38,6 +38,11 @@ spec:
             - secretRef:
                 name: blob-store
                 optional: true
+            # Bank providers (docs/bank.md): ENABLEBANKING_APP_ID and
+            # ENABLEBANKING_KEY. Without the secret the bank connection is off.
+            - secretRef:
+                name: bank-feed
+                optional: true
           env:
             - name: JOB_CONCURRENCY
               value: "2"

@@ -45,6 +45,7 @@ pub mod reminders;
 pub mod reports;
 pub mod roles;
 pub mod sales_document;
+pub mod schedule;
 pub mod settings;
 pub mod share_register;
 pub mod subledger;
@@ -109,7 +110,7 @@ pub struct AppState {
     /// Direct bank connection (docs/bank.md tier 2): the configured providers,
     /// in priority order. None when there is none — the portal then shows no
     /// bank-connection card at all.
-    pub bank_feed: Option<Arc<bank_feed::BankFeeds>>,
+    pub bank_feed: Option<Arc<regnmed_gov::bankfeed::Providers>>,
 }
 
 pub struct TaxCardRail {
@@ -449,6 +450,11 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(bank::import_statement),
         )
         .route("/companies/{company_id}/bank/accounts", get(bank::accounts))
+        .route("/companies/{company_id}/schedules", get(schedule::list))
+        .route(
+            "/companies/{company_id}/schedules/{kind}",
+            axum::routing::put(schedule::set),
+        )
         .route("/companies/{company_id}/bank/feed", get(bank_feed::status))
         .route("/companies/{company_id}/bank/feed/banks", get(bank_feed::banks))
         .route(

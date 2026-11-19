@@ -430,61 +430,83 @@ pub async fn record_fetch(
         }
     }
 
-    let mut tx = pool.begin().await?;
-    const SEEN: &str = "insert into bank_feed_seen
-        (account_id, key, statement_id, booking_date, amount_ore, absorbed)
-        values ($1,$2,$3,$4,$5,$6)";
-    for ((key, line), statement_id) in &absorbed {
-        sqlx::query(SEEN)
-            .bind(connection.account_id)
-            .bind(key.as_str())
-            .bind(statement_id)
-            .bind(line.booking_date)
-            .bind(line.amount_ore)
-            .bind(true)
-            .execute(&mut *tx)
-            .await?;
-    }
-    if !new.is_empty() {
-        let statement = Camt053Statement {
-            statement_ref: format!("feed:{}:{}", connection.id, Uuid::now_v7()),
-            iban: None,
-            from_date: new.iter().map(|(_, l)| l.booking_date).min(),
-            to_date: new.iter().map(|(_, l)| l.booking_date).max(),
-            // A feed has no statement balances: absent, never zero (like CSV).
-            opening_ore: None,
-            closing_ore: None,
-            transactions: new
-                .iter()
-                .map(|(_, l)| Line {
-                    booking_date: l.booking_date,
-                    amount_ore: l.amount_ore,
-                    description: l.description.clone(),
-                    reference: l.reference.clone(),
-                })
-                .collect(),
-        };
-        let statement_id = crate::bank::insert_statement_in(
-            &mut tx,
-            connection.company_id,
-            connection.account_id,
-            &statement,
-            "bankkobling",
-        )
-        .await?;
-        for (key, line) in &new {
+    // Written as one unit. If another fetch of the same account (a scheduled run
+    // and «Hent nå» at the same moment) wrote these keys first, this one loses
+    // on the primary key, rolls back whole, and has nothing new to report.
+    let written: Result<()> = async {
+        let mut tx = pool.begin().await?;
+        const SEEN: &str = "insert into bank_feed_seen
+            (account_id, key, statement_id, booking_date, amount_ore, absorbed)
+            values ($1,$2,$3,$4,$5,$6)";
+        for ((key, line), statement_id) in &absorbed {
             sqlx::query(SEEN)
                 .bind(connection.account_id)
                 .bind(key.as_str())
                 .bind(statement_id)
                 .bind(line.booking_date)
                 .bind(line.amount_ore)
-                .bind(false)
+                .bind(true)
                 .execute(&mut *tx)
                 .await?;
         }
+        if !new.is_empty() {
+            let statement = Camt053Statement {
+                statement_ref: format!("feed:{}:{}", connection.id, Uuid::now_v7()),
+                iban: None,
+                from_date: new.iter().map(|(_, l)| l.booking_date).min(),
+                to_date: new.iter().map(|(_, l)| l.booking_date).max(),
+                // A feed has no statement balances: absent, never zero (like CSV).
+                opening_ore: None,
+                closing_ore: None,
+                transactions: new
+                    .iter()
+                    .map(|(_, l)| Line {
+                        booking_date: l.booking_date,
+                        amount_ore: l.amount_ore,
+                        description: l.description.clone(),
+                        reference: l.reference.clone(),
+                    })
+                    .collect(),
+            };
+            let statement_id = crate::bank::insert_statement_in(
+                &mut tx,
+                connection.company_id,
+                connection.account_id,
+                &statement,
+                "bankkobling",
+            )
+            .await?;
+            for (key, line) in &new {
+                sqlx::query(SEEN)
+                    .bind(connection.account_id)
+                    .bind(key.as_str())
+                    .bind(statement_id)
+                    .bind(line.booking_date)
+                    .bind(line.amount_ore)
+                    .bind(false)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(())
     }
-    tx.commit().await?;
+    .await;
+    if let Err(e) = written {
+        let lost_race = e
+            .downcast_ref::<sqlx::Error>()
+            .and_then(|e| e.as_database_error())
+            .and_then(|d| d.code())
+            .as_deref()
+            == Some("23505");
+        if !lost_race {
+            return Err(e);
+        }
+        return Ok(SyncSummary {
+            new: 0,
+            auto_matched: 0,
+        });
+    }
     sqlx::query(
         "update bank_connection set last_synced_at = now(), last_error = null where id = $1",
     )
@@ -522,4 +544,122 @@ pub async fn addon_rows(
     .bind(company_id)
     .fetch_all(pool)
     .await?)
+}
+
+/// What the user is told about a provider failure. The provider's own words
+/// are for the operator and go to the log, never to the portal.
+pub fn user_message(e: &regnmed_gov::bankfeed::FeedError) -> &'static str {
+    use regnmed_gov::bankfeed::FeedError;
+    match e {
+        FeedError::ConsentGone(_) => {
+            "Samtykket hos banken er utløpt eller trukket tilbake. Koble til på nytt."
+        }
+        FeedError::RateLimited => {
+            "Banken tillater ikke flere hentinger akkurat nå. Prøv igjen om noen timer."
+        }
+        FeedError::Other(_) => "Banken svarte ikke som ventet. Prøv igjen senere.",
+    }
+}
+
+/// One fetch for one connection: «Hent nå» in the portal and the scheduled
+/// job run exactly this. A consent the bank says is gone ends the connection
+/// (the user must connect again); any other failure is noted on the row in
+/// the user's language and the next fetch tries again. The error returned is
+/// the provider's, for the caller to turn into its own kind of answer.
+pub async fn sync(
+    pool: &PgPool,
+    client: &dyn regnmed_gov::bankfeed::BankFeed,
+    connection: &Live,
+) -> Result<std::result::Result<SyncSummary, regnmed_gov::bankfeed::FeedError>> {
+    use regnmed_gov::bankfeed::FeedError;
+    if connection.valid_until <= Utc::now() {
+        // The same ending as when the bank says so: the user must connect again.
+        end(
+            pool,
+            connection.company_id,
+            connection.id,
+            "samtykke utlopt",
+        )
+        .await?;
+        return Ok(Err(FeedError::ConsentGone("expired by date".into())));
+    }
+    let today = Utc::now().date_naive();
+    let from = fetch_from(pool, connection.account_id, today).await?;
+    match client
+        .transactions(&connection.external_account_id, from)
+        .await
+    {
+        Ok(fetched) => Ok(Ok(record_fetch(pool, connection, &fetched).await?)),
+        Err(e) => {
+            eprintln!("bank feed: connection {}: {e}", connection.id);
+            if matches!(e, FeedError::ConsentGone(_)) {
+                end(
+                    pool,
+                    connection.company_id,
+                    connection.id,
+                    "samtykke utlopt hos banken",
+                )
+                .await?;
+            } else {
+                note_error(pool, connection.id, user_message(&e)).await?;
+            }
+            Ok(Err(e))
+        }
+    }
+}
+
+/// Every completed, not ended connection of a company.
+pub async fn live_connections(pool: &PgPool, company_id: Uuid) -> Result<Vec<Live>> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "select id from bank_connection
+         where company_id = $1 and ended_at is null and session_id is not null
+         order by created_at",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::new();
+    for id in ids {
+        if let Some(c) = live(pool, company_id, id).await? {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
+/// The scheduled fetch for one company (job kind `bank_sync`): every live
+/// connection, one after the other. A connection that fails does not fail
+/// the job — retrying would only spend the bank's daily fetch allowance —
+/// it is reported in `feil`, in the user's language.
+pub async fn sync_company(
+    pool: &PgPool,
+    providers: Option<&regnmed_gov::bankfeed::Providers>,
+    company_id: Uuid,
+) -> Result<serde_json::Value> {
+    let mut summary = (0usize, 0usize, 0usize);
+    let mut errors: Vec<String> = Vec::new();
+    if !addon_active(pool, company_id, ADDON).await? {
+        errors.push("Selskapet har ikke tillegget Bankkobling.".into());
+    } else {
+        for connection in live_connections(pool, company_id).await? {
+            let Some(client) = providers.and_then(|p| p.get(&connection.provider)) else {
+                errors.push("Leverandøren bak koblingen er ikke satt opp.".into());
+                continue;
+            };
+            summary.0 += 1;
+            match sync(pool, client, &connection).await? {
+                Ok(s) => {
+                    summary.1 += s.new;
+                    summary.2 += s.auto_matched;
+                }
+                Err(e) => errors.push(user_message(&e).into()),
+            }
+        }
+    }
+    Ok(serde_json::json!({
+        "koblinger": summary.0,
+        "nye": summary.1,
+        "auto_matchet": summary.2,
+        "feil": errors,
+    }))
 }

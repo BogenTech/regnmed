@@ -75,6 +75,7 @@ pub fn platform_router(state: AppState) -> Router<AppState> {
             "/platform/companies/{company_id}/addons/{addon}/end",
             post(end_addon),
         )
+        .route("/platform/schedules", get(crate::schedule::platform_list))
         .route("/platform/plans", get(list_plans))
         .route("/platform/plans/{slug}", put(put_plan))
         .route("/platform/plans/{slug}/prices", post(post_price))

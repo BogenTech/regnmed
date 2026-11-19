@@ -27,6 +27,8 @@ fn right_for(kind: Kind) -> Right {
     match kind {
         Kind::SaftImport => Right::MigrationAdmin,
         Kind::AuditReport => Right::ReportRead,
+        // A scheduled fetch's outcome is read by whoever may see the bank.
+        Kind::BankSync => Right::BankRead,
     }
 }
 
@@ -137,11 +139,14 @@ async fn enqueue(state: &AppState, job_id: Uuid) {
         return;
     }
     let pool = state.pool.clone();
+    let runtime = job::Runtime {
+        bank: state.bank_feed.clone(),
+    };
     tokio::spawn(async move {
         let worker = "regnmed-api";
         match job::claim(&pool, job_id, worker).await {
             Ok(Some(claimed)) => {
-                if let Err(e) = job::process(&pool, &claimed, worker).await {
+                if let Err(e) = job::process(&pool, &claimed, worker, &runtime).await {
                     eprintln!("job {job_id}: could not record the outcome: {e:#}");
                 }
             }

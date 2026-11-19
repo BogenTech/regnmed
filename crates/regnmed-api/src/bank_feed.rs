@@ -10,12 +10,9 @@
 //! user authenticates at the bank and we keep the provider's session
 //! reference.
 //!
-//! regnmed is not tied to one provider. `BankFeeds` holds the configured ones
+//! regnmed is not tied to one provider. `Providers` (regnmed-gov) holds the configured ones
 //! in priority order, a bank offered by several is taken from the first, and
 //! every connection remembers which provider it was made through.
-
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -24,7 +21,7 @@ use axum::response::Redirect;
 use chrono::Utc;
 use regnmed_core::bankfeed::norwegian_bban;
 use regnmed_db::bank_feed::{self, ADDON};
-use regnmed_gov::bankfeed::{AuthRequest, Bank, BankFeed, FeedError};
+use regnmed_gov::bankfeed::{AuthRequest, BankFeed, FeedError, Providers};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -37,79 +34,13 @@ const COUNTRY: &str = "NO";
 /// PSD2 allows up to 180 days between strong authentications; a bank may
 /// allow less, and then its own maximum applies.
 const MAX_CONSENT_DAYS: i64 = 180;
-/// The list of banks changes rarely; a connect should not depend twice on
-/// the provider being up.
-const BANKS_TTL: Duration = Duration::from_secs(3600);
-
-/// One bank as offered through one provider.
-#[derive(Clone)]
-struct Offer {
-    provider: &'static str,
-    bank: Bank,
-}
-
-/// The configured providers, in priority order.
-pub struct BankFeeds {
-    providers: Vec<Arc<dyn BankFeed>>,
-    banks: Mutex<Option<(Instant, Vec<Offer>)>>,
-}
-
-impl BankFeeds {
-    /// None when no provider is configured: the feature then does not exist.
-    pub fn new(providers: Vec<Arc<dyn BankFeed>>) -> Option<Arc<Self>> {
-        (!providers.is_empty()).then(|| {
-            Arc::new(Self {
-                providers,
-                banks: Mutex::new(None),
-            })
-        })
-    }
-
-    fn get(&self, id: &str) -> Option<&dyn BankFeed> {
-        self.providers.iter().find(|p| p.id() == id).map(|p| &**p)
-    }
-
-    /// Every bank on offer, first provider first. One provider being down
-    /// does not hide the others' banks; all of them failing is an error.
-    async fn offers(&self) -> Result<Vec<Offer>, FeedError> {
-        if let Some((at, offers)) = self.banks.lock().unwrap().as_ref()
-            && at.elapsed() < BANKS_TTL
-        {
-            return Ok(offers.clone());
-        }
-        let mut offers = Vec::new();
-        let mut failure = None;
-        for p in &self.providers {
-            match p.banks(COUNTRY).await {
-                Ok(banks) => offers.extend(banks.into_iter().map(|bank| Offer {
-                    provider: p.id(),
-                    bank,
-                })),
-                Err(e) => {
-                    eprintln!("bank feed: provider {} could not list banks: {e}", p.id());
-                    failure = Some(e);
-                }
-            }
-        }
-        match failure {
-            Some(e) if offers.is_empty() => Err(e),
-            // A partial list is not cached: the missing provider is asked again next time.
-            Some(_) => Ok(offers),
-            None => {
-                *self.banks.lock().unwrap() = Some((Instant::now(), offers.clone()));
-                Ok(offers)
-            }
-        }
-    }
-}
-
-fn feeds(state: &AppState) -> Result<&BankFeeds, ApiError> {
+fn feeds(state: &AppState) -> Result<&Providers, ApiError> {
     state.bank_feed.as_deref().ok_or_else(|| {
         ApiError::BadRequest("bankkobling er ikke satt opp på denne installasjonen".into())
     })
 }
 
-fn provider<'a>(feeds: &'a BankFeeds, id: &str) -> Result<&'a dyn BankFeed, ApiError> {
+fn provider<'a>(feeds: &'a Providers, id: &str) -> Result<&'a dyn BankFeed, ApiError> {
     feeds.get(id).ok_or_else(|| {
         ApiError::BadRequest(
             "koblingen ble laget gjennom en leverandør som ikke lenger er satt opp; koble til på nytt".into(),
@@ -127,23 +58,9 @@ async fn require_addon(state: &AppState, company_id: Uuid) -> Result<(), ApiErro
     }
 }
 
-/// What the user is told. The provider's own words are for the operator and
-/// go to the log, never to the portal.
-fn user_message(e: &FeedError) -> &'static str {
-    match e {
-        FeedError::ConsentGone(_) => {
-            "Samtykket hos banken er utløpt eller trukket tilbake. Koble til på nytt."
-        }
-        FeedError::RateLimited => {
-            "Banken tillater ikke flere hentinger akkurat nå. Prøv igjen om noen timer."
-        }
-        FeedError::Other(_) => "Banken svarte ikke som ventet. Prøv igjen senere.",
-    }
-}
-
 fn feed_error(e: FeedError) -> ApiError {
     eprintln!("bank feed: {e}");
-    ApiError::BadRequest(user_message(&e).into())
+    ApiError::BadRequest(bank_feed::user_message(&e).into())
 }
 
 pub async fn status(
@@ -176,7 +93,7 @@ pub async fn banks(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankRead).await?;
-    let offers = feeds(&state)?.offers().await.map_err(feed_error)?;
+    let offers = feeds(&state)?.offers(COUNTRY).await.map_err(feed_error)?;
     Ok(Json(json!({
         "banker": offers.iter().map(|o| json!({
             "name": o.bank.name, "country": o.bank.country, "provider": o.provider,
@@ -237,7 +154,7 @@ pub async fn connect(
             ApiError::BadRequest("kontonummeret er ikke et gyldig norsk kontonummer".into())
         })?;
     let offer = feeds
-        .offers()
+        .offers(COUNTRY)
         .await
         .map_err(feed_error)?
         .into_iter()
@@ -373,6 +290,15 @@ pub async fn complete(
         .await
         {
             Ok(replaced) => {
+                // From now on the fetch also runs by itself (docs/jobs.md,
+                // «Tidsplaner»). An existing schedule is left as the company set it.
+                regnmed_db::schedule::ensure(
+                    &state.pool,
+                    company_id,
+                    regnmed_db::job::Kind::BankSync,
+                    person.display(),
+                )
+                .await?;
                 for old in replaced {
                     if let Some(p) = feeds.get(&old.provider)
                         && let Err(e) = p.end_session(&old.session_id).await
@@ -412,45 +338,12 @@ pub async fn sync(
         .await?
         .ok_or(ApiError::NotFound)?;
     let client = provider(feeds, &connection.provider)?;
-    let summary = sync_connection(&state.pool, client, &connection).await?;
+    let summary = bank_feed::sync(&state.pool, client, &connection)
+        .await?
+        .map_err(|e| ApiError::BadRequest(bank_feed::user_message(&e).into()))?;
     Ok(Json(
         json!({ "nye": summary.new, "auto_matchet": summary.auto_matched }),
     ))
-}
-
-/// One fetch for one connection. A consent the bank says is gone ends the
-/// connection (the user must connect again); any other failure is noted on
-/// the row in the user's language and the next fetch tries again.
-pub async fn sync_connection(
-    pool: &sqlx::PgPool,
-    client: &dyn BankFeed,
-    connection: &bank_feed::Live,
-) -> Result<bank_feed::SyncSummary, ApiError> {
-    if connection.valid_until <= Utc::now() {
-        return Err(feed_error(FeedError::ConsentGone("expired by date".into())));
-    }
-    let today = Utc::now().date_naive();
-    let from = bank_feed::fetch_from(pool, connection.account_id, today).await?;
-    match client
-        .transactions(&connection.external_account_id, from)
-        .await
-    {
-        Ok(fetched) => Ok(bank_feed::record_fetch(pool, connection, &fetched).await?),
-        Err(e) => {
-            if matches!(e, FeedError::ConsentGone(_)) {
-                bank_feed::end(
-                    pool,
-                    connection.company_id,
-                    connection.id,
-                    "samtykke utlopt hos banken",
-                )
-                .await?;
-            } else {
-                bank_feed::note_error(pool, connection.id, user_message(&e)).await?;
-            }
-            Err(feed_error(e))
-        }
-    }
 }
 
 pub async fn end(

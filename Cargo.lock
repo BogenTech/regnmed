@@ -2032,6 +2032,7 @@ dependencies = [
  "futures-util",
  "hex",
  "regnmed-core",
+ "regnmed-gov",
  "reqwest",
  "serde",
  "serde_json",

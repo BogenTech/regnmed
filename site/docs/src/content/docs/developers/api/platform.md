@@ -30,6 +30,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | GET | `/platform/plans` | plattformrolle |
 | PUT | `/platform/plans/{slug}` | plattformrolle |
 | POST | `/platform/plans/{slug}/prices` | plattformrolle |
+| GET | `/platform/schedules` | plattformrolle |
 | GET | `/platform/settings` | plattformrolle |
 | PUT | `/platform/settings` | plattformrolle |
 | GET | `/platform/subscriptions` | plattformrolle |

@@ -9,6 +9,8 @@ repository.workspace = true
 [dependencies]
 futures-util.workspace = true
 regnmed-core.workspace = true
+# The job runner fetches through the bank providers (docs/jobs.md, bank_sync).
+regnmed-gov = { path = "../regnmed-gov" }
 
 anyhow.workspace = true
 hex.workspace = true

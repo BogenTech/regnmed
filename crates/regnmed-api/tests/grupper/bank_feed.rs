@@ -264,7 +264,7 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     let pem = key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
     // Two providers: the real client against the mock, and a second one, to
     // hold the seam open — regnmed is not tied to one provider.
-    state.bank_feed = regnmed_api::bank_feed::BankFeeds::new(vec![
+    state.bank_feed = regnmed_gov::bankfeed::Providers::new(vec![
         Arc::new(
             regnmed_gov::enablebanking::Client::new(
                 APP_ID,
@@ -674,6 +674,166 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     let (_, more) = call(&state, "POST", &sync, &admin, Value::Null).await;
     assert_eq!(more["nye"], 1);
 
+    // The fetch also runs by itself: completing the connection gave the company a
+    // schedule (docs/jobs.md, «Tidsplaner»), at a night-time default.
+    let schedules = format!("{base}/schedules");
+    let (code, plans) = call(&state, "GET", &schedules, &reader, Value::Null).await;
+    assert_eq!(code, StatusCode::OK, "{plans}");
+    let plan = &plans["tidsplaner"][0];
+    assert_eq!(plan["kind"], "bank_sync");
+    assert_eq!(plan["aktiv"], true);
+    assert_eq!(plan["tider"].as_array().unwrap().len(), 1);
+    assert_eq!(plan["maks_per_dag"], 4);
+    assert!(plan["neste"].is_string(), "{plan}");
+    assert!(plan["sist"].is_null(), "nothing has run by itself yet");
+
+    // Changing it takes the right to do the same by hand, and stays within the kind's rules.
+    let put = format!("{schedules}/bank_sync");
+    let twice = json!({ "tider": ["12:00", "03:15"], "aktiv": true });
+    assert_eq!(
+        call(&state, "PUT", &put, &reader, twice.clone()).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &put,
+            &admin,
+            json!({ "tider": ["01:00", "07:00", "13:00", "19:00", "23:00"], "aktiv": true })
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST,
+        "banks limit background fetches: at most four a day"
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &put,
+            &admin,
+            json!({ "tider": ["25:00"], "aktiv": true })
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &format!("{schedules}/audit_report"),
+            &admin,
+            twice.clone()
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(&state, "PUT", &put, &other_admin, twice.clone())
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let (code, changed) = call(&state, "PUT", &put, &admin, twice).await;
+    assert_eq!(code, StatusCode::OK, "{changed}");
+    assert_eq!(changed["tider"], json!(["03:15", "12:00"]));
+
+    // The schedule comes due: the worker's own code turns it into a job and runs
+    // it, and the new bank line arrives without anyone pressing «Hent nå».
+    shared
+        .lock()
+        .unwrap()
+        .transactions
+        .push(booked("A5", "20.00", "DBIT", "Gebyr"));
+    sqlx::query(
+        "update schedule set next_run_at = now() - interval '1 minute' where company_id = $1",
+    )
+    .bind(company)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    // Another test's call may be the one that takes this schedule; its job is
+    // visible when that transaction commits, so look until there is one.
+    for _ in 0..250 {
+        regnmed_db::schedule::enqueue_due(&state.pool)
+            .await
+            .unwrap();
+        let there: bool = sqlx::query_scalar(
+            "select exists (select 1 from job where company_id = $1 and kind = 'bank_sync')",
+        )
+        .bind(company)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        if there {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    // The database is shared with every other test: the job is taken over by
+    // id rather than claimed, so a worker in another test that got to it first
+    // cannot make this one fail.
+    let job_id: Uuid = sqlx::query_scalar(
+        "update job set status = 'running', claimed_by = 'test-worker', attempts = 1,
+                        started_at = now(), heartbeat_at = now()
+         where company_id = $1 and kind = 'bank_sync' returning id",
+    )
+    .bind(company)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    let claimed = regnmed_db::job::Claimed {
+        id: job_id,
+        company_id: company,
+        kind: "bank_sync".into(),
+        created_by: "tidsplan".into(),
+    };
+    let runtime = regnmed_db::job::Runtime {
+        bank: state.bank_feed.clone(),
+    };
+    regnmed_db::job::process(&state.pool, &claimed, "test-worker", &runtime)
+        .await
+        .unwrap();
+    let (_, plans) = call(&state, "GET", &schedules, &admin, Value::Null).await;
+    let last = &plans["tidsplaner"][0]["sist"];
+    assert_eq!(last["status"], "done", "{last}");
+    assert_eq!(last["resultat"]["koblinger"], 1, "{last}");
+    assert_eq!(last["resultat"]["nye"], 1, "{last}");
+    assert_eq!(last["resultat"]["feil"], json!([]));
+    // Its outcome is read with the right to see the bank; the console lists the schedule.
+    assert_eq!(
+        call(
+            &state,
+            "GET",
+            &format!("{base}/jobs/{job_id}"),
+            &reader,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (code, everything) =
+        call(&state, "GET", "/platform/schedules", &sysadmin, Value::Null).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(
+        everything["tidsplaner"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["company_id"] == company.to_string() && t["sist_status"] == "done"),
+        "{everything}"
+    );
+    assert_eq!(
+        call(&state, "GET", "/platform/schedules", &admin, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+
     // The bank rate limits: said in Norwegian, noted on the connection, and the
     // connection stays. The next fetch clears the note.
     shared.lock().unwrap().rate_limited = true;
@@ -810,6 +970,43 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
         after["nye"], 0,
         "the renewed consent does not re-import the account's history"
     );
+
+    // A consent past its date is not asked of the bank at all: the connection
+    // ends, exactly as when the bank says the consent is gone.
+    sqlx::query("update bank_connection set valid_until = now() - interval '1 hour' where id = $1")
+        .bind(renewed)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let asked = shared.lock().unwrap().transactions.len();
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/bank/feed/{renewed}/sync"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+    assert_eq!(shared.lock().unwrap().transactions.len(), asked);
+    let reason: Option<String> =
+        sqlx::query_scalar("select end_reason from bank_connection where id = $1")
+            .bind(renewed)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(reason.as_deref(), Some("samtykke utlopt"));
+    // Connected again, for the rest of the test.
+    let renewed = connect(&state, &base, &admin).await;
+    let (code, _) = call(
+        &state,
+        "POST",
+        &complete,
+        &admin,
+        json!({ "code": "ok", "state": renewed }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
 
     // The bank says the consent is gone: the connection ends, with a message to connect again.
     shared.lock().unwrap().expired = true;

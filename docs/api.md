@@ -96,6 +96,7 @@ endepunktene når noe selskaps hovedbok.
 | `/platform/settings` | GET PUT |
 | `/platform/companies/{company_id}/addons` | POST |
 | `/platform/companies/{company_id}/addons/{addon}/end` | POST |
+| `/platform/schedules` | GET |
 | `/platform/plans` | GET |
 | `/platform/plans/{slug}` | PUT |
 | `/platform/plans/{slug}/prices` | POST |
@@ -131,6 +132,8 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/attachments/{attachment_id}` | GET |
 | `/companies/{company_id}/dividends` | GET POST |
 | `/companies/{company_id}/bank/accounts` | GET |
+| `/companies/{company_id}/schedules` | GET |
+| `/companies/{company_id}/schedules/{kind}` | PUT |
 | `/companies/{company_id}/bank/feed` | GET |
 | `/companies/{company_id}/bank/feed/banks` | GET |
 | `/companies/{company_id}/bank/feed/connect` | POST |
