@@ -176,6 +176,7 @@
         // and let a newer copy (an agent's status moved) win.
         const known = new Map(thread.messages.map((m) => [m.message_id, m]));
         for (const m of svar.messages) known.set(m.message_id, m);
+        thread.ny_start = svar.ny_start;
         thread.messages = [...known.values()].sort((a, b) =>
           a.created_at === b.created_at
             ? a.message_id.localeCompare(b.message_id)
@@ -192,6 +193,36 @@
     } catch (e) {
       if (id === openId) threadError = e.message;
     }
+  }
+
+  // «Ny samtale»: the agent starts fresh. Earlier messages stay on screen
+  // but are no longer sent with the next order, so a wrong answer it gave
+  // before cannot keep coming back.
+  let startingOver = $state(false);
+  async function nyStart() {
+    if (!openId || startingOver) return;
+    startingOver = true;
+    try {
+      const r = await post("/chat/conversations/" + openId + "/restart", {});
+      thread.ny_start = [...(thread.ny_start || []), r.ny_start];
+      toast("Ny samtale startet. " + thread.with.name + " ser ikke det som står over streken.", true);
+      await tick();
+      scroller?.scrollTo({ top: scroller.scrollHeight });
+    } catch (e) {
+      toast(e.message, false);
+    }
+    startingOver = false;
+  }
+  // A restart between message i-1 and message i (or after the last one,
+  // with i = messages.length) draws a line there.
+  function restartBefore(i) {
+    const ms = thread.messages;
+    const from = i > 0 ? Date.parse(ms[i - 1].created_at) : -Infinity;
+    const to = i < ms.length ? Date.parse(ms[i].created_at) : Infinity;
+    return (thread.ny_start || []).some((t) => {
+      const at = Date.parse(t);
+      return at > from && at <= to;
+    });
   }
 
   // A long thread arrives one page at a time: the newest first, older
@@ -544,6 +575,16 @@
             <h2 class="font-semibold truncate">{thread.with.name}</h2>
             <p class="text-xs opacity-60 truncate">{via(thread.with)}</p>
           </div>
+          {#if thread.with.agent}
+            <button
+              class="btn btn-sm btn-ghost ml-auto"
+              onclick={nyStart}
+              disabled={startingOver}
+              title={thread.with.name + " starter på nytt og ser ikke det som er skrevet før"}
+            >
+              Ny samtale
+            </button>
+          {/if}
         </div>
         {#if thread.runs_here === false}
           <!-- Not ours to run: it answers only if it runs elsewhere (MCP).
@@ -581,8 +622,13 @@
               {/if}
             </p>
           {/if}
-          {#each thread.messages as m (m.message_id)}
+          {#each thread.messages as m, i (m.message_id)}
             {@const mine = m.author_id === thread.me}
+            {#if restartBefore(i)}
+              <div class="divider text-xs opacity-70 my-1" role="separator">
+                Ny samtale – {thread.with.name} ser ikke det som står over
+              </div>
+            {/if}
             <div class="flex flex-col {mine ? 'items-end' : 'items-start'}">
               {#if !mine && thread.with.agent}
                 <!-- An agent writes markdown; rendered safely (lib/markdown.js
@@ -612,6 +658,11 @@
               </span>
             </div>
           {/each}
+          {#if thread.messages.length && restartBefore(thread.messages.length)}
+            <div class="divider text-xs opacity-70 my-1" role="separator">
+              Ny samtale – {thread.with.name} ser ikke det som står over
+            </div>
+          {/if}
         </div>
 
         <div class="border-t border-base-200 p-2 sm:p-3 flex flex-col gap-2">

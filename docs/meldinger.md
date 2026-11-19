@@ -79,6 +79,17 @@ agenten gjør bare det rollen dens tillater. Attesteringspolicyen
   en kundes egen MCP-agent ser nøyaktig slik ut, og den skal aldri få
   beskjed om at den er ødelagt. Der sier samtalen fra i stedet
   (`runs_here: false`): agenten svarer bare der den kjøres.
+- **«Ny samtale» (migration 0098, 2026-11-19).** Siden hver bestilling
+  bærer de siste meldingene, og en agent stoler på det den selv svarte
+  før, kom et galt svar tilbake i hver ny bestilling — i prod rapporterte
+  agenten samme gale saldo tre ganger og bekreftet sitt eget tall. Knappen
+  «Ny samtale» i en agentsamtale (`POST …/restart`) skriver en rad i
+  `chat_restart` (innsettings-bar): fra da av sendes ingenting fra før
+  merket med neste bestilling, og et åpent spørsmål fra før blir ikke
+  fortsatt — neste melding er en ny oppgave. INGENTING slettes: meldingene
+  står i tråden som før, med en strek der samtalen startet på nytt
+  (`ny_start` i svaret). Gjelder bare samtaler med en agent; mellom to
+  mennesker er det ingenting å glemme.
 - **En agent starter ikke samtaler og skriver ikke til andre agenter**:
   den svarer gjennom oppgavene sine. #103s egenskap («en agent skriver
   ikke sine egne ordrer») består.
@@ -155,6 +166,7 @@ tidsstempel. Klienten fjerner duplikater på id.
 | `GET /chat/conversations/{id}?since=&before=&before_id=&limit=` | én side med meldinger (nyeste 30 som standard), motparten, `attach_to` og `older` |
 | `POST /chat/conversations/{id}/messages` | `{text, documents}` — til en agent blir det en oppgave |
 | `POST /chat/conversations/{id}/read` | `{until}` — merket flyttes bare framover |
+| `POST /chat/conversations/{id}/restart` | «Ny samtale» med en agent: ingenting før dette sendes med neste bestilling; svaret bærer `ny_start` (400 mellom mennesker) |
 | `GET /chat/unread` | `{unread, conversations}` — antallet alene |
 | `POST /chat/read-all` | alle samtalene mine er lest (bjellas «Marker alle som lest») |
 | `GET /notifications` | bjella: `{varsler: [{type: "melding", conversation_id, fra, agent, tekst, tidspunkt, uleste}]}`, én rad per samtale med uleste |
@@ -254,7 +266,10 @@ kontakt (bare admin velger, bare egne medlemmer), kvittering til agenten
 sortering etter nyeste melding, uleste, bjella (agentens spørsmål er
 Evas varsel og ingen andres, borte når hun svarer, og tømt av
 «Marker alle som lest»), utenforstående = 404, og
-samtalen som forsvinner når oppdraget avsluttes.
+samtalen som forsvinner når oppdraget avsluttes. «Ny samtale»: et
+åpent spørsmål fra før blir ikke fortsatt, bestillingen bærer ingenting
+fra før merket men det som er sagt etter, tråden beholder alle meldingene
+og viser merket, og 400 mellom to mennesker — sett feile uten filteret.
 `an_agents_task_history_is_its_conversation_and_long_threads_page`: en
 oppgave gitt fra kortet blir samtalen (bestilling, spørsmål, svar,
 resultat i rekkefølge, siste linje i listen), og siden + markøren henter

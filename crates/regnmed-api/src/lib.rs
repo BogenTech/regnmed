@@ -275,6 +275,10 @@ pub fn router(state: AppState) -> Router {
             "/chat/conversations/{conversation_id}/read",
             axum::routing::post(chat::read),
         )
+        .route(
+            "/chat/conversations/{conversation_id}/restart",
+            axum::routing::post(chat::restart),
+        )
         .route("/chat/unread", get(chat::unread))
         .route("/chat/read-all", axum::routing::post(chat::read_all))
         .route("/chat/stream", get(chat::stream))
