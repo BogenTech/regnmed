@@ -121,7 +121,10 @@ dager bare kort tid etter at kunden har logget inn med BankID.
 
 «Hent eldre» (`?fra=` på «Hent nå») henter bakover fra en valgt dato én gang,
 så langt banken gir historikk. Den forlenger bare vinduet, kutter det aldri, og
-det som alt er hentet eller lastet opp, importeres ikke på nytt. Sier banken at samtykket er borte, avsluttes koblingen med
+det som alt er hentet eller lastet opp, importeres ikke på nytt. Nekter banken perioden
+(`WRONG_TRANSACTIONS_PERIOD`), får brukeren beskjed om å velge en senere dato, og
+koblingen merkes ikke med feil. Nekter den første hentingens start på året, henter
+den de siste 90 dagene i stedet (PSD2-gulvet), så en ny kobling aldri står tom. Sier banken at samtykket er borte, avsluttes koblingen med
 beskjed om å koble til på nytt; andre feil noteres på raden PÅ NORSK (leverandørens
 egne ord går til loggen, aldri til portalen) og neste henting prøver igjen.
 

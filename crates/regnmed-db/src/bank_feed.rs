@@ -576,6 +576,9 @@ pub fn user_message(e: &regnmed_gov::bankfeed::FeedError) -> &'static str {
         FeedError::RateLimited => {
             "Banken tillater ikke flere hentinger akkurat nå. Prøv igjen om noen timer."
         }
+        FeedError::PeriodRefused => {
+            "Banken gir ikke historikk så langt tilbake. Velg en senere dato."
+        }
         FeedError::Other(_) => "Banken svarte ikke som ventet. Prøv igjen senere.",
     }
 }
@@ -610,10 +613,18 @@ pub async fn sync(
     let today = Utc::now().date_naive();
     let usual = fetch_from(pool, connection.account_id, today).await?;
     let from = back_to.map_or(usual, |d| d.min(usual));
-    match client
-        .transactions(&connection.external_account_id, from)
-        .await
-    {
+    let account = &connection.external_account_id;
+    // A bank that will not reach back to the start of the year still gives the
+    // last 90 days (PSD2's floor). Only the usual window falls back: a date the
+    // user chose is answered as asked.
+    let floor = today - chrono::Days::new(90);
+    let fetched = match client.transactions(account, from).await {
+        Err(FeedError::PeriodRefused) if back_to.is_none() && from < floor => {
+            client.transactions(account, floor).await
+        }
+        r => r,
+    };
+    match fetched {
         Ok(fetched) => Ok(Ok(record_fetch(pool, connection, &fetched).await?)),
         Err(e) => {
             eprintln!("bank feed: connection {}: {e}", connection.id);
@@ -625,7 +636,8 @@ pub async fn sync(
                     "samtykke utlopt hos banken",
                 )
                 .await?;
-            } else {
+            } else if !(matches!(e, FeedError::PeriodRefused) && back_to.is_some()) {
+                // A refused «Hent eldre» date says nothing about the connection.
                 note_error(pool, connection.id, user_message(&e)).await?;
             }
             Ok(Err(e))
