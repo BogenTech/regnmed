@@ -2,6 +2,9 @@
 import Base from "../layouts/Base.astro";
 import Shot from "../components/Shot.astro";
 import { APP, DOCS } from "../data/links.js";
+import { loadPricing, fromPrice, fmtKr } from "../data/pricing.js";
+const { plans } = await loadPricing();
+const from = fromPrice(plans);
 ---
 <Base title="For regnskapsførere" description="Samle klientporteføljen på ett sted, med tilgang som følger oppdraget. Gratis for byrået, og hver klient får sin egen hovedbok du kan etterprøve.">
   <section class="pagehead"><div class="wrap">
@@ -32,6 +35,6 @@ import { APP, DOCS } from "../data/links.js";
 
   <section class="section"><div class="wrap split">
     <div class="stack" style="--s:1.25rem"><p class="eyebrow">Pris</p><h2>Gratis for byrået</h2></div>
-    <div class="prose"><p style="margin-top:0">All fakturering er per selskap, og byrået har ingen egen abonnementspris. Klientene betaler for sin egen hovedbok, etter størrelse, og brukere koster aldri ekstra. <a href="/priser/">Se priser</a>.</p></div>
+    <div class="prose"><p style="margin-top:0">All fakturering er per selskap, og byrået har ingen egen abonnementspris. Klientene betaler for sin egen hovedbok etter størrelse{from != null && `, fra ${fmtKr(from)} kroner i måneden`}, og brukere koster aldri ekstra. <a href="/priser/">Se priser</a>.</p></div>
   </div></section>
 </Base>

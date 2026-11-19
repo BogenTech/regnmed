@@ -1,5 +1,6 @@
 <script>
-  import { post, send } from "../../lib/api.js";
+  import { api, post, send } from "../../lib/api.js";
+  import { naadd } from "../../lib/pakke.js";
   import { formatDate, kr, parseKr, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, sporsmal } from "../../lib/dialog.svelte.js";
@@ -17,6 +18,20 @@
   let fp = $state("10,2");
   let epost = $state("");
   let forhold = $state(tomt());
+
+  // The package limit shown up front; the server refuses regardless.
+  let pakke = $state(null);
+  $effect(() => {
+    const id = companyId;
+    void ansatte?.length; // read again after the list changes: the count is what fills up
+    pakke = null;
+    api("/companies/" + id + "/subscription")
+      .then((s) => {
+        if (companyId === id) pakke = s;
+      })
+      .catch(() => {});
+  });
+  let fullt = $derived(!!pakke?.bruk && naadd(pakke.bruk.ansatte, pakke.bruk.ansatte_grense));
 
   function nullstill() {
     navn = "";
@@ -405,6 +420,13 @@
       </summary>
       <div class="mt-2"><Arbeidsforhold bind:value={forhold} {koder} /></div>
     </details>
-    <button class="btn btn-sm" onclick={opprett}>Registrer ansatt</button>
+    {#if fullt}
+      <p class="text-sm" role="note">
+        Pakken {pakke.pakke?.navn ?? ""} har lønn for {pakke.bruk.ansatte_grense}
+        {pakke.bruk.ansatte_grense === 1 ? "ansatt" : "ansatte"}. Bytt til en større pakke under
+        <a class="link" href={"#/c/" + companyId + "/admin/abonnement"}>Abonnement</a> for å legge til flere.
+      </p>
+    {/if}
+    <button class="btn btn-sm" onclick={opprett} disabled={fullt}>Registrer ansatt</button>
   </div>
 </Card>

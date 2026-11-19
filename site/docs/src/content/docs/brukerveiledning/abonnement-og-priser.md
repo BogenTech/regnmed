@@ -7,21 +7,16 @@ sidebar:
 
 ## Prisene
 
-Alt er inkludert i begge planene. Brukere koster aldri, og det er ingen bilagsgrenser eller moduler som må kjøpes til.
+Pakkene og prisene redigeres i plattformkonsollen, og den gjeldende prislisten står alltid på [regnmed.no/priser](https://www.regnmed.no/priser/). Den viser hver pakke med pris, grenser og det som følger med, og en pris som er vedtatt fram i tid vises med datoen den gjelder fra. Prisene er uten mva, og brukere koster aldri ekstra.
 
-:::note
-Nye planer (Liten, Standard og Stor etter antall bilag) er foreslått, men ikke innført. Tabellen under er det som gjelder i dag. Se [priser](https://www.regnmed.no/priser/).
-:::
+Pakkene skiller på størrelse:
 
+- **Bilag i året.** En pakkegrense stopper aldri bokføringen. Går du over grensen, får du beskjed i portalen og forslag om en pakke som passer. Bilag regnmed fører selv (avskrivninger, periodiseringer, lønnskjøringer, purregebyr og årsavslutning) telles ikke.
+- **Ansatte i lønn** og **integrasjoner og agenter.** Disse har en fast grense. Når pakken er full, avvises en ny ansatt eller en ny agent med en melding som sier hvilken pakke du er på.
 
-| Plan | Pris per selskap | Forskjellen |
-| --- | --- | --- |
-| Basis | 49 kr per måned | Selvbetjent. Dokumentasjonen er supporten. |
-| Standard | 99 kr per måned | Samme funksjoner, pluss e-postsupport. |
+Under **Administrasjon → Abonnement** ser du pakken du er på og hvor mye du bruker av grensene. Betaler du med faktura, bytter du pakke selv der: en større pakke gjelder med en gang, og prisforskjellen for inneværende måned faktureres; en mindre pakke gjelder fra den 1. i neste måned. Du kan ikke bytte til en pakke med færre plasser for ansatte eller integrasjoner enn du bruker. Betaler du med kort, tar du kontakt med oss for å bytte. Prøveperioden har ingen grenser.
 
-Prisene er oppgitt uten mva. Mva legges på etter registreringen til selskapet som fakturerer, og beregnes ikke som en fast sats. Skillet mellom planene er støttekanalen og ingenting annet. Ingen funksjoner er låst bak Standard.
-
-Prisene er data med dato og kilde. En prisendring gjelder nye avtaler, og eksisterende kunder beholder sin plan.
+Prisene er data med dato og kilde. En ny pris gjelder fra en dato som er satt fram i tid, og et selskap som står på en eldre pakke beholder den og prisen sin, også om abonnementet har vært ute en stund og startes igjen.
 
 **Byråer betaler ikke.** All fakturering er per selskap, og hver klient har sitt eget abonnement. Byråavtaler med rabatt er ikke bygget.
 

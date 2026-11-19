@@ -1240,3 +1240,404 @@ async fn a_stripe_subscription_recurs_until_cancelled() {
         "dekningen skulle vært avsluttet, ikke bare abonnementsraden"
     );
 }
+
+/// Package guardrails (docs/abonnement.md §7, user decision 2026-11-18):
+/// bookkeeping is never blocked — going over the voucher limit is only
+/// reported — while an employee or an integration beyond the package is
+/// refused where it is created. Trial has no limits, an unlisted plan or an
+/// add-on cannot be chosen, and switching to a bigger package lifts the cap.
+#[tokio::test]
+async fn package_limits_refuse_employees_and_integrations_but_never_bookkeeping() {
+    let Some((state, _idp, company, admin)) = config().await else {
+        return;
+    };
+    let base = format!("/companies/{company}");
+    let employee = |nin: &str| {
+        format!(
+            r#"{{"fodselsnummer":"{nin}","navn":"Ansatt {nin}","ansatt_fra":"2026-01-01","manedslonn_ore":5000000,"trekk_type":"prosent","trekk_prosent_bp":3000}}"#
+        )
+    };
+    // Trial: no package, no limits.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/employees"),
+        &admin,
+        &employee("03048810003"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+
+    // A small package: 1 voucher, 1 employee, no integrations.
+    let by = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("sys|{}", Uuid::new_v4()),
+        Some("Sys"),
+        None,
+    )
+    .await
+    .unwrap();
+    let slug = format!("t{}", &Uuid::new_v4().simple().to_string()[..12]);
+    let mut input = regnmed_db::plans::PlanInput {
+        name: "Testliten".into(),
+        kind: "plan".into(),
+        available: true,
+        audience: String::new(),
+        featured: false,
+        listed: true,
+        voucher_limit: Some(1),
+        employee_limit: Some(1),
+        integration_limit: Some(0),
+        features: vec![],
+        sort: 990,
+    };
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+        .await
+        .unwrap();
+    let today = Utc::now().date_naive();
+    regnmed_db::plans::add_price(
+        &state.pool,
+        &slug,
+        "month",
+        4900,
+        today,
+        today,
+        "test",
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    // An add-on, or a plan without a price, cannot be chosen.
+    let (code, _) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription"),
+        &admin,
+        r#"{"plan":"bank"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription"),
+        &admin,
+        &format!(r#"{{"plan":"{slug}"}}"#),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+
+    // Payroll is capped: the employee from the trial fills the one place.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/employees"),
+        &admin,
+        &employee("26829398612"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+    assert!(
+        why["error"].as_str().unwrap().contains("Testliten"),
+        "{why}"
+    );
+
+    // Integrations are capped at zero.
+    let grant = format!(
+        r#"{{"client_id":"c-{slug}","navn":"Nettbutikken","kontakt":"x@test.invalid","access":"bokforing"}}"#
+    );
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/integrations"),
+        &admin,
+        &grant,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+
+    // Bookkeeping is never capped: two vouchers on a one-voucher package.
+    for account in ["1920", "1950"] {
+        let (code, why) = call(
+            &state,
+            "POST",
+            &format!("{base}/accounts"),
+            &admin,
+            &format!(r#"{{"number":"{account}"}}"#),
+        )
+        .await;
+        assert!(code.is_success(), "{why}");
+    }
+    for n in 0..2 {
+        let voucher = format!(
+            r#"{{"journal_code":"GL","date":"{today}","description":"Bilag {n}","lines":[{{"account":"1920","amount_ore":100}},{{"account":"1950","amount_ore":-100}}]}}"#
+        );
+        let (code, why) = call(
+            &state,
+            "POST",
+            &format!("{base}/vouchers"),
+            &admin,
+            &voucher,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "posting is never blocked: {why}");
+    }
+    let (_, status) = call(&state, "GET", &format!("{base}/subscription"), &admin, "").await;
+    assert_eq!(status["pakke"]["slug"], slug.as_str());
+    assert_eq!(status["bruk"]["bilag"], 2);
+    assert_eq!(status["bruk"]["bilag_grense"], 1);
+    assert_eq!(status["bruk"]["over_bilag"], true, "reported, not refused");
+    assert_eq!(status["bruk"]["ansatte"], 1);
+    assert!(
+        status["planer"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["plan"] != "bank"),
+        "an add-on is never offered as a package"
+    );
+
+    // Switching to Basis (no limits) lifts the cap.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription/change"),
+        &admin,
+        r#"{"plan":"basis"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+    let switched: Vec<String> = sqlx::query_scalar(
+        "select plan from abonnement where company_id = $1 order by valid_from, created_at",
+    )
+    .bind(company)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        switched,
+        vec![slug.clone(), "basis".to_string()],
+        "the old row keeps its plan"
+    );
+
+    // Leave the shared dev database as found: unlist the test package.
+    input.listed = false;
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+        .await
+        .unwrap();
+}
+
+/// A small listed package with a price from today, created directly (the
+/// console path is tested in the platform group).
+async fn test_package(
+    state: &AppState,
+    name: &str,
+    price_ore: i64,
+    employee_limit: Option<i32>,
+    integration_limit: Option<i32>,
+) -> (String, regnmed_db::plans::PlanInput, Uuid) {
+    let by = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("sys|{}", Uuid::new_v4()),
+        Some("Sys"),
+        None,
+    )
+    .await
+    .unwrap();
+    let slug = format!("t{}", &Uuid::new_v4().simple().to_string()[..12]);
+    let input = regnmed_db::plans::PlanInput {
+        name: name.into(),
+        kind: "plan".into(),
+        available: true,
+        audience: String::new(),
+        featured: false,
+        listed: true,
+        voucher_limit: None,
+        employee_limit,
+        integration_limit,
+        features: vec![],
+        sort: 990,
+    };
+    regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+        .await
+        .unwrap();
+    let today = Utc::now().date_naive();
+    regnmed_db::plans::add_price(
+        &state.pool,
+        &slug,
+        "month",
+        price_ore,
+        today,
+        today,
+        "test",
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    (slug, input, by)
+}
+
+/// Unlist the test packages so the shared dev database's public list is unchanged.
+async fn unlist(state: &AppState, packages: Vec<(String, regnmed_db::plans::PlanInput, Uuid)>) {
+    for (slug, mut input, by) in packages {
+        input.listed = false;
+        regnmed_db::plans::save_plan(&state.pool, &slug, &input, by)
+            .await
+            .unwrap();
+    }
+}
+
+/// Switching packages: only an admin may, never into a package the company does
+/// not fit, an upgrade applies today and bills the month's difference once, a
+/// downgrade waits for next month, and two concurrent requests cannot both take
+/// the last employee place.
+#[tokio::test]
+async fn switching_packages_bills_upgrades_defers_downgrades_and_checks_fit() {
+    let Some((state, idp, company, admin)) = config().await else {
+        return;
+    };
+    let base = format!("/companies/{company}");
+    let small = test_package(&state, "Testliten", 4900, Some(1), Some(0)).await;
+    let big = test_package(&state, "Teststor", 12900, Some(5), None).await;
+    let tiny = test_package(&state, "Testmini", 2900, Some(0), Some(0)).await;
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription"),
+        &admin,
+        &format!(r#"{{"plan":"{}"}}"#, small.0),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+
+    // Two concurrent requests for the one employee place: exactly one wins.
+    let employee = |nin: &str| {
+        format!(
+            r#"{{"fodselsnummer":"{nin}","navn":"Ansatt {nin}","ansatt_fra":"2026-01-01","manedslonn_ore":5000000,"trekk_type":"prosent","trekk_prosent_bp":3000}}"#
+        )
+    };
+    let uri = format!("{base}/employees");
+    let (first, second) = (employee("03048810003"), employee("26829398612"));
+    let (a, b) = tokio::join!(
+        call(&state, "POST", &uri, &admin, &first),
+        call(&state, "POST", &uri, &admin, &second),
+    );
+    let ok = [a.0, b.0].iter().filter(|c| **c == StatusCode::OK).count();
+    assert_eq!(ok, 1, "one place, one employee: {:?} {:?}", a.1, b.1);
+
+    // A read-only member may not switch.
+    let sub = format!("les|{}", Uuid::new_v4());
+    let reader = regnmed_db::ensure_person(&state.pool, &sub, Some("Les"), None)
+        .await
+        .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, reader, "les")
+        .await
+        .unwrap();
+    let (code, _) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription/change"),
+        &idp.token(&sub, "Les"),
+        &format!(r#"{{"plan":"{}"}}"#, big.0),
+    )
+    .await;
+    assert!(
+        code == StatusCode::FORBIDDEN || code == StatusCode::NOT_FOUND,
+        "{code}"
+    );
+
+    // Never into a package the company does not fit: one employee, no room in mini.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription/change"),
+        &admin,
+        &format!(r#"{{"plan":"{}"}}"#, tiny.0),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{why}");
+    assert!(
+        why["error"].as_str().unwrap().contains("1 ansatte"),
+        "{why}"
+    );
+
+    // This month is invoiced at the small price; the upgrade bills the difference once.
+    let drift = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Drift AS")
+        .await
+        .unwrap();
+    make_invoiceable(&state.pool, drift).await;
+    let today = Utc::now().date_naive();
+    // The monthly run bills coverage valid on the 1st, so let it start then.
+    sqlx::query("update abonnement set valid_from = date_trunc('month', current_date)::date where company_id = $1 and valid_to is null")
+        .bind(company)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let run = regnmed_db::subscription::invoice_month(&state.pool, drift, today, Some(company))
+        .await
+        .unwrap();
+    assert!(run[0].invoice_id.is_some(), "{:?}", run[0].detail);
+    let change = regnmed_db::subscription::change_plan(
+        &state.pool,
+        Some(drift),
+        company,
+        &small.0,
+        &big.0,
+        today,
+        "test",
+        "test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(change.from, today, "an upgrade applies today");
+    assert!(
+        change.invoice_no.is_some(),
+        "the difference for the month is invoiced"
+    );
+    let coverage_rows = |pool: sqlx::PgPool| async move {
+        sqlx::query_scalar::<_, i64>("select count(*) from abonnement where company_id = $1")
+            .bind(company)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let before = coverage_rows(state.pool.clone()).await;
+    // The same upgrade again in the same month: refused, and the whole switch rolls back.
+    let again = regnmed_db::subscription::change_plan(
+        &state.pool,
+        Some(drift),
+        company,
+        &small.0,
+        &big.0,
+        today,
+        "test",
+        "test",
+    )
+    .await;
+    assert!(again.is_err(), "billed once per month and plan");
+    assert_eq!(
+        coverage_rows(state.pool.clone()).await,
+        before,
+        "no half switch"
+    );
+
+    // A downgrade waits for the first of next month.
+    let (code, why) = call(
+        &state,
+        "POST",
+        &format!("{base}/subscription/change"),
+        &admin,
+        &format!(r#"{{"plan":"{}"}}"#, small.0),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{why}");
+    let from = chrono::NaiveDate::parse_from_str(why["fra"].as_str().unwrap(), "%Y-%m-%d").unwrap();
+    assert_eq!(from.day(), 1);
+    assert!(from > today);
+    assert!(why["fakturanr_prisforskjell"].is_null());
+
+    unlist(&state, vec![small, big, tiny]).await;
+}

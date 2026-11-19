@@ -50,6 +50,7 @@ export function planBody(v) {
     listed: !!v.listed,
     voucher_limit: limit(v.voucher_limit, "grensen for bilag"),
     employee_limit: limit(v.employee_limit, "grensen for ansatte"),
+    integration_limit: limit(v.integration_limit, "grensen for integrasjoner"),
     features: featuresFromText(v.features),
     sort,
   };

@@ -41,6 +41,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | POST | `/companies/{company_id}/subscription` | `SELSKAP_ADMIN` |
 | POST | `/companies/{company_id}/subscription/cancel` | `SELSKAP_ADMIN` |
 | POST | `/companies/{company_id}/subscription/card-setup` | `SELSKAP_ADMIN` |
+| POST | `/companies/{company_id}/subscription/change` | `SELSKAP_ADMIN` |
 | GET | `/companies/{company_id}/terms` | `SELSKAP_LES` |
 | POST | `/companies/{company_id}/terms/accept` | `SELSKAP_ADMIN` |
 | GET | `/directory/firms` | — |

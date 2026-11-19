@@ -31,7 +31,7 @@ test("features come one per line, blanks dropped", () => {
 
 test("planBody: empty limit means no limit, junk is refused", () => {
   const ok = planBody({ name: " Liten ", voucher_limit: "1 500", employee_limit: "", features: "x", listed: true });
-  assert.deepEqual(ok, { kind: "plan", available: true, name: "Liten", audience: "", featured: false, listed: true, voucher_limit: 1500, employee_limit: null, features: ["x"], sort: 0 });
+  assert.deepEqual(ok, { kind: "plan", available: true, name: "Liten", audience: "", featured: false, listed: true, voucher_limit: 1500, employee_limit: null, integration_limit: null, features: ["x"], sort: 0 });
   assert.throws(() => planBody({ name: "" }), /navn/);
   assert.throws(() => planBody({ name: "x", voucher_limit: "1,5" }), /helt tall/);
   assert.throws(() => planBody({ name: "x", sort: "1.5" }), /rekkefølge/);

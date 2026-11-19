@@ -355,10 +355,34 @@ Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
   som er på pakken, og API-et krever `confirm_existing` når det er noen. Grandfathering
   er gratis bare for en ny `slug`. Typen (pakke eller tillegg) til en `slug` kan ikke
   endres etter første versjon.
-- **Grensene er beskrivende.** Ingenting måler eller håndhever dem ennå. De
-  finnes slik at prissiden og konsollen sier det samme, og slik at den dagen
-  håndhevingen bygges leser den tallet kunden ble vist. Det samme gjelder at
-  kjøp av en tilleggstjeneste ennå ikke er bygget som dekningsrad.
+- **Grensene håndheves slik (brukerbeslutning 2026-11-18):** bokføringen stoppes
+  aldri. Over bilaggrensen (bilag i inneværende regnskapsår, importjournalen IMP
+  ikke medregnet) er bare en opplysning: `GET …/subscription` svarer `over_bilag`,
+  og portalen foreslår den minste pakken som passer. **Ansatte i lønn og
+  integrasjoner/agenter har en hard grense**: en ny ansatt eller et nytt
+  integrasjonsgrant over grensen avvises med en melding som navngir pakken
+  (`plans::ensure_room`, kjørt i samme transaksjon som innsettingen, etter en lås på
+  selskapsraden, så to samtidige forespørsler ikke begge tar siste plass). Grensene
+  leses fra pakken selskapet har dekning på i dag. **Prøveperioden og selskaper uten
+  dekning har ingen grenser**, og de gamle pakkene `basis` og `standard` har heller
+  ingen, så eksisterende kunder merker ingenting (grandfathering).
+- **Pakkebytte**: `POST …/subscription/change` (selskapsadmin). En **oppgradering**
+  (høyere månedspris) gjelder fra i dag, og er måneden allerede fakturert, faktureres
+  prisforskjellen nå. En **nedgradering** gjelder fra den 1. i neste måned. Begge regler
+  hindrer at en måned betales til den lille prisen mens den store pakken var i bruk.
+  Byttet, forskjellsfakturaen og raden i `subscription_upgrade_run` (migrasjon 0095,
+  unik per selskap, måned og ny plan) er én transaksjon, så et nytt forsøk verken
+  dobbeltfakturerer eller lar et bytte stå ufakturert. Den gamle dekningsraden beholder
+  sin plan. Et kortabonnement (Stripe) byttes foreløpig av oss.
+- **Passform**: oppstart og bytte nektes til en pakke selskapet ikke får plass i (flere
+  aktive ansatte eller integrasjoner enn grensen), med en melding om hva som må fjernes.
+  Bilag avgjør aldri passform.
+- **Hva som telles som bilag**: bilag i regnskapsåret fra et menneske eller en
+  integrasjon. Importjournalen IMP og bilagene regnmed fører selv (avskrivninger,
+  periodiseringer, lønnskjøringer, purregebyr, årsavslutning) telles ikke.
+- **Bare det som er til salgs kan velges**: oppstart og bytte godtar bare en listet
+  pakke (ikke et tillegg) med en månedspris som gjelder i dag, pluss planen fra selskapets
+  siste dekning: en kunde på en gammel pakke kan starte igjen på den etter et opphold.
 - **Offentlig**: `GET /pricing` (åpent) gir listede pakker og tillegg med dagens
   pris og neste daterte endring. Svaret mellomlagres 30 sekunder per prosess og nullstilles ved hver endring.
   Nettsiden leser det ved bygg og bygges på nytt hver sjette time (faller tilbake til

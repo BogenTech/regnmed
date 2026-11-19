@@ -89,6 +89,8 @@ pub async fn grant_integration(
     ensure!(!access.trim().is_empty(), "rollen mangler");
 
     let mut tx = pool.begin().await?;
+    // The package may cap integrations and agents; checked under a company lock.
+    crate::plans::ensure_room(&mut tx, company_id, crate::plans::Capped::Integrations).await?;
     // Any valid token provisions a person row on first sight, so a
     // client that called BEFORE being registered already has one — an
     // empty shell with no membership anywhere. That may become an

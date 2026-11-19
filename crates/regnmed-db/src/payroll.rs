@@ -231,6 +231,9 @@ pub async fn create_employee(
     validate_details(&new.details, &company_orgnumber(pool, company_id).await?)?;
     let d = &new.details;
     let id = Uuid::new_v4();
+    // The package may cap employees in payroll; checked under a company lock.
+    let mut tx = pool.begin().await?;
+    crate::plans::ensure_room(&mut tx, company_id, crate::plans::Capped::Employees).await?;
     sqlx::query(
         "insert into employee
              (id, company_id, fodselsnummer, navn, stilling, ansatt_fra,
@@ -264,9 +267,10 @@ pub async fn create_employee(
     .bind(&d.working_hours_scheme)
     .bind(&d.employment_form)
     .bind(d.last_salary_change)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .context("den ansatte finnes allerede i dette registeret")?;
+    tx.commit().await?;
     Ok(id)
 }
 

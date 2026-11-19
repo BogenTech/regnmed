@@ -85,6 +85,140 @@ pub async fn open_coverage(
     Ok(id)
 }
 
+/// How a package change took effect.
+#[derive(Debug)]
+pub struct PlanChange {
+    /// The day the new package's coverage starts.
+    pub from: NaiveDate,
+    /// The difference invoice, when an upgrade landed in a month already invoiced.
+    pub invoice_no: Option<i64>,
+}
+
+/// Moves an invoiced company to another plan (user decision 2026-11-18):
+/// an UPGRADE (higher month price) applies today, and if this month is already
+/// invoiced at the old price the difference is invoiced now; a DOWNGRADE applies
+/// from the first of next month, so a month is never paid at the smaller price
+/// while the bigger package was in use. The switch, the difference invoice and
+/// its run row are one transaction: a retry can neither double-bill nor leave a
+/// switch unbilled. The old coverage row keeps its plan.
+#[allow(clippy::too_many_arguments)]
+pub async fn change_plan(
+    pool: &PgPool,
+    drift: Option<Uuid>,
+    company_id: Uuid,
+    from_plan: &str,
+    to_plan: &str,
+    today: NaiveDate,
+    note: &str,
+    by: &str,
+) -> Result<PlanChange> {
+    ensure!(!note.trim().is_empty(), "byttet må ha en referanse");
+    let old_price = price_on(pool, from_plan, today).await.unwrap_or(0);
+    let new_price = price_on(pool, to_plan, today).await?;
+    let upgrade = new_price > old_price;
+    let start = if upgrade {
+        today
+    } else {
+        let next = if today.month() == 12 {
+            NaiveDate::from_ymd_opt(today.year() + 1, 1, 1)
+        } else {
+            NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
+        };
+        next.expect("first of next month exists")
+    };
+    let invoiced_this_month: bool = sqlx::query_scalar(
+        "select exists(select 1 from abonnement_faktura_run
+                       where company_id = $1 and ar = $2 and maned = $3)",
+    )
+    .bind(company_id)
+    .bind(today.year())
+    .bind(today.month() as i32)
+    .fetch_one(pool)
+    .await?;
+    let bill_difference = upgrade && invoiced_this_month;
+    // Everything that reads the pool happens before the transaction opens.
+    let billing = if bill_difference {
+        let drift = drift.context(
+            "REGNMED_DRIFT_ORGNR er ikke satt, så prisforskjellen for denne måneden kan ikke faktureres",
+        )?;
+        let (orgnumber, name): (String, String) =
+            sqlx::query_as("select orgnr, name from company where id = $1")
+                .bind(company_id)
+                .fetch_one(pool)
+                .await?;
+        let party_no = party_for_customer(pool, drift, company_id, &orgnumber, &name).await?;
+        let (vat_code, _) = output_vat(pool, drift, today).await?;
+        Some((drift, party_no, vat_code))
+    } else {
+        None
+    };
+
+    let mut tx = pool.begin().await?;
+    let ended: Option<NaiveDate> = sqlx::query_scalar(
+        "update abonnement set valid_to = greatest($2, valid_from + 1)
+         where company_id = $1 and valid_to is null
+         returning valid_to",
+    )
+    .bind(company_id)
+    .bind(start)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let from = ended.unwrap_or(start);
+    sqlx::query(
+        "insert into abonnement (id, company_id, plan, valid_from, valid_to, note, created_by)
+         values ($1,$2,$3,$4,null,$5,$6)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(company_id)
+    .bind(to_plan)
+    .bind(from)
+    .bind(note.trim())
+    .bind(by)
+    .execute(&mut *tx)
+    .await?;
+    let mut invoice_no = None;
+    if let Some((drift, party_no, vat_code)) = billing {
+        let draft = subscription_draft(
+            party_no,
+            today,
+            format!(
+                "regnmed pakkebytte {from_plan} → {to_plan}, prisforskjell for {} {}",
+                regnmed_core::invoice::month_name(today.month()),
+                today.year()
+            ),
+            new_price - old_price,
+            vat_code,
+        );
+        let issued = crate::invoice::create_invoice_in(
+            pool,
+            &mut tx,
+            drift,
+            &draft,
+            "abonnement (pakkebytte)",
+            None,
+        )
+        .await?;
+        sqlx::query(
+            "insert into subscription_upgrade_run
+                 (id, company_id, ar, maned, from_plan, to_plan, invoice_id)
+             values ($1,$2,$3,$4,$5,$6,$7)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(company_id)
+        .bind(today.year())
+        .bind(today.month() as i32)
+        .bind(from_plan)
+        .bind(to_plan)
+        .bind(issued.invoice_id)
+        .execute(&mut *tx)
+        .await
+        .context("dette pakkebyttet er allerede fakturert denne måneden")?;
+        invoice_no = Some(issued.invoice_no);
+    }
+    tx.commit().await?;
+    Ok(PlanChange { from, invoice_no })
+}
+
 /// Ends the open coverage: sets `valid_to` (EXCLUSIVE) on the company's
 /// open row. History is never touched.
 ///
@@ -1063,6 +1197,43 @@ async fn party_for_customer(
     Ok(party_no)
 }
 
+/// One subscription invoice line from the ops company: the monthly run and the
+/// mid-month upgrade difference are the same document with different text.
+fn subscription_draft(
+    party_no: String,
+    today: NaiveDate,
+    description: String,
+    price: i64,
+    vat_code: String,
+) -> crate::invoice::InvoiceDraft {
+    crate::invoice::InvoiceDraft {
+        buyer_reference: None,
+        cash_payment_method: None,
+        party_no,
+        invoice_date: today,
+        due_date: today + chrono::Days::new(14),
+        // The subscription bills the month it runs in — that month is the
+        // period being delivered.
+        delivery_date: today,
+        delivery_place: None,
+        journal_code: "GL".into(),
+        receivable_account: "1500".into(),
+        vat_account: "2700".into(),
+        currency: None,
+        exchange_rate_micro: None,
+        lines: vec![crate::invoice::InvoiceLineDraft {
+            description,
+            account_number: "3000".into(),
+            quantity_milli: 1000,
+            unit_price_ore: price,
+            vat_code: Some(vat_code),
+            department: None,
+            project: None,
+            product_id: None,
+        }],
+    }
+}
+
 async fn invoice_one(
     pool: &PgPool,
     drift: Uuid,
@@ -1100,36 +1271,17 @@ async fn invoice_one(
     let (vat_code, _rate_bp) = output_vat(pool, drift, today).await?;
 
     let mut tx = pool.begin().await?;
-    let draft = crate::invoice::InvoiceDraft {
-        buyer_reference: None,
-        cash_payment_method: None,
+    let draft = subscription_draft(
         party_no,
-        invoice_date: today,
-        due_date: today + chrono::Days::new(14),
-        // The monthly run bills the month it runs in — that month is
-        // the period being delivered.
-        delivery_date: today,
-        delivery_place: None,
-        journal_code: "GL".into(),
-        receivable_account: "1500".into(),
-        vat_account: "2700".into(),
-        currency: None,
-        exchange_rate_micro: None,
-        lines: vec![crate::invoice::InvoiceLineDraft {
-            description: format!(
-                "regnmed {plan} — {} {}",
-                regnmed_core::invoice::month_name(today.month()),
-                today.year()
-            ),
-            account_number: "3000".into(),
-            quantity_milli: 1000,
-            unit_price_ore: price,
-            vat_code: Some(vat_code),
-            department: None,
-            project: None,
-            product_id: None,
-        }],
-    };
+        today,
+        format!(
+            "regnmed {plan} — {} {}",
+            regnmed_core::invoice::month_name(today.month()),
+            today.year()
+        ),
+        price,
+        vat_code,
+    );
     let issued = crate::invoice::create_invoice_in(
         pool,
         &mut tx,

@@ -736,6 +736,7 @@ pub struct PlanRequest {
     listed: bool,
     voucher_limit: Option<i32>,
     employee_limit: Option<i32>,
+    integration_limit: Option<i32>,
     #[serde(default)]
     features: Vec<String>,
     #[serde(default)]
@@ -760,6 +761,7 @@ async fn put_plan(
         listed: body.listed,
         voucher_limit: body.voucher_limit,
         employee_limit: body.employee_limit,
+        integration_limit: body.integration_limit,
         features: body.features,
         sort: body.sort,
     };
