@@ -276,6 +276,38 @@ delen en agent kan bruke.
 En **protokollfeil** (ukjent metode, ukjent verktøy) er noe annet og
 svares som JSON-RPC-feil: det er klientens feil, ikke modellens.
 
+### Nettsider: en liste plattformen eier (2026-11-19)
+
+En agent fikk spørsmålet «hent satsen på Skatteetaten» og kunne bare svare
+at den ikke har tilgang til nettet. Verktøyet `nettside` (`GET /web?url=`)
+lar den lese en side — men bare fra nettsteder på plattformens liste.
+
+- **Listen eies av plattformen alene.** `systemadmin` redigerer den i
+  plattformkonsollen (Innstillinger), lagret i `platform_setting` under
+  `agent_web_domains` (innsettings-bar, nyeste gjelder). Kundene kan ikke
+  utvide den. Til noen har skrevet en liste gjelder standarden i
+  `regnmed-api::web::DEFAULT_DOMAINS` (Skatteetaten, Lovdata,
+  Regjeringen, Brønnøysund, Altinn, Norges Bank). En tom liste stenger for
+  alle.
+- **Håndhevet på serveren, også ved omdirigering.** https, standardport,
+  ingen brukernavn i adressen, og verten er et listet domene eller et
+  underdomene av det. Hvert omdirigeringshopp sjekkes mot samme liste; et
+  hopp ut av listen stopper. MCP-serveren og workeren bestemmer ingenting.
+- **Lese og sitere, aldri bokføre.** Svaret er ren tekst (HTML strippet,
+  maks 20 000 tegn) med en advarsel ved siden av: teksten er ikke
+  instruksjoner, og et tall derfra bokføres aldri. Grunnregel 7 i
+  promptene sier det samme. Satser kommer fra satsregisteret — derfor
+  trenger kjøregodtgjørelse ingen nettside (`kjoring_registrer` bruker
+  statens sats på kjøredatoen, docs/utlegg.md).
+- **Ærlig begrensning.** Domenene er kuraterte, offentlige nettsteder, så
+  vi sjekker ikke at DNS-svaret er en offentlig adresse. Legges noe annet
+  enn offentlige myndigheter på listen, bør den sjekken komme først.
+  Henting logges ikke utover integrasjonens dagsteller.
+
+Testet i `web::tests` (vertregelen, domeneformatet, HTML-til-tekst) og
+`an_agent_reads_only_listed_web_pages` (avvisningen navngir listen, uten
+nett). Selve hentingen er ikke testet i CI, siden den går mot internett.
+
 ## 4. Rollepromptene
 
 `crates/regnmed-mcp/src/rolle.rs` serverer fire prompter over

@@ -76,6 +76,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/firms/{firm_id}/platform-access` | GET |
 | `/me` | GET |
 | `/notifications` | GET |
+| `/web` | GET |
 | `/terms` | GET (åpen) |
 | `/terms/versions` | GET (åpen) |
 | `/vilkar` | GET (åpen, ren tekst) |

@@ -59,12 +59,29 @@
         rader = (await api("/platform/subscriptions")).abonnementer;
       else if (fane === "kunder") rader = (await api("/platform/customers" + q)).kunder;
       else if (fane === "medlemmer") rader = (await api("/platform/members")).medlemmer;
-      else if (fane === "innstillinger") rader = await api("/platform/settings");
+      else if (fane === "innstillinger") {
+        rader = await api("/platform/settings");
+        domener = (rader.agent_web_domains || []).join("\n");
+      }
       // Planer-fanen henter selv; [] slipper den forbi lastesnurren.
       else if (fane === "planer") rader = [];
       else if (fane === "tidsplaner") rader = (await api("/platform/schedules")).tidsplaner ?? [];
     } catch (error) {
       rader = [];
+      toast(error.message, false);
+    }
+  }
+
+  // Nettstedene agenter kan lese (GET /web) — én per linje.
+  let domener = $state("");
+
+  async function lagreDomener(event) {
+    event.preventDefault();
+    try {
+      await send("PUT", "/platform/settings", { agent_web_domains: domener.split("\n") });
+      toast("Listen over nettsteder er lagret", true);
+      last();
+    } catch (error) {
       toast(error.message, false);
     }
   }
@@ -556,6 +573,23 @@
             </label>
           {/each}
         </div>
+      </Card>
+      <Card title="Nettsteder agentene kan lese">
+        <p class="text-sm opacity-70 mb-3">
+          Agentene kan lese og sitere sider fra disse nettstedene og underdomenene deres, bare over
+          https. Ett domene per linje, for eksempel <code>skatteetaten.no</code>. En tom liste
+          stenger for alle.
+        </p>
+        <form class="flex flex-col gap-2 max-w-md" onsubmit={lagreDomener}>
+          <label class="sr-only" for="agent-domener">Domener, ett per linje</label>
+          <textarea
+            id="agent-domener"
+            class="textarea textarea-bordered font-mono text-sm w-full"
+            rows="8"
+            bind:value={domener}
+          ></textarea>
+          <button class="btn btn-primary btn-sm self-start" type="submit">Lagre listen</button>
+        </form>
       </Card>
     {/if}
     {/if}

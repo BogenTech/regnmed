@@ -733,6 +733,42 @@ async fn the_icon_style_is_validated_and_served_platform_wide() {
     )
     .await;
     assert_eq!(code, StatusCode::OK);
+
+    // The agents' web list: a URL is not a domain, and what is saved is
+    // normalized. Written back as the defaults, since the list is global
+    // and other tests read it.
+    let (code, response) = json_call(
+        &state,
+        "PUT",
+        "/platform/settings",
+        &sysadmin,
+        r#"{"agent_web_domains":["https://evil.example/"]}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{response}");
+    let mut defaults: Vec<String> = regnmed_api::web::DEFAULT_DOMAINS
+        .iter()
+        .map(|d| d.to_string())
+        .collect();
+    let mut sent = defaults.clone();
+    sent[0] = format!("  {}  ", sent[0].to_uppercase());
+    sent.push(String::new());
+    let (code, response) = json_call(
+        &state,
+        "PUT",
+        "/platform/settings",
+        &sysadmin,
+        &serde_json::json!({ "agent_web_domains": sent }).to_string(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{response}");
+    let (_, settings) = json_call(&state, "GET", "/platform/settings", &sysadmin, "").await;
+    defaults.sort();
+    assert_eq!(settings["agent_web_domains"], serde_json::json!(defaults));
+    assert_eq!(
+        settings["ikonstil"], "linje",
+        "saving one setting keeps the other"
+    );
 }
 
 /// Packages and prices (migration 0093): systemadmin edits what is sold,

@@ -380,6 +380,14 @@ og sende inn utleggskrav for de ansatte. **Den avgjør dem aldri.**
   beskrivelse (`utlegg_oppdater`) og sender inn (`utlegg_send_inn`).
   Kravet er registrert av agenten på den ansattes vegne, og begge ser
   det.
+- **Kjøring uten kvittering.** `kjoring_registrer` lager et utkast til
+  kjøregodtgjørelse med dato, km, strekning, formål og eventuelt
+  prosjekt og `billable` — uten kvittering og uten sats: satsen er
+  statens på kjøredatoen fra satsregisteret, aldri et tall modellen
+  oppgir (`kjoring_sats` viser den). Bompenger og parkering legges under
+  kjøringen med `utlegg_registrer` og `trip_expense_id`, og arver person,
+  prosjekt og `billable`. Testet i
+  `an_agent_files_a_mileage_claim_without_a_receipt`.
 - **Et menneske avgjør.** Godkjenning nektes i transaksjonen
   (`approve_expense`) når den som godkjenner er en maskin, uansett hva
   rollen gir; avvisning og utbetaling nektes med 403, og en
@@ -513,7 +521,7 @@ håndheves i `approve_expense`, ikke i portalen.
 
 Utkast:
 
-- `POST /companies/{id}/expenses/receipts?filename=&person_id=` — rå kvittering → utkast
+- `POST /companies/{id}/expenses/receipts?filename=&person_id=&trip_expense_id=` — rå kvittering → utkast (med `trip_expense_id` hører den under en kjøring eller reise, som bompenger, og tilhører den personen)
 - `POST /companies/{id}/expenses` — utkast som JSON (`kind`, `person_id`, `trip_expense_id` og feltene)
 - `PUT  /companies/{id}/expenses/{eid}` — skriv om et utkast
 - `PUT  /companies/{id}/expenses/{eid}/receipt?filename=` — bytt kvitteringen på et utkast

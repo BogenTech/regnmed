@@ -397,6 +397,12 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         "utlegg_forslag",
         "utlegg_oppdater",
         "utlegg_send_inn",
+        // In an_agent_files_a_mileage_claim_without_a_receipt.
+        "kjoring_registrer",
+        "kjoring_sats",
+        // In an_agent_reads_only_listed_web_pages: the real fetch goes
+        // to the internet, and this test runs offline.
+        "nettside",
     ];
     for v in regnmed_mcp::tool::TOOLS {
         assert!(
@@ -1235,6 +1241,158 @@ async fn an_agent_files_a_claim_and_a_human_decides_it() {
     assert_eq!(pictures, 1, "{}", sett[2]);
 }
 
+/// The web tool reads only what the platform listed, and the refusal
+/// names the list so the agent can tell the human. Both refusals happen
+/// before any network traffic, so this runs offline.
+#[tokio::test]
+async fn an_agent_reads_only_listed_web_pages() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Nettagent AS")
+        .await
+        .unwrap();
+    let client_id = format!("nettagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Agenten",
+        None,
+        "les",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let base = serve(state.clone()).await;
+    let server = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    for url in [
+        "https://example.com/",
+        "https://skatteetaten.no.example.com/",
+        "http://www.skatteetaten.no/",
+    ] {
+        let (failed, reply) = calls(&server, "nettside", json!({ "url": url })).await;
+        assert!(failed && reply.contains("ikke på listen"), "{url}: {reply}");
+    }
+}
+
+/// A reiseregning for a drive: no receipt, no rate from the model — the
+/// register's statens sats on the date — billed on to the customer's
+/// project, with the toll hanging under the drive and inheriting both.
+#[tokio::test]
+async fn an_agent_files_a_mileage_claim_without_a_receipt() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Kjoreagent AS")
+        .await
+        .unwrap();
+    regnmed_db::create_dimension(
+        &state.pool,
+        company,
+        "prosjekt",
+        "P1",
+        "Kundeprosjekt",
+        None,
+    )
+    .await
+    .unwrap();
+    let ola = regnmed_db::ensure_person(
+        &state.pool,
+        &format!("test|{}", Uuid::new_v4()),
+        Some("Ola Ansatt"),
+        None,
+    )
+    .await
+    .unwrap();
+    regnmed_db::ensure_company_member(&state.pool, company, ola, "ansatt")
+        .await
+        .unwrap();
+    let client_id = format!("kjoreagent-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Bokføringsagenten",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let base = serve(state.clone()).await;
+    let server = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+
+    let (failed, reply) = calls(&server, "kjoring_sats", json!({"dato": "2026-03-10"})).await;
+    assert!(!failed, "{reply}");
+    let rate = serde_json::from_str::<Value>(&reply).unwrap()["sats_ore_per_km"]
+        .as_i64()
+        .unwrap();
+
+    let (failed, reply) = calls(
+        &server,
+        "kjoring_registrer",
+        json!({"kind": "kjoring", "person_id": ola.to_string(), "dato": "2026-03-10",
+               "km": 200, "route_from": "Drammen", "route_to": "Oslo", "round_trip": true,
+               "beskrivelse": "Butikkbesøk", "project": "P1", "billable": true}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let drive = serde_json::from_str::<Value>(&reply).unwrap()["expense_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_registrer",
+        json!({"fil": skriv_midlertidig("bom.jpg", &[&[0xFF, 0xD8, 0xFF, 0xE0][..], Uuid::new_v4().as_bytes()].concat()),
+               "trip_expense_id": drive}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+    let toll: Uuid = serde_json::from_str::<Value>(&reply).unwrap()["expense_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let (person, project, billable): (Uuid, Option<String>, bool) =
+        sqlx::query_as("select person_id, project, billable from expense where id = $1")
+            .bind(toll)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (person, project.as_deref(), billable),
+        (ola, Some("P1"), true),
+        "the toll belongs to the drive's person and project"
+    );
+    let (failed, reply) = calls(
+        &server,
+        "utlegg_oppdater",
+        json!({"utlegg": toll.to_string(), "dato": "2026-03-10", "belop_ore": 7_500,
+               "beskrivelse": "Bompenger", "project": "P1", "billable": true}),
+    )
+    .await;
+    assert!(!failed, "{reply}");
+
+    let (failed, reply) = calls(&server, "utlegg_send_inn", json!({"utlegg": drive})).await;
+    assert!(!failed, "{reply}");
+    let done = serde_json::from_str::<Value>(&reply).unwrap();
+    assert_eq!(done["belop_ore"], 200 * rate, "{done}");
+    assert_eq!(done["costs_submitted"], 1, "{done}");
+}
+
 /// Each tool declares the right its endpoint checks, and an agent is
 /// only offered the tools whose right it holds (`Server::offered_tools`).
 /// A wrong declaration either hides a tool the role could use or offers
@@ -1353,7 +1511,7 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
             // a query struct reads a stray field (`lines`) as its own.
             if t.method == "GET" || t.method == "DELETE" {
                 args.retain(|k, _| {
-                    ["from", "to", "date", "year", "termin"].contains(&k.as_str())
+                    ["from", "to", "date", "dato", "year", "termin"].contains(&k.as_str())
                         || t.path.contains(&format!("{{{k}}}"))
                 });
             }

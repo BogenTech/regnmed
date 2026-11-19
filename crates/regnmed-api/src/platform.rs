@@ -413,14 +413,17 @@ async fn get_settings(
     Extension(_ctx): Extension<PlatformContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let ikonstil = regnmed_db::platform_setting(&state.pool, "ikonstil").await?;
-    Ok(Json(
-        json!({ "ikonstil": ikonstil.unwrap_or_else(|| "linje".into()) }),
-    ))
+    Ok(Json(json!({
+        "ikonstil": ikonstil.unwrap_or_else(|| "linje".into()),
+        "agent_web_domains": crate::web::domains(&state.pool).await?,
+    })))
 }
 
+/// Each field is optional: the console saves one setting at a time.
 #[derive(Deserialize)]
 pub struct SettingsRequest {
-    ikonstil: String,
+    ikonstil: Option<String>,
+    agent_web_domains: Option<Vec<String>>,
 }
 
 async fn put_settings(
@@ -429,15 +432,39 @@ async fn put_settings(
     Json(body): Json<SettingsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     ctx.require_systemadmin()?;
-    if !IKONSTILER.contains(&body.ikonstil.as_str()) {
+    if let Some(stil) = &body.ikonstil
+        && !IKONSTILER.contains(&stil.as_str())
+    {
         return Err(ApiError::BadRequest(format!(
-            "ukjent ikonstil «{}» — gyldige: {}",
-            body.ikonstil,
+            "ukjent ikonstil «{stil}» — gyldige: {}",
             IKONSTILER.join(", ")
         )));
     }
-    regnmed_db::set_platform_setting(&state.pool, "ikonstil", &body.ikonstil, ctx.person_id)
-        .await?;
+    let domains = match &body.agent_web_domains {
+        Some(list) => {
+            let mut clean: Vec<String> = list
+                .iter()
+                .map(|d| d.trim().to_ascii_lowercase())
+                .filter(|d| !d.is_empty())
+                .collect();
+            if let Some(bad) = clean.iter().find(|d| !crate::web::valid_domain(d)) {
+                return Err(ApiError::BadRequest(format!(
+                    "«{bad}» er ikke et domenenavn — skriv bare navnet, som skatteetaten.no"
+                )));
+            }
+            clean.sort();
+            clean.dedup();
+            Some(clean.join("\n"))
+        }
+        None => None,
+    };
+    if let Some(stil) = &body.ikonstil {
+        regnmed_db::set_platform_setting(&state.pool, "ikonstil", stil, ctx.person_id).await?;
+    }
+    if let Some(domains) = &domains {
+        regnmed_db::set_platform_setting(&state.pool, crate::web::SETTING, domains, ctx.person_id)
+            .await?;
+    }
     Ok(Json(json!({ "updated": true })))
 }
 
