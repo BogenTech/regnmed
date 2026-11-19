@@ -8,6 +8,8 @@ mod common;
 
 #[path = "grupper/bank.rs"]
 mod bank;
+#[path = "grupper/bank_feed.rs"]
+mod bank_feed;
 #[path = "grupper/valuta.rs"]
 mod currency;
 #[path = "grupper/ocr.rs"]

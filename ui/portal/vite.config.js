@@ -37,6 +37,8 @@ export default defineConfig({
       "/terms": api,
       "/vilkar": api,
       "/pricing": api,
+      // The bank sends the browser back to the API, which forwards it to the portal.
+      "/bank/callback": api,
     },
   },
 });

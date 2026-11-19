@@ -94,6 +94,8 @@ endepunktene når noe selskaps hovedbok.
 | `/platform/overview` | GET |
 | `/platform/subscriptions` | GET |
 | `/platform/settings` | GET PUT |
+| `/platform/companies/{company_id}/addons` | POST |
+| `/platform/companies/{company_id}/addons/{addon}/end` | POST |
 | `/platform/plans` | GET |
 | `/platform/plans/{slug}` | PUT |
 | `/platform/plans/{slug}/prices` | POST |
@@ -129,6 +131,13 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/attachments/{attachment_id}` | GET |
 | `/companies/{company_id}/dividends` | GET POST |
 | `/companies/{company_id}/bank/accounts` | GET |
+| `/companies/{company_id}/bank/feed` | GET |
+| `/companies/{company_id}/bank/feed/banks` | GET |
+| `/companies/{company_id}/bank/feed/connect` | POST |
+| `/companies/{company_id}/bank/feed/complete` | POST |
+| `/companies/{company_id}/bank/feed/{connection_id}/sync` | POST |
+| `/companies/{company_id}/bank/feed/{connection_id}/end` | POST |
+| `/bank/callback` | GET |
 | `/companies/{company_id}/bank/entries` | GET |
 | `/companies/{company_id}/bank/matches` | POST |
 | `/companies/{company_id}/bank/matches/{bank_transaction_id}` | DELETE |

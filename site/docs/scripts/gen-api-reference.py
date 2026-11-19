@@ -35,7 +35,7 @@ def right_of(handler):
     return ", ".join(dict.fromkeys(slug.get(x, x) for x in re.findall(r"Right::(\w+)", seg)))
 
 PUBLIC = {"/pricing", "/terms", "/terms/versions", "/vilkar", "/vilkar/{version}", "/anchors", "/health"}
-SKIP = ("/", "/callback", "/assets/{*path}", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/ny", "/portal-config")
+SKIP = ("/", "/callback", "/bank/callback", "/assets/{*path}", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/ny", "/portal-config")
 
 def group(path):
     p = path

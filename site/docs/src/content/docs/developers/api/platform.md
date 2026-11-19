@@ -14,6 +14,8 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | --- | --- | --- |
 | GET | `/platform/companies` | plattformrolle |
 | GET | `/platform/companies/{company_id}` | plattformrolle |
+| POST | `/platform/companies/{company_id}/addons` | plattformrolle |
+| POST | `/platform/companies/{company_id}/addons/{addon}/end` | plattformrolle |
 | DELETE | `/platform/companies/{company_id}/members/{person_id}` | plattformrolle |
 | POST | `/platform/companies/{company_id}/members/{person_id}/restore` | plattformrolle |
 | PUT | `/platform/companies/{company_id}/settings` | plattformrolle |

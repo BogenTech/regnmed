@@ -15,6 +15,7 @@ pub mod attachment;
 pub mod audit;
 pub mod balance_documentation;
 pub mod bank;
+pub mod bank_feed;
 pub mod blob;
 pub mod budget;
 pub mod cash_register;
