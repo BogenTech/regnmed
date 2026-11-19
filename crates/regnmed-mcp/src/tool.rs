@@ -391,8 +391,9 @@ pub const TOOLS: &[Tool] = &[
     // ---------- Bank ----------
     Tool {
         name: "bank_kontoer",
-        description: "Selskapets bankkontoer i regnskapet (19xx) med saldo, hvor langt \
-                      kontoutdragene går, og hvor mange banklinjer som ikke er avstemt. \
+        description: "Selskapets bankkontoer i regnskapet (19xx) med saldo (`balance_ore`, \
+                      heltall øre: 111775 er 1 117,75 kr), hvor langt kontoutdragene går, og \
+                      hvor mange banklinjer som ikke er avstemt. \
                       Kontonummeret herfra er `account` i de andre bankverktøyene.",
         method: "GET",
         path: "/companies/{selskap}/bank/accounts",
@@ -419,7 +420,8 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "bank_poster_sok",
         description: "Søker i bilagslinjer på bankkontoen som ennå ikke er koblet til en \
-                      banklinje — når forslagene i bank_avstemming ikke treffer.",
+                      banklinje — når forslagene i bank_avstemming ikke treffer. Svaret er i \
+                      øre, men et beløp du SØKER på skrives i KRONER.",
         method: "GET",
         path: "/companies/{selskap}/bank/entries",
         right: Some("BANK_LES"),
@@ -427,7 +429,7 @@ pub const TOOLS: &[Tool] = &[
         reply: Reply::Text,
         schema: r#"{"type":"object","required":["account"],"properties":{COMPANY,
             "account":{"type":"string","description":"Bankkontoen i regnskapet, f.eks. 1920"},
-            "q":{"type":"string","description":"Tekst eller beløp å søke etter"}},
+            "q":{"type":"string","description":"Tekst, eller et beløp i KRONER: 200 eller 200,00 — ikke øre. Fortegnet spiller ingen rolle."}},
             "additionalProperties":false}"#,
     },
     Tool {
