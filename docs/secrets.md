@@ -12,7 +12,7 @@ like configuration mostly is configuration:
 | `DATABASE_URL`, `OIDC_ISSUER`, `OIDC_AUDIENCE`, `BIND_ADDR` | `.env`, from `.env.example` | **No.** Localhost, throwaway dev password. Committed as an example on purpose. |
 | Maskinporten test key + client id | `~/.config/regnmed/` (see below) | **Yes.** |
 | `regnmed-agent` client secret (maskinaktør i prod) | `~/.config/regnmed/` (see below) | **Yes.** |
-| Enable Banking application key (bankkobling, docs/bank.md) | not created yet; in the clusters it will be the key `ENABLEBANKING_KEY` in the secret `bank-feed` (read by the API and the worker), locally a file named by `ENABLEBANKING_KEY_FILE` | **Yes.** |
+| Enable Banking application key (bankkobling, docs/bank.md) | SANDBOX app "regnmed test" (created 2026-11-19): `~/.config/regnmed/enablebanking-sandbox.pem`, and the key `ENABLEBANKING_KEY` in the secret `bank-feed` in `regnmed-test` (read by the API and the worker, together with `ENABLEBANKING_APP_ID`). Not backed up: a lost key is replaced by registering a new certificate in Enable Banking's control panel. No production app yet, so prod has no `bank-feed` | **Yes.** |
 | Production database credentials | Created in the cluster, out-of-band | **Yes.** `deploy/prod` is built so no credential appears in any rendered manifest (docs/deploy.md). |
 | `ORS_API_KEY` (OpenRouteService, trip distance + route map) | Secret `ors-credentials` / `api-key` in the cluster, out-of-band; locally in `.env` if wanted | **Yes**, but optional: without it the trip form asks for the km (docs/utlegg.md). |
 
