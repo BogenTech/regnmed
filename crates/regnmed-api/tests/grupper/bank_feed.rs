@@ -674,6 +674,43 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     let (_, more) = call(&state, "POST", &sync, &admin, Value::Null).await;
     assert_eq!(more["nye"], 1);
 
+    // Older history, once: `?fra=` reaches further back than the usual window
+    // and never shortens it. Re-reading what is already here imports nothing.
+    let long_ago = today - chrono::Days::new(400);
+    shared.lock().unwrap().transactions.push({
+        let mut t = booked("OLD", "300.00", "CRDT", "Gammel innbetaling");
+        t["booking_date"] = json!(long_ago.to_string());
+        t
+    });
+    let (code, back) = call(
+        &state,
+        "POST",
+        &format!("{sync}?fra={long_ago}"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{back}");
+    assert_eq!(back["nye"], 1, "only the old line is new: {back}");
+    assert_eq!(
+        shared.lock().unwrap().last_from.as_deref(),
+        Some(long_ago.to_string().as_str())
+    );
+    let (_, later) = call(
+        &state,
+        "POST",
+        &format!("{sync}?fra={today}"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(later["nye"], 0);
+    assert_ne!(
+        shared.lock().unwrap().last_from.as_deref(),
+        Some(today.to_string().as_str()),
+        "a later `fra` does not shorten the usual window"
+    );
+
     // The fetch also runs by itself: completing the connection gave the company a
     // schedule (docs/jobs.md, «Tidsplaner»), at a night-time default.
     let schedules = format!("{base}/schedules");
@@ -1127,4 +1164,97 @@ impl regnmed_gov::bankfeed::BankFeed for OtherProvider {
     fn end_session<'a>(&'a self, _session_id: &'a str) -> regnmed_gov::bankfeed::Fut<'a, ()> {
         unreachable!("not exercised")
     }
+}
+
+/// Where the first fetch of an empty account starts: the beginning of this
+/// fiscal year, but never inside history the ledger already holds.
+#[tokio::test]
+async fn the_first_fetch_reaches_back_to_the_year_but_not_into_imported_history() {
+    use chrono::{Datelike, NaiveDate};
+    use regnmed_core::Ore;
+    use regnmed_core::voucher::{EntryDraft, VoucherDraft};
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let today = NaiveDate::from_ymd_opt(Utc::now().year(), 6, 15).unwrap();
+    let jan1 = today.with_month(1).unwrap().with_day(1).unwrap();
+    let start = async |company: Uuid| {
+        let account: Uuid =
+            sqlx::query_scalar("select id from account where company_id = $1 and number = '1920'")
+                .bind(company)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        regnmed_db::bank_feed::fetch_from(&state.pool, account, today)
+            .await
+            .unwrap()
+    };
+    let company = async || {
+        let id = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Start AS")
+            .await
+            .unwrap();
+        for (number, name) in [("1920", "Bank"), ("2000", "Aksjekapital"), ("3000", "Salg")] {
+            regnmed_db::create_account(&state.pool, id, number, name)
+                .await
+                .unwrap();
+        }
+        id
+    };
+    let line = |account: &str, ore: i64| EntryDraft {
+        account_number: account.into(),
+        amount: Ore(ore),
+        vat_code: None,
+        description: None,
+        party_no: None,
+        department: None,
+        project: None,
+        currency: None,
+    };
+
+    // Nothing in the ledger: the year still to be booked.
+    let fresh = company().await;
+    assert_eq!(start(fresh).await, jan1);
+
+    // A manual opening balance summarizes everything before its date.
+    let opened = company().await;
+    let march = jan1.with_month(3).unwrap();
+    regnmed_db::post_opening_balance(
+        &state.pool,
+        opened,
+        march,
+        &[("1920".into(), 10_000), ("2000".into(), -10_000)],
+        "test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(start(opened).await, march);
+
+    // Imported history was reconciled in the old system: start the day after.
+    // History from an earlier year does not hold the year back.
+    let migrated = company().await;
+    regnmed_db::ensure_journal(&state.pool, migrated, "IMP", "Import")
+        .await
+        .unwrap();
+    let import = async |date: NaiveDate| {
+        regnmed_db::post_voucher(
+            &state.pool,
+            migrated,
+            &VoucherDraft {
+                journal_code: "IMP".into(),
+                voucher_date: date,
+                description: "Importert".into(),
+                reverses: None,
+                entries: vec![line("1920", 500), line("3000", -500)],
+            },
+            "test",
+        )
+        .await
+        .unwrap();
+    };
+    import(jan1.pred_opt().unwrap()).await;
+    assert_eq!(start(migrated).await, jan1, "last year's history");
+    let april = jan1.with_month(4).unwrap();
+    import(april).await;
+    assert_eq!(start(migrated).await, april.succ_opt().unwrap());
 }

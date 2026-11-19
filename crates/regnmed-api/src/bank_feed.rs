@@ -325,11 +325,19 @@ pub async fn complete(
     Err(ApiError::BadRequest(refusal))
 }
 
+#[derive(Deserialize)]
+pub struct SyncQuery {
+    /// Reach back to this day: history the usual window does not cover.
+    fra: Option<chrono::NaiveDate>,
+}
+
 /// «Hent nå»: fetch and import. The same function a scheduled fetch will call.
+/// `?fra=` fetches older history once; the bank decides how far back it goes.
 pub async fn sync(
     State(state): State<AppState>,
     person: AuthPerson,
     Path((company_id, connection_id)): Path<(Uuid, Uuid)>,
+    Query(q): Query<SyncQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankReconcile).await?;
     let feeds = feeds(&state)?;
@@ -338,7 +346,7 @@ pub async fn sync(
         .await?
         .ok_or(ApiError::NotFound)?;
     let client = provider(feeds, &connection.provider)?;
-    let summary = bank_feed::sync(&state.pool, client, &connection)
+    let summary = bank_feed::sync(&state.pool, client, &connection, q.fra)
         .await?
         .map_err(|e| ApiError::BadRequest(bank_feed::user_message(&e).into()))?;
     Ok(Json(
