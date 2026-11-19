@@ -165,6 +165,10 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         ("timer_liste", year.clone()),
         ("timer_sammendrag", year.clone()),
         ("timer_ufakturert", json!({})),
+        ("bank_kontoer", json!({})),
+        ("bank_avstemming", json!({"account": "1920"})),
+        ("bank_poster_sok", json!({"account": "1920"})),
+        ("bankkoblinger", json!({})),
     ]);
 
     for (name, args) in &argumenter {
@@ -201,6 +205,85 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         .await
         .unwrap();
     assert_eq!(posted, 1, "bilaget havnet ikke i hovedboken");
+
+    // ---- The bank, end to end through the tools ----
+    // A statement with the 500 kr just posted (matched by the import), a
+    // 200 kr payment posted outside the matching window (matched by hand),
+    // and a fee with no bilag (posted from the line).
+    let (failed, text) = calls(
+        &server,
+        "bilag_for",
+        json!({
+            "journal_code": "GL", "date": "2026-03-01", "description": "Kontorrekvisita",
+            "lines": [{"account": "6800", "amount_ore": 20000}, {"account": "1920", "amount_ore": -20000}]
+        }),
+    )
+    .await;
+    assert!(!failed, "{text}");
+    regnmed_db::ensure_account(&state.pool, company, "7770", "Bankgebyr")
+        .await
+        .unwrap();
+    let csv = "Dato;Forklaring;Beløp\n15.03.2026;Kontorrekvisita;-500,00\n\
+               20.03.2026;Kontorrekvisita;-200,00\n31.03.2026;Gebyr;-35,00\n";
+    let (failed, text) = calls(
+        &server,
+        "bank_importer",
+        json!({"fil": skriv_midlertidig("utdrag.csv", csv.as_bytes()), "account": "1920"}),
+    )
+    .await;
+    assert!(!failed, "bank_importer nådde ikke fram: {text}");
+    let imported: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(imported["transactions"], 3, "{imported}");
+    assert_eq!(imported["auto_matched"], 1, "{imported}");
+
+    let (_, text) = calls(&server, "bank_avstemming", json!({"account": "1920"})).await;
+    let recon: Value = serde_json::from_str(&text).unwrap();
+    let line = |ore: i64| {
+        recon["unmatched_bank"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["amount_ore"] == ore)
+            .unwrap_or_else(|| panic!("ingen banklinje på {ore}: {recon}"))["bank_transaction_id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let entry = recon["unmatched_entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["amount_ore"] == -20000)
+        .unwrap_or_else(|| panic!("ingen bilagslinje på 200 kr: {recon}"))["entry_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (failed, text) = calls(
+        &server,
+        "bank_koble",
+        json!({"bank_transaction_id": line(-20000), "entry_id": entry}),
+    )
+    .await;
+    assert!(!failed, "bank_koble nådde ikke fram: {text}");
+    let (failed, text) = calls(
+        &server,
+        "bank_bokfor_linje",
+        json!({"linje": line(-3500), "konto": "7770"}),
+    )
+    .await;
+    assert!(!failed, "bank_bokfor_linje nådde ikke fram: {text}");
+    let (_, text) = calls(&server, "bank_avstemming", json!({"account": "1920"})).await;
+    let recon: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(recon["unmatched_bank"], json!([]), "{recon}");
+
+    // No provider in this installation: the route answers, and says so.
+    let (failed, text) = calls(
+        &server,
+        "bank_hent",
+        json!({"kobling": Uuid::new_v4().to_string(), "fra": "2026-01-01"}),
+    )
+    .await;
+    assert!(failed && text.contains("ikke satt opp"), "{text}");
 
     // ---- Projects and hours, end to end through the tools ----
     //
@@ -403,6 +486,11 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         // In an_agent_reads_only_listed_web_pages: the real fetch goes
         // to the internet, and this test runs offline.
         "nettside",
+        // In «The bank, end to end» above.
+        "bank_importer",
+        "bank_koble",
+        "bank_bokfor_linje",
+        "bank_hent",
     ];
     for v in regnmed_mcp::tool::TOOLS {
         assert!(
@@ -1513,6 +1601,7 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
         "from": "2026-01-01", "to": "2026-12-31", "date": "2026-12-31", "year": 2026, "termin": 1,
         // ids in paths
         "dokument": any_id, "utlegg": any_id, "timeforing": any_id, "oppgave": any_id,
+        "linje": any_id, "kobling": any_id, "account": "1920",
         "prosjekt": "MENY", "kind": "prosjekt", "kode": "MENY",
         // files
         "fil": csv,
@@ -1522,6 +1611,7 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
         "party_no": "10000", "invoice_date": "2026-03-02", "due_date": "2026-03-16",
         "person_id": any_id, "dato": "2026-03-02", "belop_ore": 100, "minutter": 60,
         "timesats_ore": 100, "locked_through": "2025-12-31",
+        "bank_transaction_id": any_id, "entry_id": any_id, "konto": "7770",
     });
 
     for role in ["ansatt", "les", "bokforing", "admin"] {
@@ -1587,7 +1677,8 @@ async fn each_role_is_offered_exactly_the_tools_its_guard_lets_through() {
             // a query struct reads a stray field (`lines`) as its own.
             if t.method == "GET" || t.method == "DELETE" {
                 args.retain(|k, _| {
-                    ["from", "to", "date", "dato", "year", "termin"].contains(&k.as_str())
+                    ["from", "to", "date", "dato", "year", "termin", "account"]
+                        .contains(&k.as_str())
                         || t.path.contains(&format!("{{{k}}}"))
                 });
             }

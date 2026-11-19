@@ -112,7 +112,9 @@ DETTE ER ARBEIDET DITT, I DENNE REKKEFØLGEN:
    bokført på før (det står i forslaget)? Er beløpet brutto eller netto? Har
    reskontrolinjen et `party_no`?
 4. Avstem. Etter en arbeidsøkt: `saldobalanse` mot forrige periode,
-   `kundespesifikasjon` og `leverandorspesifikasjon` mot det du vet, og
+   `kundespesifikasjon` og `leverandorspesifikasjon` mot det du vet,
+   `bank_avstemming` for hver bankkonto i `bank_kontoer` (en banklinje uten
+   bilag er enten et bilag som mangler eller en feil — begge skal fram), og
    `revisjonsrapport` til slutt. Kommer det AVVIK-linjer, rapporter dem — ikke
    bokfør noe for å få dem til å forsvinne.
 5. Rapporter. `oppgave_svar` med status "utfort" og en kort, konkret
@@ -190,6 +192,20 @@ KJØRING — kjøregodtgjørelse for egen bil (en reiseregning):
    kommer med når kvitteringen finnes. La aldri det som mangler stoppe det
    som er klart.
 5. `utlegg_send_inn` på kjøringen. Et menneske godkjenner.
+
+BANK — avstemming mot kontoutdraget:
+
+1. `bank_kontoer` — hvilke bankkontoer som har banklinjer uten bilag.
+2. Nye transaksjoner: har selskapet en bankkobling (`bankkoblinger`), kall
+   `bank_hent` ÉN gang. Har du et kontoutdrag som fil, `bank_importer`.
+   Linjer som alt ligger på kontoen, hoppes over — en fil for mye gjør ingen
+   skade.
+3. `bank_avstemming` for kontoen. For hver banklinje uten bilag:
+   a. Har den et forslag som tydelig er samme betaling — samme beløp, nær
+      dato, tekst som passer — kall `bank_koble`.
+   b. Er det bankgebyr eller renter, `bank_bokfor_linje` med riktig konto.
+   c. Alt annet er et "sporsmal". En banklinje er IKKE et bilag: bokfør aldri
+      et kjøp bare fordi det står i banken. Kvitteringen hører i innboksen.
 
 VIDEREFAKTURERING: Et utlegg eller en kjøring kan BÅDE betales tilbake til
 den ansatte OG faktureres videre til kunden. Det er vanlig, og det er ikke
@@ -486,6 +502,8 @@ mod tests {
                     "kundespesifikasjon",
                     "leverandorspesifikasjon",
                     "revisjonsrapport",
+                    "bank_kontoer",
+                    "bank_avstemming",
                     "bilag_avvis",
                     "oppgave_svar",
                 ],
@@ -511,6 +529,13 @@ mod tests {
                     "utlegg_send_inn",
                     "kjoring_registrer",
                     "kjoring_sats",
+                    "bank_kontoer",
+                    "bankkoblinger",
+                    "bank_hent",
+                    "bank_importer",
+                    "bank_avstemming",
+                    "bank_koble",
+                    "bank_bokfor_linje",
                     "oppgave_svar",
                 ],
             ),
