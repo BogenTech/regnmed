@@ -53,6 +53,7 @@ pub mod subscription;
 pub mod tax_card;
 pub mod terms;
 pub mod timesheet;
+pub mod web;
 pub mod year_end;
 
 use std::sync::Arc;
@@ -179,6 +180,8 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/me", get(me))
         .route("/notifications", get(chat::notifications))
+        // An agent reads a page on the platform's domain list (docs/agent.md).
+        .route("/web", get(web::fetch))
         // Public by design: root hashes only — every independent copy of
         // a root is one more witness a database rewrite cannot reach.
         .route("/anchors", get(anchor::list_anchors))

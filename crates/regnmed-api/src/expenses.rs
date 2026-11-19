@@ -12,7 +12,7 @@
 //!
 //! Drafts (finish later, docs/utlegg.md):
 //!
-//! - POST /companies/{id}/expenses/receipts?filename=&person_id=  raw receipt → draft
+//! - POST /companies/{id}/expenses/receipts?filename=&person_id=&trip_expense_id=  raw receipt → draft
 //! - POST /companies/{id}/expenses                    JSON draft (kjøring, or a cost of a trip)
 //! - PUT  /companies/{id}/expenses/{eid}              rewrite a draft
 //! - PUT  /companies/{id}/expenses/{eid}/receipt?filename=  replace a draft's receipt
@@ -824,6 +824,9 @@ pub struct ReceiptQuery {
     /// The card statement line the receipt documents: the draft takes the
     /// line's card, date, amount and text, and belongs to the cardholder.
     bank_transaction_id: Option<Uuid>,
+    /// The drive or trip this receipt hangs under (a toll, parking):
+    /// the draft then belongs to that claim's person and project.
+    trip_expense_id: Option<Uuid>,
 }
 
 /// One receipt → one draft: the photo is saved at once, the details
@@ -850,8 +853,20 @@ pub async fn create_receipt_draft(
             draft.bank_transaction_id = Some(line_id);
             line.holder_person_id.unwrap_or(person.person_id)
         }
-        None => claimant(&state, &person, company_id, query.person_id).await?,
+        // Same rule as create_draft: a cost belongs to the trip's claimant.
+        None => match (query.trip_expense_id, query.person_id) {
+            (Some(trip), None) => {
+                regnmed_db::expense_people(&state.pool, company_id, trip)
+                    .await
+                    .map_err(|_| ApiError::NotFound)?
+                    .0
+            }
+            (_, asked) => claimant(&state, &person, company_id, asked).await?,
+        },
     };
+    if let Some(trip) = query.trip_expense_id {
+        may_write(&state, &person, company_id, trip).await?;
+    }
     let created_by = person.name.as_deref().unwrap_or(&person.sub);
     let id = regnmed_db::create_draft(
         &state.pool,
@@ -859,7 +874,7 @@ pub async fn create_receipt_draft(
         claimant,
         person.person_id,
         "utlegg",
-        None,
+        query.trip_expense_id,
         &draft,
         Some(regnmed_db::Receipt {
             filename: &query.filename,
