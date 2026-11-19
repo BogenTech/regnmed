@@ -31,6 +31,7 @@ pub(crate) fn http() -> reqwest::Client {
 pub mod addresses;
 pub mod altinn_events;
 pub mod amelding;
+pub mod bankfeed;
 pub mod brreg;
 pub mod enablebanking;
 pub mod finanstilsynet;

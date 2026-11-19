@@ -41,7 +41,10 @@ create table bank_connection (
     id                  uuid primary key,
     company_id          uuid not null references company (id),
     account_id          uuid not null references account (id),
-    provider            text not null check (provider in ('enablebanking')),
+    -- Which provider the consent was made through (regnmed-gov::bankfeed).
+    -- Free text on purpose: regnmed is not tied to one provider, and a new
+    -- one must not need a migration.
+    provider            text not null check (provider <> ''),
     bank_name           text not null check (bank_name <> ''),
     bank_country        text not null default 'NO',
     -- The bank account the user said this is (11 digits). The account the
@@ -74,16 +77,27 @@ create trigger bank_connection_no_delete
     before delete on bank_connection
     for each row execute function forbid_ledger_mutation();
 
--- Every transaction the feed has imported, per LEDGER ACCOUNT (not per
+-- Every transaction the feed has accounted for, per LEDGER ACCOUNT (not per
 -- connection: a renewed consent is a new connection for the same account).
 -- Fetch windows overlap on purpose, and this is what keeps an overlap from
 -- becoming a second copy. Written in the same transaction as the statement.
+--
+-- `absorbed` marks a fetched transaction that was already on the account
+-- from an uploaded file (same day, same amount): it is recorded here so it
+-- is not considered again, but no second line is created, and
+-- `statement_id` then points at the file's statement.
 create table bank_feed_seen (
     account_id   uuid not null references account (id),
     key          text not null check (key <> ''),
     statement_id uuid not null references bank_statement (id),
+    booking_date date not null,
+    amount_ore   bigint not null,
+    absorbed     boolean not null default false,
     primary key (account_id, key)
 );
+
+create index bank_feed_seen_day_idx on bank_feed_seen (account_id, booking_date, amount_ore)
+    where absorbed;
 
 grant select, insert on bank_feed_seen to regnmed_app;
 

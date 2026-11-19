@@ -9,6 +9,13 @@
 //! never feed this ledger account. The bank credentials never reach us: the
 //! user authenticates at the bank and we keep the provider's session
 //! reference.
+//!
+//! regnmed is not tied to one provider. `BankFeeds` holds the configured ones
+//! in priority order, a bank offered by several is taken from the first, and
+//! every connection remembers which provider it was made through.
+
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -17,7 +24,7 @@ use axum::response::Redirect;
 use chrono::Utc;
 use regnmed_core::bankfeed::norwegian_bban;
 use regnmed_db::bank_feed::{self, ADDON};
-use regnmed_gov::enablebanking::{Client, FeedError};
+use regnmed_gov::bankfeed::{AuthRequest, Bank, BankFeed, FeedError};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -30,10 +37,83 @@ const COUNTRY: &str = "NO";
 /// PSD2 allows up to 180 days between strong authentications; a bank may
 /// allow less, and then its own maximum applies.
 const MAX_CONSENT_DAYS: i64 = 180;
+/// The list of banks changes rarely; a connect should not depend twice on
+/// the provider being up.
+const BANKS_TTL: Duration = Duration::from_secs(3600);
 
-fn provider(state: &AppState) -> Result<&Client, ApiError> {
+/// One bank as offered through one provider.
+#[derive(Clone)]
+struct Offer {
+    provider: &'static str,
+    bank: Bank,
+}
+
+/// The configured providers, in priority order.
+pub struct BankFeeds {
+    providers: Vec<Arc<dyn BankFeed>>,
+    banks: Mutex<Option<(Instant, Vec<Offer>)>>,
+}
+
+impl BankFeeds {
+    /// None when no provider is configured: the feature then does not exist.
+    pub fn new(providers: Vec<Arc<dyn BankFeed>>) -> Option<Arc<Self>> {
+        (!providers.is_empty()).then(|| {
+            Arc::new(Self {
+                providers,
+                banks: Mutex::new(None),
+            })
+        })
+    }
+
+    fn get(&self, id: &str) -> Option<&dyn BankFeed> {
+        self.providers.iter().find(|p| p.id() == id).map(|p| &**p)
+    }
+
+    /// Every bank on offer, first provider first. One provider being down
+    /// does not hide the others' banks; all of them failing is an error.
+    async fn offers(&self) -> Result<Vec<Offer>, FeedError> {
+        if let Some((at, offers)) = self.banks.lock().unwrap().as_ref()
+            && at.elapsed() < BANKS_TTL
+        {
+            return Ok(offers.clone());
+        }
+        let mut offers = Vec::new();
+        let mut failure = None;
+        for p in &self.providers {
+            match p.banks(COUNTRY).await {
+                Ok(banks) => offers.extend(banks.into_iter().map(|bank| Offer {
+                    provider: p.id(),
+                    bank,
+                })),
+                Err(e) => {
+                    eprintln!("bank feed: provider {} could not list banks: {e}", p.id());
+                    failure = Some(e);
+                }
+            }
+        }
+        match failure {
+            Some(e) if offers.is_empty() => Err(e),
+            // A partial list is not cached: the missing provider is asked again next time.
+            Some(_) => Ok(offers),
+            None => {
+                *self.banks.lock().unwrap() = Some((Instant::now(), offers.clone()));
+                Ok(offers)
+            }
+        }
+    }
+}
+
+fn feeds(state: &AppState) -> Result<&BankFeeds, ApiError> {
     state.bank_feed.as_deref().ok_or_else(|| {
         ApiError::BadRequest("bankkobling er ikke satt opp på denne installasjonen".into())
+    })
+}
+
+fn provider<'a>(feeds: &'a BankFeeds, id: &str) -> Result<&'a dyn BankFeed, ApiError> {
+    feeds.get(id).ok_or_else(|| {
+        ApiError::BadRequest(
+            "koblingen ble laget gjennom en leverandør som ikke lenger er satt opp; koble til på nytt".into(),
+        )
     })
 }
 
@@ -47,17 +127,23 @@ async fn require_addon(state: &AppState, company_id: Uuid) -> Result<(), ApiErro
     }
 }
 
-/// A provider failure as a message a person can act on.
-fn feed_error(e: FeedError) -> ApiError {
-    ApiError::BadRequest(match e {
+/// What the user is told. The provider's own words are for the operator and
+/// go to the log, never to the portal.
+fn user_message(e: &FeedError) -> &'static str {
+    match e {
         FeedError::ConsentGone(_) => {
-            "samtykket hos banken er utløpt eller trukket tilbake; koble til på nytt".into()
+            "Samtykket hos banken er utløpt eller trukket tilbake. Koble til på nytt."
         }
         FeedError::RateLimited => {
-            "banken tillater ikke flere hentinger akkurat nå; prøv igjen om noen timer".into()
+            "Banken tillater ikke flere hentinger akkurat nå. Prøv igjen om noen timer."
         }
-        FeedError::Other(e) => format!("banken svarte ikke som ventet: {e:#}"),
-    })
+        FeedError::Other(_) => "Banken svarte ikke som ventet. Prøv igjen senere.",
+    }
+}
+
+fn feed_error(e: FeedError) -> ApiError {
+    eprintln!("bank feed: {e}");
+    ApiError::BadRequest(user_message(&e).into())
 }
 
 pub async fn status(
@@ -72,6 +158,7 @@ pub async fn status(
         "tillegg": bank_feed::addon_active(&state.pool, company_id, ADDON).await?,
         "koblinger": connections.iter().map(|c| json!({
             "id": c.id,
+            "leverandor": c.provider,
             "account_number": c.account_number,
             "bank": c.bank,
             "kontonummer": c.bban,
@@ -89,9 +176,11 @@ pub async fn banks(
     Path(company_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankRead).await?;
-    let banks = provider(&state)?.banks(COUNTRY).await.map_err(feed_error)?;
+    let offers = feeds(&state)?.offers().await.map_err(feed_error)?;
     Ok(Json(json!({
-        "banker": banks.iter().map(|b| json!({ "name": b.name, "country": b.country })).collect::<Vec<_>>(),
+        "banker": offers.iter().map(|o| json!({
+            "name": o.bank.name, "country": o.bank.country, "provider": o.provider,
+        })).collect::<Vec<_>>(),
     })))
 }
 
@@ -99,6 +188,8 @@ pub async fn banks(
 pub struct ConnectRequest {
     account_number: String,
     bank: String,
+    /// Which provider to go through; without it, the first one offering the bank.
+    provider: Option<String>,
     /// The bank account being connected; defaults to the company's own
     /// (Firmaopplysninger).
     kontonummer: Option<String>,
@@ -113,7 +204,7 @@ pub async fn connect(
     Json(request): Json<ConnectRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankReconcile).await?;
-    let client = provider(&state)?;
+    let feeds = feeds(&state)?;
     require_addon(&state, company_id).await?;
     // Configuration, never the request's Host: the bank only redirects to
     // the URL registered on our application.
@@ -145,14 +236,17 @@ pub async fn connect(
         .ok_or_else(|| {
             ApiError::BadRequest("kontonummeret er ikke et gyldig norsk kontonummer".into())
         })?;
-    let bank = client
-        .banks(COUNTRY)
+    let offer = feeds
+        .offers()
         .await
         .map_err(feed_error)?
         .into_iter()
-        .find(|b| b.name == request.bank)
+        .find(|o| {
+            o.bank.name == request.bank
+                && request.provider.as_deref().is_none_or(|p| p == o.provider)
+        })
         .ok_or_else(|| ApiError::BadRequest("ukjent bank".into()))?;
-    let days = match bank.maximum_consent_validity / 86_400 {
+    let days = match offer.bank.maximum_consent_validity / 86_400 {
         0 => MAX_CONSENT_DAYS,
         d => d.min(MAX_CONSENT_DAYS),
     };
@@ -160,20 +254,21 @@ pub async fn connect(
         &state.pool,
         company_id,
         request.account_number.trim(),
-        &bank.name,
+        offer.provider,
+        &offer.bank.name,
         &bban,
         person.display(),
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    let url = client
-        .start_auth(
-            &bank.name,
-            &bank.country,
-            &id.to_string(),
-            &format!("{}/bank/callback", base.trim_end_matches('/')),
-            Utc::now() + chrono::Duration::days(days),
-        )
+    let url = provider(feeds, offer.provider)?
+        .start_auth(&AuthRequest {
+            bank: &offer.bank.name,
+            country: &offer.bank.country,
+            state: &id.to_string(),
+            redirect_url: &format!("{}/bank/callback", base.trim_end_matches('/')),
+            valid_until: Utc::now() + chrono::Duration::days(days),
+        })
         .await
         .map_err(feed_error)?;
     Ok(Json(json!({ "url": url })))
@@ -184,13 +279,13 @@ pub struct CallbackQuery {
     code: Option<String>,
     state: Option<String>,
     error: Option<String>,
-    error_description: Option<String>,
 }
 
 /// Where the bank sends the browser back. Open by necessity (a redirect
 /// carries no token) and therefore does NOTHING but hand the parameters to
 /// the portal, which completes the connection as the signed-in user. The
-/// code is worthless without our application key.
+/// code is worthless without our application key. An error is passed on as
+/// a fixed text, never the query's own words: this address is open.
 pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQuery>) -> Redirect {
     let pending = match q.state.as_deref().and_then(|s| Uuid::parse_str(s).ok()) {
         Some(id) => bank_feed::pending(&state.pool, id)
@@ -212,13 +307,7 @@ pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQue
                 pairs.append_pair("banktilstand", &id.to_string());
             }
             _ => {
-                pairs.append_pair(
-                    "bankfeil",
-                    q.error_description
-                        .as_deref()
-                        .or(q.error.as_deref())
-                        .unwrap_or("tilkoblingen ble avbrutt"),
-                );
+                pairs.append_pair("bankfeil", "Tilkoblingen ble avbrutt hos banken.");
             }
         }
     }
@@ -236,7 +325,9 @@ pub struct CompleteRequest {
 }
 
 /// Turns the code into a session and binds the account. The account must be
-/// the one stated at connect, and in NOK.
+/// the one stated at connect, and in NOK. A session that is not kept is
+/// closed at the provider, and so is the one a renewal replaces: we hold no
+/// consent we do not use.
 pub async fn complete(
     State(state): State<AppState>,
     person: AuthPerson,
@@ -244,7 +335,7 @@ pub async fn complete(
     Json(request): Json<CompleteRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankReconcile).await?;
-    let client = provider(&state)?;
+    let feeds = feeds(&state)?;
     require_addon(&state, company_id).await?;
     let pending = bank_feed::pending(&state.pool, request.state)
         .await?
@@ -252,46 +343,60 @@ pub async fn complete(
         .ok_or_else(|| {
             ApiError::BadRequest("tilkoblingen finnes ikke lenger; start på nytt".into())
         })?;
+    let client = provider(feeds, &pending.provider)?;
     let session = client
         .create_session(&request.code)
         .await
         .map_err(feed_error)?;
-    let account = session.accounts.iter().find(|a| {
+    let refusal = match session.accounts.iter().find(|a| {
         [a.iban.as_deref(), a.other.as_deref()]
             .into_iter()
             .flatten()
             .filter_map(norwegian_bban)
             .any(|b| b == pending.bban)
-    });
-    let Some(account) = account else {
-        // The consent is for something else: do not keep it.
-        let _ = client.end_session(&session.session_id).await;
-        return Err(ApiError::BadRequest(format!(
+    }) {
+        None => format!(
             "banken ga ikke tilgang til konto {}. Velg den kontoen når du godkjenner hos banken.",
             pending.bban
-        )));
+        ),
+        Some(account) if account.currency != "NOK" => {
+            "bare kontoer i norske kroner kan kobles til".to_string()
+        }
+        Some(account) => match bank_feed::activate(
+            &state.pool,
+            request.state,
+            company_id,
+            &session.session_id,
+            &account.uid,
+            session.valid_until,
+        )
+        .await
+        {
+            Ok(replaced) => {
+                for old in replaced {
+                    if let Some(p) = feeds.get(&old.provider)
+                        && let Err(e) = p.end_session(&old.session_id).await
+                    {
+                        eprintln!(
+                            "bank feed: could not close the replaced session at {}: {e}",
+                            old.provider
+                        );
+                    }
+                }
+                return Ok(Json(json!({
+                    "id": request.state,
+                    "status": "aktiv",
+                    "gyldig_til": session.valid_until.date_naive().to_string(),
+                })));
+            }
+            Err(e) => format!("{e:#}"),
+        },
     };
-    if account.currency != "NOK" {
-        let _ = client.end_session(&session.session_id).await;
-        return Err(ApiError::BadRequest(
-            "bare kontoer i norske kroner kan kobles til".into(),
-        ));
+    // The session is not kept, so it is not left open at the provider either.
+    if let Err(e) = client.end_session(&session.session_id).await {
+        eprintln!("bank feed: could not close an unused session: {e}");
     }
-    bank_feed::activate(
-        &state.pool,
-        request.state,
-        company_id,
-        &session.session_id,
-        &account.uid,
-        session.valid_until,
-    )
-    .await
-    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
-    Ok(Json(json!({
-        "id": request.state,
-        "status": "aktiv",
-        "gyldig_til": session.valid_until.date_naive().to_string(),
-    })))
+    Err(ApiError::BadRequest(refusal))
 }
 
 /// «Hent nå»: fetch and import. The same function a scheduled fetch will call.
@@ -301,11 +406,12 @@ pub async fn sync(
     Path((company_id, connection_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::BankReconcile).await?;
-    let client = provider(&state)?;
+    let feeds = feeds(&state)?;
     require_addon(&state, company_id).await?;
     let connection = bank_feed::live(&state.pool, company_id, connection_id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let client = provider(feeds, &connection.provider)?;
     let summary = sync_connection(&state.pool, client, &connection).await?;
     Ok(Json(
         json!({ "nye": summary.new, "auto_matchet": summary.auto_matched }),
@@ -314,14 +420,14 @@ pub async fn sync(
 
 /// One fetch for one connection. A consent the bank says is gone ends the
 /// connection (the user must connect again); any other failure is noted on
-/// the row and reported, and the next fetch tries again.
+/// the row in the user's language and the next fetch tries again.
 pub async fn sync_connection(
     pool: &sqlx::PgPool,
-    client: &Client,
+    client: &dyn BankFeed,
     connection: &bank_feed::Live,
 ) -> Result<bank_feed::SyncSummary, ApiError> {
     if connection.valid_until <= Utc::now() {
-        return Err(feed_error(FeedError::ConsentGone("expired".into())));
+        return Err(feed_error(FeedError::ConsentGone("expired by date".into())));
     }
     let today = Utc::now().date_naive();
     let from = bank_feed::fetch_from(pool, connection.account_id, today).await?;
@@ -340,7 +446,7 @@ pub async fn sync_connection(
                 )
                 .await?;
             } else {
-                bank_feed::note_error(pool, connection.id, &e.to_string()).await?;
+                bank_feed::note_error(pool, connection.id, user_message(&e)).await?;
             }
             Err(feed_error(e))
         }
@@ -355,11 +461,17 @@ pub async fn end(
     require(&state, person.person_id, company_id, Right::BankReconcile).await?;
     // Ending works without the add-on and without a provider: nobody is
     // ever stuck with a connection they cannot remove.
-    if let (Some(client), Some(live)) = (
-        state.bank_feed.as_deref(),
-        bank_feed::live(&state.pool, company_id, connection_id).await?,
-    ) {
-        let _ = client.end_session(&live.session_id).await;
+    if let Some(live) = bank_feed::live(&state.pool, company_id, connection_id).await?
+        && let Some(client) = state
+            .bank_feed
+            .as_deref()
+            .and_then(|f| f.get(&live.provider))
+        && let Err(e) = client.end_session(&live.session_id).await
+    {
+        eprintln!(
+            "bank feed: could not close the session at {}: {e}",
+            live.provider
+        );
     }
     bank_feed::end(
         &state.pool,

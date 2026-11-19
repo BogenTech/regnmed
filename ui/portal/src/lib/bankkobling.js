@@ -38,3 +38,18 @@ export function retur(query) {
   if (feil) return { feil };
   return kode && tilstand ? { kode, tilstand } : null;
 }
+
+// Bankvalget i skjemaet: verdien er plassen i listen (så leverandøren følger med),
+// og leverandøren vises bare når to oppføringer har samme banknavn.
+export function bankvalg(banker) {
+  const antall = {};
+  for (const b of banker) antall[b.name] = (antall[b.name] ?? 0) + 1;
+  return banker.map((b, i) => [String(i), antall[b.name] > 1 && b.provider ? b.name + " (" + b.provider + ")" : b.name]);
+}
+
+// Er adressen bankens retur (#/c/{id}/bank?bankkode=… eller ?bankfeil=…)? Innloggingen
+// tar vare på akkurat den, så en utlogget bruker ikke mister koden fra banken.
+export function erBankretur(hash) {
+  const i = String(hash ?? "").indexOf("?");
+  return i >= 0 && retur(hash.slice(i + 1)) !== null;
+}

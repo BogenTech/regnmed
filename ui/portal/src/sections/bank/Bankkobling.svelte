@@ -14,7 +14,7 @@
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { route } from "../../lib/router.svelte.js";
-  import { koblingsstatus, maskert, retur } from "../../lib/bankkobling.js";
+  import { bankvalg, koblingsstatus, maskert, retur } from "../../lib/bankkobling.js";
 
   let { companyId, accounts, query, canReconcile, onSynced } = $props();
 
@@ -91,7 +91,7 @@
           standard: accounts[0]?.number,
           valg: accounts.map((a) => [a.number, a.number + " " + a.name]),
         },
-        { navn: "bank", etikett: "Bank", type: "select", standard: banker[0].name, valg: banker.map((b) => [b.name, b.name]) },
+        { navn: "bank", etikett: "Bank", type: "select", standard: "0", valg: bankvalg(banker) },
         {
           navn: "kontonummer",
           etikett: "Kontonummer i banken",
@@ -107,14 +107,31 @@
     );
     if (!svar) return;
     const kontonummer = (svar.kontonummer ?? "").replace(/\D/g, "");
-    await kobleTil({ account_number: svar.account_number, bank: svar.bank, ...(kontonummer ? { kontonummer } : {}) }, "ny");
+    const valgt = banker[Number(svar.bank)];
+    await kobleTil(
+      {
+        account_number: svar.account_number,
+        bank: valgt.name,
+        ...(valgt.provider ? { provider: valgt.provider } : {}),
+        ...(kontonummer ? { kontonummer } : {}),
+      },
+      "ny",
+    );
   }
 
   // Renewal is simply a new authorisation for the same account at the same bank.
   function forny(k) {
     if (busy) return;
     const kontonummer = (k.kontonummer ?? "").replace(/\D/g, "");
-    kobleTil({ account_number: k.account_number, bank: k.bank, ...(kontonummer ? { kontonummer } : {}) }, k.id);
+    kobleTil(
+      {
+        account_number: k.account_number,
+        bank: k.bank,
+        ...(k.leverandor ? { provider: k.leverandor } : {}),
+        ...(kontonummer ? { kontonummer } : {}),
+      },
+      k.id,
+    );
   }
 
   async function hent(k) {

@@ -12,6 +12,7 @@
 
   let data = $state(null);
   let skjema = $state(null);
+  let nyttTillegg = $state({ addon: "", note: "" });
 
   async function last() {
     try {
@@ -22,6 +23,7 @@
         bank_account: data.settings.bank_account || "",
         orgform: data.settings.orgform || "",
       };
+      nyttTillegg = { addon: data.tillegg_mulige?.[0]?.addon ?? "", note: "" };
     } catch (error) {
       toast(error.message, false);
       onClose();
@@ -98,6 +100,38 @@
       await post("/platform/companies/" + companyId + "/subscription", nyDekning);
       toast("Dekning åpnet", true);
       nyDekning = { plan: "standard", note: "" };
+      last();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  // Tilleggstjenester (bankkobling m.fl.): tildeles her til kjøp i portalen finnes.
+
+  async function giTillegg(event) {
+    event.preventDefault();
+    try {
+      await post("/platform/companies/" + companyId + "/addons", nyttTillegg);
+      toast("Tillegget er gitt — handlingen er logget", true);
+      last();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function avsluttTillegg(t) {
+    if (
+      !(await bekreft("Avslutte " + t.navn + " for selskapet? Det som alt er hentet blir stående.", {
+        tittel: "Avslutt tillegg",
+        ok: "Avslutt",
+        farlig: true,
+      }))
+    ) {
+      return;
+    }
+    try {
+      await post("/platform/companies/" + companyId + "/addons/" + t.addon + "/end", {});
+      toast("Tillegget er avsluttet", true);
       last();
     } catch (error) {
       toast(error.message, false);
@@ -280,6 +314,49 @@
           <button class="btn btn-sm btn-primary">Åpne dekning</button>
         </form>
       {/if}
+    {/if}
+  </Card>
+
+  <Card title="Tilleggstjenester">
+    <table class="table table-sm mb-2">
+      <thead>
+        <tr><th>Tillegg</th><th>Fra</th><th>Referanse</th><th></th></tr>
+      </thead>
+      <tbody>
+        {#each data.tillegg ?? [] as t (t.addon)}
+          <tr>
+            <td>{t.navn}</td>
+            <td>{t.fra}</td>
+            <td class="text-xs">{t.note}</td>
+            <td class="text-right">
+              {#if systemadmin}
+                <button class="btn btn-ghost btn-xs" onclick={() => avsluttTillegg(t)}>Avslutt</button>
+              {/if}
+            </td>
+          </tr>
+        {:else}
+          <tr><td colspan="4" class="opacity-70">Selskapet har ingen tilleggstjenester.</td></tr>
+        {/each}
+      </tbody>
+    </table>
+    {#if systemadmin && data.tillegg_mulige?.length}
+      <form class="flex gap-2 flex-wrap items-end" onsubmit={giTillegg}>
+        <select class="select select-sm" aria-label="Tillegg" bind:value={nyttTillegg.addon}>
+          {#each data.tillegg_mulige as m (m.addon)}
+            <option value={m.addon}>{m.navn}</option>
+          {/each}
+        </select>
+        <input
+          class="input input-sm w-72"
+          aria-label="Referanse"
+          placeholder="Referanse (obligatorisk — avtale eller pilot)"
+          required
+          bind:value={nyttTillegg.note}
+        />
+        <button class="btn btn-sm btn-primary">Gi tillegg</button>
+      </form>
+    {:else if !systemadmin}
+      <span class="text-xs opacity-60">Endring krever systemadmin.</span>
     {/if}
   </Card>
 {/if}

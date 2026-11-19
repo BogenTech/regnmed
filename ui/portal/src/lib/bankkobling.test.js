@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dagerIgjen, koblingsstatus, maskert, retur } from "./bankkobling.js";
+import { bankvalg, dagerIgjen, erBankretur, koblingsstatus, maskert, retur } from "./bankkobling.js";
 
 const idag = "2026-11-19";
 
@@ -37,4 +37,27 @@ test("retur reads the bank's return parameters", () => {
   assert.equal(retur("bankkode=abc"), null, "a code without its state is not a return");
   assert.equal(retur("year=2026"), null);
   assert.equal(retur(""), null);
+});
+
+test("the bank picker carries the provider and names it only when two banks share a name", () => {
+  const banker = [
+    { name: "DNB", provider: "enablebanking" },
+    { name: "Nordea", provider: "enablebanking" },
+    { name: "DNB", provider: "aritma" },
+  ];
+  assert.deepEqual(bankvalg(banker), [
+    ["0", "DNB (enablebanking)"],
+    ["1", "Nordea"],
+    ["2", "DNB (aritma)"],
+  ]);
+  assert.deepEqual(bankvalg([{ name: "DNB" }]), [["0", "DNB"]]);
+});
+
+test("only the bank's return address is kept through login", () => {
+  assert.equal(erBankretur("#/c/abc/bank?bankkode=k&banktilstand=s"), true);
+  assert.equal(erBankretur("#/c/abc/bank?bankfeil=avbrutt"), true);
+  assert.equal(erBankretur("#/c/abc/bank?bankkode=k"), false);
+  assert.equal(erBankretur("#/c/abc/mva?year=2026"), false);
+  assert.equal(erBankretur("#/c/abc/bank"), false);
+  assert.equal(erBankretur(""), false);
 });

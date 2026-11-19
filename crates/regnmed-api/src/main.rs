@@ -160,26 +160,30 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
-    // Direct bank connection: both or neither. The key is a file outside
-    // the repo and the image (docs/secrets.md).
-    let bank_feed = match (
+    // Direct bank connection (docs/bank.md): every configured provider, in
+    // priority order. Each one is "both settings or neither"; its key is a
+    // file outside the repo and the image (docs/secrets.md).
+    let mut bank_providers: Vec<std::sync::Arc<dyn regnmed_gov::bankfeed::BankFeed>> = Vec::new();
+    match (
         std::env::var("ENABLEBANKING_APP_ID"),
         std::env::var("ENABLEBANKING_KEY_FILE"),
     ) {
         (Ok(app_id), Ok(key_file)) => {
             let pem = std::fs::read(&key_file)
                 .with_context(|| format!("reading ENABLEBANKING_KEY_FILE {key_file}"))?;
-            let client = regnmed_gov::enablebanking::Client::new(
-                &app_id,
-                &pem,
-                std::env::var("ENABLEBANKING_API_BASE").ok().as_deref(),
-            )?;
-            println!("bank connection (Enable Banking) is on");
-            Some(std::sync::Arc::new(client))
+            bank_providers.push(std::sync::Arc::new(
+                regnmed_gov::enablebanking::Client::new(
+                    &app_id,
+                    &pem,
+                    std::env::var("ENABLEBANKING_API_BASE").ok().as_deref(),
+                )?,
+            ));
+            println!("bank connection: Enable Banking is on");
         }
-        (Err(_), Err(_)) => None,
+        (Err(_), Err(_)) => {}
         _ => anyhow::bail!("set both ENABLEBANKING_APP_ID and ENABLEBANKING_KEY_FILE, or neither"),
-    };
+    }
+    let bank_feed = regnmed_api::bank_feed::BankFeeds::new(bank_providers);
 
     let app = router(AppState {
         pool,

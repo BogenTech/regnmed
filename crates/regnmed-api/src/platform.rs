@@ -461,7 +461,27 @@ async fn company_detail(
         Status::Grace { blocked_from } => Some(blocked_from),
         Status::Blocked { since } => Some(since),
     };
+    // Add-ons: what the company has, and what exists that it does not have.
+    let held = regnmed_db::bank_feed::addon_rows(&state.pool, company_id).await?;
+    let addons: Vec<_> = regnmed_db::plans::list_plans_with(&state.pool, false)
+        .await?
+        .into_iter()
+        .filter(|p| p.kind == "addon")
+        .collect();
+    let addon_name = |slug: &str| {
+        addons
+            .iter()
+            .find(|p| p.slug == slug)
+            .map_or_else(|| slug.to_string(), |p| p.name.clone())
+    };
     Ok(Json(json!({
+        "tillegg": held.iter().map(|(addon, from, note)| json!({
+            "addon": addon, "navn": addon_name(addon), "fra": from.to_string(), "note": note,
+        })).collect::<Vec<_>>(),
+        "tillegg_mulige": addons.iter()
+            .filter(|p| !held.iter().any(|(a, _, _)| a == &p.slug))
+            .map(|p| json!({ "addon": p.slug, "navn": p.name }))
+            .collect::<Vec<_>>(),
         "settings": {
             "name": s.name,
             "orgnr": s.orgnumber,

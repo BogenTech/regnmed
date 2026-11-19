@@ -25,36 +25,45 @@ pub struct FeedTx {
 }
 
 /// A stable identity per transaction, so overlapping fetch windows never
-/// import the same transaction twice. The bank's entry reference when it
-/// exists; otherwise a hash of the content plus its ordinal among identical
-/// transactions that day — two equal payments on one day are two keys, and
-/// they stay the same two keys as long as a fetch covers whole days (it
-/// does: the window is given in dates).
+/// import the same transaction twice.
+///
+/// With a bank reference the key is the reference plus date, amount and
+/// direction: the text is left out, because banks enrich descriptions after
+/// booking and that must not make a second copy. Without one it is a hash of
+/// the content. Either way an ordinal among IDENTICAL transactions that day is
+/// appended, so two equal payments on one day are two keys — also when a bank
+/// reuses a reference — and they stay the same two keys as long as a fetch
+/// covers whole days (it does: the window is given in dates).
 pub fn dedupe_keys(txs: &[FeedTx]) -> Vec<String> {
     let mut ordinals: HashMap<String, usize> = HashMap::new();
     txs.iter()
-        .map(|t| match t.entry_reference.as_deref().map(str::trim) {
-            Some(r) if !r.is_empty() => format!("ref:{r}"),
-            _ => {
-                let content = format!(
-                    "{}|{}|{}|{}|{}",
-                    t.booking_date,
-                    t.amount.trim().trim_start_matches('-'),
-                    t.credit,
-                    t.description,
-                    t.reference.as_deref().unwrap_or("")
-                );
-                let n = ordinals.entry(content.clone()).or_insert(0);
-                *n += 1;
-                let digest = crate::hash::sha256(format!("{content}|{n}").as_bytes());
-                format!(
-                    "hash:{}",
-                    digest
-                        .iter()
-                        .map(|b| format!("{b:02x}"))
-                        .collect::<String>()
-                )
-            }
+        .map(|t| {
+            let amount = t.amount.trim().trim_start_matches('-');
+            let base = match t.entry_reference.as_deref().map(str::trim) {
+                Some(r) if !r.is_empty() => {
+                    format!("ref:{r}:{}:{amount}:{}", t.booking_date, t.credit)
+                }
+                _ => {
+                    let content = format!(
+                        "{}|{amount}|{}|{}|{}",
+                        t.booking_date,
+                        t.credit,
+                        t.description,
+                        t.reference.as_deref().unwrap_or("")
+                    );
+                    let digest = crate::hash::sha256(content.as_bytes());
+                    format!(
+                        "hash:{}",
+                        digest
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    )
+                }
+            };
+            let n = ordinals.entry(base.clone()).or_insert(0);
+            *n += 1;
+            format!("{base}#{n}")
         })
         .collect()
 }
@@ -105,12 +114,39 @@ mod tests {
     }
 
     #[test]
-    fn the_banks_reference_is_the_key_when_it_exists() {
+    fn a_reference_keys_the_transaction_whatever_the_text_says() {
+        let mut enriched = tx(Some(" A1 "), "100.00", true);
+        enriched.description = "Fjellvik Bygg AS, faktura 1042".into();
         let keys = dedupe_keys(&[
-            tx(Some(" A1 "), "100.00", true),
+            tx(Some("A1"), "100.00", true),
             tx(Some("A2"), "100.00", true),
         ]);
-        assert_eq!(keys, vec!["ref:A1", "ref:A2"]);
+        assert_ne!(keys[0], keys[1]);
+        assert_eq!(
+            dedupe_keys(&[enriched])[0],
+            keys[0],
+            "a later, richer description is the same transaction"
+        );
+    }
+
+    #[test]
+    fn a_reused_reference_does_not_merge_two_transactions() {
+        // A bank that puts a batch id (or "0") in the reference.
+        let day = [
+            tx(Some("0"), "100.00", true),
+            tx(Some("0"), "100.00", true),
+            tx(Some("0"), "55.00", false),
+        ];
+        let keys = dedupe_keys(&day);
+        assert_eq!(
+            keys.iter().collect::<std::collections::HashSet<_>>().len(),
+            3
+        );
+        assert_eq!(keys, dedupe_keys(&day));
+        // Another day with the same reference is another transaction.
+        let mut next = tx(Some("0"), "100.00", true);
+        next.booking_date = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        assert!(!keys.contains(&dedupe_keys(&[next])[0]));
     }
 
     #[test]

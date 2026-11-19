@@ -106,10 +106,10 @@ pub struct AppState {
     /// Skattekort til arbeidsgiver (docs/lonn.md). None when
     /// MASKINPORTEN_* is unset.
     pub tax_card: Option<Arc<TaxCardRail>>,
-    /// Direct bank connection through Enable Banking (docs/bank.md tier 2).
-    /// None when ENABLEBANKING_APP_ID/ENABLEBANKING_KEY_FILE are unset — the
-    /// portal then shows no bank-connection card at all.
-    pub bank_feed: Option<Arc<regnmed_gov::enablebanking::Client>>,
+    /// Direct bank connection (docs/bank.md tier 2): the configured providers,
+    /// in priority order. None when there is none — the portal then shows no
+    /// bank-connection card at all.
+    pub bank_feed: Option<Arc<bank_feed::BankFeeds>>,
 }
 
 pub struct TaxCardRail {

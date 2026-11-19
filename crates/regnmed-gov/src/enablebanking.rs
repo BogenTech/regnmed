@@ -17,63 +17,14 @@ use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, NaiveDate, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use regnmed_core::bankfeed::FeedTx;
+
+use crate::bankfeed::{AuthRequest, Bank, BankFeed, FeedAccount, FeedError, Fut, Session};
 use serde_json::{Value, json};
 
 const DEFAULT_BASE: &str = "https://api.enablebanking.com";
-/// A safety stop for paging; a fetch window is days, not years.
-const MAX_PAGES: usize = 50;
-
-/// Why a call failed, kept apart where the caller must act differently.
-#[derive(Debug)]
-pub enum FeedError {
-    /// The consent is gone (expired, revoked at the bank, or closed): the
-    /// user must connect again. Not a fault.
-    ConsentGone(String),
-    /// The bank refuses more fetches for now; try again later.
-    RateLimited,
-    Other(anyhow::Error),
-}
-
-impl std::fmt::Display for FeedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FeedError::ConsentGone(why) => write!(f, "consent is gone: {why}"),
-            FeedError::RateLimited => write!(f, "the bank is rate limiting"),
-            FeedError::Other(e) => write!(f, "{e:#}"),
-        }
-    }
-}
-
-impl From<anyhow::Error> for FeedError {
-    fn from(e: anyhow::Error) -> Self {
-        FeedError::Other(e)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Bank {
-    pub name: String,
-    pub country: String,
-    /// Longest consent the bank allows, in seconds.
-    pub maximum_consent_validity: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct FeedAccount {
-    /// The provider's id for the account, valid while the session is.
-    pub uid: String,
-    pub iban: Option<String>,
-    /// `account_id.other.identification` (a BBAN for Norwegian banks).
-    pub other: Option<String>,
-    pub currency: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Session {
-    pub session_id: String,
-    pub valid_until: DateTime<Utc>,
-    pub accounts: Vec<FeedAccount>,
-}
+/// A runaway stop for paging, not a size limit: the provider's page size is
+/// not documented, and a first fetch asks for weeks of a busy account.
+const MAX_PAGES: usize = 1000;
 
 pub struct Client {
     app_id: String,
@@ -304,6 +255,34 @@ impl Client {
         )
         .await
         .map(|_| ())
+    }
+}
+
+impl BankFeed for Client {
+    fn id(&self) -> &'static str {
+        "enablebanking"
+    }
+    fn banks<'a>(&'a self, country: &'a str) -> Fut<'a, Vec<Bank>> {
+        Box::pin(Client::banks(self, country))
+    }
+    fn start_auth<'a>(&'a self, r: &'a AuthRequest<'a>) -> Fut<'a, String> {
+        Box::pin(Client::start_auth(
+            self,
+            r.bank,
+            r.country,
+            r.state,
+            r.redirect_url,
+            r.valid_until,
+        ))
+    }
+    fn create_session<'a>(&'a self, code: &'a str) -> Fut<'a, Session> {
+        Box::pin(Client::create_session(self, code))
+    }
+    fn transactions<'a>(&'a self, account_uid: &'a str, from: NaiveDate) -> Fut<'a, Vec<FeedTx>> {
+        Box::pin(Client::transactions(self, account_uid, from))
+    }
+    fn end_session<'a>(&'a self, session_id: &'a str) -> Fut<'a, ()> {
+        Box::pin(Client::end_session(self, session_id))
     }
 }
 
