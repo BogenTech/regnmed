@@ -291,7 +291,7 @@ impl Server {
             return Ok(if text.is_empty() {
                 "{}".to_string()
             } else {
-                text
+                with_kroner(text)
             });
         }
         // The status is part of the message: 404 means "no access or no
@@ -299,6 +299,57 @@ impl Server {
         // "you have access but not enough", 429 means slow down.
         bail!("{} {path} svarte {status}: {text}", v.method)
     }
+}
+
+/// Every integer `<x>_ore` field in an answer gets a sibling `<x>_kr`
+/// with the amount written out in kroner ("1 117,75"). Tried in prod: a
+/// model read `balance_ore: 111775` as 111 775 kr, and kept repeating it,
+/// though the prompt says amounts are øre. With the kroner beside it there
+/// is no division left to get wrong. The øre field stays: it is what a
+/// write takes. A body that is not JSON passes through untouched.
+fn with_kroner(text: String) -> String {
+    fn walk(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                let mut added = Vec::new();
+                for (k, v) in map.iter() {
+                    let (Some(stem), Some(ore)) = (k.strip_suffix("_ore"), v.as_i64()) else {
+                        continue;
+                    };
+                    let kr = format!("{stem}_kr");
+                    if !stem.is_empty() && !map.contains_key(&kr) {
+                        added.push((kr, json!(kroner(ore))));
+                    }
+                }
+                map.values_mut().for_each(walk);
+                map.extend(added);
+            }
+            Value::Array(items) => items.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    match serde_json::from_str::<Value>(&text) {
+        Ok(mut v) => {
+            walk(&mut v);
+            v.to_string()
+        }
+        Err(_) => text,
+    }
+}
+
+/// Øre as Norwegians write kroner: "1 117,75", "-80 471,00".
+fn kroner(ore: i64) -> String {
+    let abs = ore.unsigned_abs();
+    let whole = (abs / 100).to_string();
+    let mut grouped = String::new();
+    for (i, c) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i).is_multiple_of(3) {
+            grouped.push(' ');
+        }
+        grouped.push(c);
+    }
+    let sign = if ore < 0 { "-" } else { "" };
+    format!("{sign}{grouped},{:02}", abs % 100)
 }
 
 /// What a client shows the model before it has called anything. Short on
@@ -520,6 +571,41 @@ impl std::fmt::Display for ProtocolError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_ore_field_gets_its_kroner_beside_it() {
+        assert_eq!(super::kroner(111775), "1 117,75");
+        assert_eq!(super::kroner(-8047100), "-80 471,00");
+        assert_eq!(super::kroner(5), "0,05");
+        assert_eq!(super::kroner(0), "0,00");
+        let out: Value = serde_json::from_str(&super::with_kroner(
+            r#"{"accounts":[{"number":"1920","balance_ore":111775}],
+                "unmatched_bank":[{"amount_ore":-550,"suggestions":[{"amount_ore":-550}]}],
+                "ledger_at_statement_ore":null,"total_ore":1,"total_kr":"egen","ore":7}"#
+                .to_string(),
+        ))
+        .unwrap();
+        assert_eq!(out["accounts"][0]["balance_kr"], "1 117,75");
+        assert_eq!(
+            out["accounts"][0]["balance_ore"], 111775,
+            "øre stays: a write takes it"
+        );
+        assert_eq!(out["unmatched_bank"][0]["amount_kr"], "-5,50");
+        assert_eq!(
+            out["unmatched_bank"][0]["suggestions"][0]["amount_kr"],
+            "-5,50"
+        );
+        assert!(
+            out.get("ledger_at_statement_kr").is_none(),
+            "no amount, no kroner"
+        );
+        assert_eq!(
+            out["total_kr"], "egen",
+            "an existing field is never overwritten"
+        );
+        assert!(out.get("_kr").is_none());
+        assert_eq!(super::with_kroner("ikke json".into()), "ikke json");
+    }
+
     use super::*;
 
     fn args(json: Value) -> Map<String, Value> {
