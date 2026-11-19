@@ -64,6 +64,7 @@ pub async fn import_statement(
         "statement_id": summary.statement_id,
         "statement_ref": statement.statement_ref,
         "transactions": summary.transactions,
+        "skipped": summary.skipped,
         "auto_matched": summary.auto_matched,
     })))
 }

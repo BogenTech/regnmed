@@ -77,7 +77,9 @@
     try {
       const r = await api(base + "/bank/statements?account=" + account, { method: "POST", body: await file.text() });
       toast(
-        r.transactions + " bankposter lest inn, " + r.auto_matched + " koblet automatisk",
+        r.transactions + " bankposter lest inn, " +
+          (r.skipped ? r.skipped + " fantes fra før og ble hoppet over, " : "") +
+          r.auto_matched + " koblet automatisk",
         true,
       );
       refreshAccounts();

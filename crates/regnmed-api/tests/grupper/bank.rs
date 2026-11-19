@@ -380,6 +380,26 @@ async fn csv_export_imports_through_the_same_engine() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // An overlapping export (a different file, so a different ref): the fee
+    // already here is skipped, a second fee the same day is not, and the new
+    // day comes in.
+    let overlap = "Dato;Forklaring;Rentedato;Ut fra konto;Inn på konto\n\
+                   27.01.2026;Gebyr;27.01.2026;150,00;\n\
+                   27.01.2026;Gebyr;27.01.2026;150,00;\n\
+                   28.01.2026;Husleie;28.01.2026;9 000,00;\n";
+    let (status, body) = request(
+        &state,
+        "POST",
+        &format!("/companies/{company}/bank/statements?account=1920"),
+        &accountant,
+        Some(overlap.to_string()),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(body["transactions"], 2, "{body}");
+    assert_eq!(body["skipped"], 1, "{body}");
+
     // The reconciliation view carries the CSV lines (no closing balance
     // in a CSV — the view treats it as absent, not zero).
     let (status, recon) = request(
@@ -393,7 +413,14 @@ async fn csv_export_imports_through_the_same_engine() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(recon["matched_count"], 1);
-    assert_eq!(recon["unmatched_bank"][0]["amount_ore"], -150_00);
+    let mut unmatched: Vec<i64> = recon["unmatched_bank"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["amount_ore"].as_i64().unwrap())
+        .collect();
+    unmatched.sort();
+    assert_eq!(unmatched, vec![-9_000_00, -150_00, -150_00]);
     assert!(recon["statement_closing_ore"].is_null());
 
     // A spreadsheet without recognizable columns fails loudly.
