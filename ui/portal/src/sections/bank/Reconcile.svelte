@@ -288,7 +288,7 @@
             </div>
           </dl>
           {#if recon.statement_closing_ore == null}
-            <p class="text-sm opacity-70">CSV-filer fra nettbanken har ikke saldo, så differansen kan ikke regnes. camt.053 har den.</p>
+            <p class="text-sm opacity-70">Bankpostene er hentet uten saldo (fra bankkoblingen eller en CSV-fil), så differansen kan ikke regnes. En kontoutskrift i camt.053 har saldoen.</p>
           {/if}
         </div>
       </section>
