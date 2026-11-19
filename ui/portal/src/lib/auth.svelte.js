@@ -11,6 +11,8 @@
 // hente seg en ny — og en omlasting trenger ingen ny innlogging, siden
 // cookien fortsatt er der. Begrunnelsen står i docs/portal.md.
 
+import { erBankretur } from "./bankkobling.js";
+
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
   authed: false,
@@ -115,6 +117,9 @@ export async function login() {
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
   );
   sessionStorage.setItem("regnmed-pkce", JSON.stringify({ verifier, state }));
+  // Back from the bank but logged out: the callback lands on "/" and would
+  // drop the bank's code, so that one address rides along through login.
+  if (erBankretur(location.hash)) sessionStorage.setItem("regnmed-bankretur", location.hash);
   const url =
     session.config.issuer.replace(/\/$/, "") +
     "/authorize" +
@@ -153,6 +158,10 @@ export async function handleCallback() {
   if (!response.ok) throw new Error("innlogging feilet (" + response.status + ")");
   saveTokens(await response.json());
   history.replaceState(null, "", "/");
+  const bankretur = sessionStorage.getItem("regnmed-bankretur");
+  sessionStorage.removeItem("regnmed-bankretur");
+  // Setting the hash fires hashchange, which is what the router listens to.
+  if (bankretur) location.hash = bankretur;
 }
 
 export async function logout() {

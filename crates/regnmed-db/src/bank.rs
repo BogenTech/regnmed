@@ -46,6 +46,28 @@ pub async fn import_statement(
             .get("id");
 
     let mut tx = pool.begin().await?;
+    let statement_id =
+        insert_statement_in(&mut tx, company_id, account_id, statement, imported_by).await?;
+    tx.commit().await?;
+
+    let auto_matched = auto_match(pool, company_id, account_id, imported_by).await?;
+    Ok(ImportSummary {
+        statement_id,
+        transactions: statement.transactions.len(),
+        auto_matched,
+    })
+}
+
+/// The statement and its lines, in the caller's transaction. Used by the file
+/// import above and by the bank feed, which writes its dedupe rows in the
+/// same transaction (`bank_feed`).
+pub(crate) async fn insert_statement_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    company_id: Uuid,
+    account_id: Uuid,
+    statement: &Camt053Statement,
+    imported_by: &str,
+) -> Result<Uuid> {
     let statement_id = Uuid::now_v7();
     let inserted = sqlx::query(
         "insert into bank_statement (id, company_id, account_id, statement_ref, iban,
@@ -63,7 +85,7 @@ pub async fn import_statement(
     .bind(statement.opening_ore)
     .bind(statement.closing_ore)
     .bind(imported_by)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     ensure!(
         inserted.rows_affected() == 1,
@@ -83,17 +105,10 @@ pub async fn import_statement(
         .bind(transaction.amount_ore)
         .bind(&transaction.description)
         .bind(&transaction.reference)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
-    tx.commit().await?;
-
-    let auto_matched = auto_match(pool, company_id, account_id, imported_by).await?;
-    Ok(ImportSummary {
-        statement_id,
-        transactions: statement.transactions.len(),
-        auto_matched,
-    })
+    Ok(statement_id)
 }
 
 /// Runs the matching engine over everything currently unmatched on the
@@ -154,7 +169,7 @@ pub(crate) async fn match_entry(
     Ok(true)
 }
 
-async fn auto_match(
+pub(crate) async fn auto_match(
     pool: &PgPool,
     company_id: Uuid,
     account_id: Uuid,

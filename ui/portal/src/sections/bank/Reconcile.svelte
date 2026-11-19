@@ -11,8 +11,10 @@
   import { bekreft } from "../../lib/dialog.svelte.js";
   import { harRett } from "../../lib/me.svelte.js";
   import KontoVelger from "../../components/KontoVelger.svelte";
+  import Bankkobling from "./Bankkobling.svelte";
 
-  let { companyId } = $props();
+  // adresseQuery: the address's ?query, which carries the bank's return to Bankkobling.
+  let { companyId, adresseQuery } = $props();
 
   const base = $derived("/companies/" + companyId);
 
@@ -189,6 +191,16 @@
     <span>Selskapet har ingen bankkonto (19xx) i kontoplanen ennå. Legg den til under Hovedbok.</span>
   </div>
 {:else}
+  <Bankkobling
+    {companyId}
+    {accounts}
+    query={adresseQuery}
+    {canReconcile}
+    onSynced={() => {
+      refreshAccounts();
+      load();
+    }}
+  />
   <div class="flex flex-wrap items-end gap-3 mb-4">
     {#if accounts.length > 1}
       <label class="fieldset py-0">

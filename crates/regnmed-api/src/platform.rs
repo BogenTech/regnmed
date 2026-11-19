@@ -70,6 +70,11 @@ pub fn platform_router(state: AppState) -> Router<AppState> {
         .route("/platform/overview", get(overview))
         .route("/platform/subscriptions", get(list_subscriptions))
         .route("/platform/settings", get(get_settings).put(put_settings))
+        .route("/platform/companies/{company_id}/addons", post(grant_addon))
+        .route(
+            "/platform/companies/{company_id}/addons/{addon}/end",
+            post(end_addon),
+        )
         .route("/platform/plans", get(list_plans))
         .route("/platform/plans/{slug}", put(put_plan))
         .route("/platform/plans/{slug}/prices", post(post_price))
@@ -456,7 +461,27 @@ async fn company_detail(
         Status::Grace { blocked_from } => Some(blocked_from),
         Status::Blocked { since } => Some(since),
     };
+    // Add-ons: what the company has, and what exists that it does not have.
+    let held = regnmed_db::bank_feed::addon_rows(&state.pool, company_id).await?;
+    let addons: Vec<_> = regnmed_db::plans::list_plans_with(&state.pool, false)
+        .await?
+        .into_iter()
+        .filter(|p| p.kind == "addon")
+        .collect();
+    let addon_name = |slug: &str| {
+        addons
+            .iter()
+            .find(|p| p.slug == slug)
+            .map_or_else(|| slug.to_string(), |p| p.name.clone())
+    };
     Ok(Json(json!({
+        "tillegg": held.iter().map(|(addon, from, note)| json!({
+            "addon": addon, "navn": addon_name(addon), "fra": from.to_string(), "note": note,
+        })).collect::<Vec<_>>(),
+        "tillegg_mulige": addons.iter()
+            .filter(|p| !held.iter().any(|(a, _, _)| a == &p.slug))
+            .map(|p| json!({ "addon": p.slug, "navn": p.name }))
+            .collect::<Vec<_>>(),
         "settings": {
             "name": s.name,
             "orgnr": s.orgnumber,
@@ -833,4 +858,45 @@ async fn post_price(
             .to_string(),
         )),
     }
+}
+
+#[derive(Deserialize)]
+pub struct AddonRequest {
+    addon: String,
+    /// The agreement or pilot the grant rests on; stands on the row.
+    note: String,
+}
+
+/// Gives a company an add-on (tilleggstjeneste). Until buying one in the
+/// portal exists, this is the only way a company gets it — so it is
+/// systemadmin territory and carries a reference, like manual coverage.
+async fn grant_addon(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlatformContext>,
+    Path(company_id): Path<Uuid>,
+    Json(body): Json<AddonRequest>,
+) -> Result<StatusCode, ApiError> {
+    ctx.require_systemadmin()?;
+    regnmed_db::bank_feed::grant_addon(
+        &state.pool,
+        company_id,
+        body.addon.trim(),
+        &body.note,
+        &format!("plattform:{}", ctx.person_id),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(StatusCode::CREATED)
+}
+
+async fn end_addon(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<PlatformContext>,
+    Path((company_id, addon)): Path<(Uuid, String)>,
+) -> Result<StatusCode, ApiError> {
+    ctx.require_systemadmin()?;
+    regnmed_db::bank_feed::end_addon(&state.pool, company_id, &addon)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;
+    Ok(StatusCode::NO_CONTENT)
 }
