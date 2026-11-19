@@ -112,9 +112,19 @@ fn closing_rules() -> String {
      `prosjekt_sats_sett`) eller feltene (som `valid_from`), og skriv beløp i \
      kroner, ikke i øre.\n\
      Kan oppgaven ikke gjøres, svar med tekst som starter med AVVIST: og si hvorfor.\n\
-     Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven."
+     Du bokfører aldri noe du ikke har dekning for i et bilag eller i oppgaven.\n\
+     Du kaller ikke `oppgave_svar`: svaret ditt med merket ER rapporten, og står \
+     i rollen din at du skal kalle den, gjelder dette i stedet. Skriv svaret én \
+     gang, og spør bare om det som fortsatt mangler."
         .to_string()
 }
+
+/// The MCP tool an EXTERNAL agent reports with. Here the worker writes
+/// the report from the closing marker, so a model that also calls the
+/// tool posts every question twice (seen in test 2026-11-19, two
+/// `sporsmal` a second apart), and one that calls it with `utfort`
+/// closes the task before the worker's own report is refused.
+const WORKER_REPORTS: &str = "oppgave_svar";
 
 /// Reads the marker off the model's closing text, or `None` when it
 /// carries none.
@@ -210,7 +220,13 @@ pub async fn run_loop(
     task: &str,
     history: &[HistoryLine],
 ) -> Result<Outcome> {
-    let katalog = tool_catalogue(&server.offered_tools().await);
+    let offered: Vec<_> = server
+        .offered_tools()
+        .await
+        .into_iter()
+        .filter(|t| t.name != WORKER_REPORTS)
+        .collect();
+    let katalog = tool_catalogue(&offered);
     let mut messages = vec![
         Message::system(system_prompt(role_name, ekstra)),
         Message::bruker(task.to_string()),
@@ -265,6 +281,13 @@ pub async fn run_loop(
         // agent a 429 and spend a turn being told off.
         let tool_results = stream::iter(reply.calls.into_iter().map(|calls| async move {
             let out = match server.offered_tool(&calls.name).await {
+                Some(Ok(v)) if v.name == WORKER_REPORTS => regnmed_mcp::ToolOutput {
+                    text: "Ikke kall denne: avslutt i stedet med SPØRSMÅL:, FERDIG: eller \
+                           AVVIST: og svaret ditt. Det blir rapporten."
+                        .into(),
+                    failed: true,
+                    image: None,
+                },
                 Some(Ok(v)) => server.execute_tool(v, calls.arguments).await,
                 // An invented tool, or one outside the role, is the
                 // model's mistake, and it is told so in the same channel

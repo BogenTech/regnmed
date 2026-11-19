@@ -833,6 +833,18 @@ dispatcheren kortsluttet til å svare «ok» uten å kalle noe, sier den fra.
   må komme fra en operatør som kjørte `regnid add-client`. Det er samme hull
   §8 åpnet med, og det er nå i veien for den vanlige kunden.
 
+**Én rapport per tur (2026-11-19).** Workeren skriver rapporten fra
+sluttmerket (`SPØRSMÅL:`/`FERDIG:`/`AVVIST:`). Rollepromptene deles med
+eksterne agenter og ber dem kalle `oppgave_svar`, så en vertsagent gjorde
+begge deler: i testmiljøet sto annenhver tur med to `sporsmal` ett sekund
+fra hverandre, og agenten så seg selv si alt to ganger i historikken og
+gjentok det neste gang også. Workeren tilbyr derfor ikke `oppgave_svar`
+til modellen, avviser et kall til det med beskjed om å bruke merket, og
+avslutningsreglene (som står sist) sier at merket ER rapporten. Et kall
+med `utfort` ville dessuten lukket oppgaven før workerens egen rapport,
+som da ble nektet. Testet i
+`the_hosted_worker_reports_once_even_when_the_model_calls_the_report_tool`.
+
 ### 8.4 Hva den ekte leverandøren fant
 
 `crates/regnmed-api/tests/ekte_leverandor.rs` er en håndkjørt prøvebenk mot
