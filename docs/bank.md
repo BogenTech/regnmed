@@ -10,7 +10,7 @@ ajourhold, and unexplained differences are the classic audit finding.
 | --- | --- | --- |
 | 1. File upload | **camt.053** (ISO 20022) exported from any Norwegian nettbank — no bank agreement needed | **Implemented** |
 | 1b. CSV upload | Bank CSV exports, layout auto-detected from headers | **Implemented** |
-| 2. PSD2 / open banking | Account feeds through an aggregator (Enable Banking) — the add-on «Bankkobling» | **Built, not switched on** — see «Bankkobling» below; needs a registered application and, before customers, a contract |
+| 2. PSD2 / open banking | Account feeds through an aggregator (Enable Banking) — the add-on «Bankkobling» | **Built, on in RESTRICTED mode** (2026-11-19) — see «Bankkobling» below; the production app reaches only accounts we link ourselves (BogenTech's), so customers need a contract with Enable Banking first |
 | 3. Direct filutveksling | SFTP/ISO 20022 agreements per bank or via Mastercard Payment Services (also OCR-giro, issue #16) | Later — per-customer onboarding |
 
 All tiers feed the **same** reconciliation engine; only the transport
