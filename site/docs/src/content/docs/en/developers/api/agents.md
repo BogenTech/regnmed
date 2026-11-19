@@ -18,6 +18,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/chat/conversations/{conversation_id}` | — |
 | POST | `/chat/conversations/{conversation_id}/messages` | — |
 | POST | `/chat/conversations/{conversation_id}/read` | — |
+| POST | `/chat/read-all` | — |
 | GET | `/chat/stream` | — |
 | GET | `/chat/unread` | — |
 | GET | `/companies/{company_id}/agent/oppgaver` | `INTEGRASJON_LES` |

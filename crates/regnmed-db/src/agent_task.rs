@@ -33,6 +33,10 @@ pub struct Task {
     pub last_note: Option<String>,
     pub last_by: Option<String>,
     pub last_timestamp: Option<DateTime<Utc>>,
+    /// The message as it was written in Meldinger, when the task came
+    /// from a conversation: `message` is then the order the agent got,
+    /// wrapped with context. None for a task given over the API.
+    pub chat_text: Option<String>,
 }
 
 /// Records an order. The content is immutable once given (0064): an
@@ -144,12 +148,12 @@ pub async fn question_email(
     );
     match portal_base {
         Some(base) => text.push_str(&format!(
-            "Svar i samtalen under Administrasjon → Oppdrag og integrasjoner:\n\
+            "Oppgaven og spørsmålet står under Administrasjon → Oppdrag og integrasjoner:\n\
              {}/#/c/{company_id}/admin/oppdrag\n",
             base.trim_end_matches('/')
         )),
         None => text.push_str(
-            "Svar i samtalen under Administrasjon → Oppdrag og integrasjoner i regnmed.\n",
+            "Oppgaven og spørsmålet står under Administrasjon → Oppdrag og integrasjoner i regnmed.\n",
         ),
     }
     Ok(Some(crate::EmailPayload {
@@ -167,7 +171,9 @@ pub async fn question_email(
 const SELECT: &str = "select o.id, o.integration_id, i.navn as agent, o.melding, o.frist,
                              o.opprettet_av, o.created_at,
                              h.status, h.notat as siste_notat, h.av as siste_av,
-                             h.created_at as siste_tidspunkt
+                             h.created_at as siste_tidspunkt,
+                             (select m.body from chat_message m where m.task_id = o.id
+                              order by m.created_at, m.id limit 1) as chat_text
                       from agent_oppgave o
                       left join integration i on i.id = o.integration_id
                       left join lateral (
@@ -192,6 +198,7 @@ fn from_row(r: &sqlx::postgres::PgRow) -> Task {
         last_note: r.get("siste_notat"),
         last_by: r.get("siste_av"),
         last_timestamp: r.get("siste_tidspunkt"),
+        chat_text: r.get("chat_text"),
     }
 }
 

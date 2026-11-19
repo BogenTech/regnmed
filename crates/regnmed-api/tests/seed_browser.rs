@@ -434,8 +434,10 @@ async fn seed_browser_demo() {
     .await
     .unwrap();
 
-    // An agent waiting on the demo user, so the notification centre and
-    // the menu marker (docs/agent.md §8.5) have something to show.
+    // An agent with a question for the demo user, asked the way it is
+    // in real life: an order written in Meldinger, and the agent's question
+    // back in the same conversation (docs/meldinger.md) -- so the bell and
+    // the Meldinger badge have something to show.
     let agent = regnmed_db::grant_integration(
         &state.pool,
         company,
@@ -447,17 +449,32 @@ async fn seed_browser_demo() {
     )
     .await
     .unwrap();
-    let task = regnmed_db::agent_task::create_task(
+    let agent_person: Uuid = sqlx::query_scalar("select person_id from integration where id = $1")
+        .bind(agent)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let conversation = regnmed_db::chat::open(&state.pool, person, agent_person, Some(company))
+        .await
+        .unwrap();
+    let (_, task) = regnmed_db::chat::post(
         &state.pool,
-        company,
-        Some(agent),
+        conversation,
+        &regnmed_db::chat::Author {
+            person_id: person,
+            name: "Demo Bruker",
+        },
         "La oss sette en timesats til 1700 kr på prosjekt P1.",
-        None,
-        "Demo Bruker",
-        None,
+        &[],
+        &[company],
+        Some(&regnmed_db::chat::AgentTarget {
+            person_id: agent_person,
+            company_id: company,
+        }),
     )
     .await
     .unwrap();
+    let task = task.unwrap();
     regnmed_db::agent_task::answer(
         &state.pool,
         company,

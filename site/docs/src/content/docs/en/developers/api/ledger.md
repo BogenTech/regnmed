@@ -49,7 +49,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | `BILAG_LES` |
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | `VEDLEGG_SKRIV` |
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/reverse` | `BILAG_BOKFOR` |
-| GET | `/notifications` | `INTEGRASJON_LES` |
+| GET | `/notifications` | — |
 
 ## Further reading (Norwegian)
 

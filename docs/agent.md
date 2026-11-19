@@ -854,6 +854,12 @@ Kjente modeller som gjorde jobben: `openai/gpt-4o-mini`,
 
 ### 8.5 Samtalen (levert) — steg 4
 
+> **Flyttet 2026-11-19:** samtalen med en agent føres i Meldinger, og
+> samtaleboksen i oppgavekortet er fjernet (docs/meldinger.md §7.2).
+> Det som står under om sporet, `pagar` som svar og at tråden mates
+> tilbake til modellen gjelder uendret; boblene og «svaret sendes fra
+> kortet» er historikk.
+
 Chat-flaten er en VISNING av `agent_oppgave_hendelse`, ikke en ny
 datamodell. Tråden fantes fra #103, fordi `sporsmal` med vilje ikke er
 terminal i 0064-vakten. Derfor finnes det ingen «slett melding» her:
@@ -922,7 +928,7 @@ oppgave som utført (nå sendes den tilbake for å merkes, §8.4, #268).
 #### Et spørsmål varsles på e-post (2026-11-18)
 
 Når en agent svarer `sporsmal`, får den som GA oppgaven en e-post med
-oppgaven, spørsmålet og en lenke til samtalen. Før ventet spørsmålet til
+oppgaven, spørsmålet og en lenke til oppgavekortet. Før ventet spørsmålet til
 noen tilfeldigvis åpnet kortet — i prod sto det der uten at noen visste det.
 
 - **Til hvem:** personen som ga oppgaven. `opprettet_av` er bare et
@@ -959,30 +965,13 @@ Vakten er `an_agents_question_is_mailed_to_whoever_gave_the_task`
 spørsmål, oppgave og lenke, `utfort` sender ingen ny, en oppgave uten
 person varsler ingen, og en person uten tilgang varsles ikke. Sett feile med varslingen koblet fra.
 
-#### Varslingssenteret og markøren (2026-11-18)
+#### Varslingssenteret (2026-11-18, lagt om 2026-11-19)
 
-Ved siden av profilen står en bjelle med antallet spørsmål fra agenter som
-venter på DEG, på tvers av selskapene du når; listen lenker rett til
-samtalen. Ved innlogging sier en melding én gang hva som venter.
-Administrasjon i menyen og fanen «Oppdrag og integrasjoner» bærer det samme
-tallet for selskapet du står i.
-
-- **Utledet, aldri lagret.** `GET /notifications` lister oppgaver med
-  nyeste status `sporsmal`; når noen svarer, forsvinner varselet. Derfor
-  finnes ingen lest/ulest-tilstand å holde i takt, og bjella, markøren og
-  oppgavelisten kan ikke være uenige.
-- **Samme vakt som køen.** Hvert selskap sjekkes med `INTEGRASJON_LES`, så
-  senteret viser aldri noe personen ikke kan åpne. En maskin får en tom
-  liste.
-- **Hentes** ved innlogging, ved hver hendelse i meldingsstrømmen, hvert
-  minutt mens fanen er synlig, og med en gang oppgavelisten endrer seg.
-
-Vakten er `the_notification_centre_lists_waiting_agent_questions`
-(`integrasjon.rs`): spørsmålet listes for admin, ikke for en ansatt uten
-retten (sett feile med vakten fjernet), ikke for maskinen, og er borte
-når det er besvart. Verifisert i nettleseren mot en lokal API: bjella,
-menymarkøren, fanemarkøren og velkomstmeldingen, og alle tre tømmes når
-spørsmålet besvares.
+Bjella ved siden av profilen listet først oppgaver med nyeste status
+`sporsmal` og lenket til oppgavekortet. Den lister nå **uleste meldinger**
+og lenker til samtalen i Meldinger, der agentens spørsmål alt står som en
+melding fra agenten; oppgavekortet er sporet og har ingen samtaleboks.
+Begrunnelse og regler: docs/meldinger.md §7.2.
 
 #### Fortsatt ikke gjort
 

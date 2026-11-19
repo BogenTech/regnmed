@@ -37,6 +37,7 @@ pub async fn list(
         "integrasjoner": rows.iter().map(|g| json!({
             "grant_id": g.grant_id,
             "integration_id": g.integration_id,
+            "person_id": g.person_id,
             "client_id": g.client_id,
             "navn": g.name,
             "kontakt": g.contact,

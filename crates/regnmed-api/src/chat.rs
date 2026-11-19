@@ -414,6 +414,42 @@ pub async fn read(
     Ok(Json(json!({ "ok": true })))
 }
 
+/// The bell's «Marker alle som lest»: every conversation, in one go.
+pub async fn read_all(
+    State(state): State<AppState>,
+    person: AuthPerson,
+) -> Result<Json<Value>, ApiError> {
+    db::mark_all_read(&state.pool, person.person_id).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// The portal's notification centre: what waits for the caller
+/// (docs/meldinger.md §7.2). Today that is unread messages, one item per
+/// conversation -- an agent's question is a message from the agent, like
+/// a colleague's would be. `type` leaves room for other things that need
+/// a person's attention.
+///
+/// Derived from the read marks, never stored on its own: reading the
+/// conversation clears its item, so the bell, the menu badge and the
+/// conversation list cannot disagree.
+pub async fn notifications(
+    State(state): State<AppState>,
+    person: AuthPerson,
+) -> Result<Json<Value>, ApiError> {
+    let rows = reachable(&state, person.person_id).await?;
+    Ok(Json(json!({
+        "varsler": rows.iter().filter(|(c, _)| c.unread > 0).map(|(c, other)| json!({
+            "type": "melding",
+            "conversation_id": c.id,
+            "fra": other.name,
+            "agent": other.agent,
+            "tekst": c.last_text,
+            "tidspunkt": c.last_at.map(|t| t.to_rfc3339()),
+            "uleste": c.unread,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
 pub async fn unread(
     State(state): State<AppState>,
     person: AuthPerson,

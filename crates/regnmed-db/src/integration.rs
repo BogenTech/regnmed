@@ -356,6 +356,8 @@ pub struct GrantRow {
     /// needs a key that is unique per ROW.
     pub grant_id: Uuid,
     pub integration_id: Uuid,
+    /// The agent as a person: who a conversation with it is opened with.
+    pub person_id: Uuid,
     pub client_id: String,
     pub name: String,
     pub contact: Option<String>,
@@ -382,7 +384,7 @@ pub struct GrantRow {
 
 pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<GrantRow>> {
     let rows = sqlx::query(
-        "select g.id as grant_id, i.id as integration_id, p.oidc_sub as client_id,
+        "select g.id as grant_id, i.id as integration_id, i.person_id, p.oidc_sub as client_id,
                 i.navn, i.kontakt,
                 i.rate_limit_min, i.avatar_farge, i.avatar_ikon, i.systemprompt,
                 g.access, g.valid_from, g.valid_to, g.created_by, g.revoked_by,
@@ -410,6 +412,7 @@ pub async fn list_integrations(pool: &PgPool, company_id: Uuid) -> Result<Vec<Gr
         .map(|r| GrantRow {
             grant_id: r.get("grant_id"),
             integration_id: r.get("integration_id"),
+            person_id: r.get("person_id"),
             client_id: r.get("client_id"),
             name: r.get("navn"),
             contact: r.get("kontakt"),
