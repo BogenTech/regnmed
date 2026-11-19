@@ -1,30 +1,30 @@
 <script>
-  // Oppgaver til en agent (#103). Bestillingen er uforanderlig når den
-  // er gitt, og svarene er et innsettings-bart spor — derfor finnes det
-  // ingen «rediger»-knapp her, og det er med vilje: en endret oppgave
-  // ville gjort det umulig å se etterpå hva agenten faktisk ble bedt om.
-  import { tick } from "svelte";
-  import { post } from "../../lib/api.js";
+  // Agentenes oppgaver (#103): SPORET, ikke samtalen. En agent får en
+  // oppgave ved at noen skriver til den i Meldinger, som til en kollega,
+  // og svarer i samme samtale (docs/meldinger.md) — her står hva hver
+  // agent er bedt om og hvor det endte, for den som skal se etter.
+  // Bestillingen er uforanderlig og svarene et innsettings-bart spor, så
+  // det finnes ingen «rediger»-knapp, og det er med vilje.
+  import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft } from "../../lib/dialog.svelte.js";
   import { formatDate, formatTime } from "../../lib/format.js";
+  import { renderMarkdown } from "../../lib/markdown.js";
   import Card from "../../components/Card.svelte";
-  import Samtale from "./Samtale.svelte";
+  import Agentansikt from "../../components/Agentansikt.svelte";
 
-  // kanGi: INTEGRASJON_ADMIN — giving, withdrawing and replying to a task
-  // all take it (regnmed-api::agent_task); without it the card is read-only.
+  // kanGi: INTEGRASJON_ADMIN — withdrawing a task takes it
+  // (regnmed-api::agent_task); without it the card is read-only.
   let { companyId, kanGi, integrasjoner, oppgaver, onDone } = $props();
 
-  let melding = $state("");
-  // Hvilken oppgave som er åpnet i samtalevisningen. Null = ingen.
-  let apnet = $state(null);
-  let mottaker = $state("");
-  let frist = $state("");
-
   const aktive = $derived(integrasjoner.filter((i) => i.aktiv));
-  const apne = $derived(oppgaver.filter((o) => !o.avsluttet));
+  const LUKKEDE_VIST = 10;
   const lukkede = $derived(oppgaver.filter((o) => o.avsluttet));
-  const valgt = $derived(oppgaver.find((o) => o.oppgave_id === apnet) || null);
+  // What is still in play first, then the newest of what is done.
+  const rader = $derived([
+    ...oppgaver.filter((o) => !o.avsluttet),
+    ...lukkede.slice(0, LUKKEDE_VIST),
+  ]);
 
   // Spørsmål venter på et menneske, så det er den statusen som skal
   // være lettest å se.
@@ -43,29 +43,32 @@
     avvist: "avvist",
   };
 
-  const LUKKEDE_VIST = 10;
+  // The trail of the one task that is opened. Null = none / loading.
+  let apnet = $state(null);
+  let spor = $state(null);
 
-  // Opening a conversation shows it, under the table it belongs to.
-  async function visSamtale(o) {
+  async function visSpor(o) {
+    spor = null;
     apnet = apnet === o.oppgave_id ? null : o.oppgave_id;
     if (!apnet) return;
-    await tick();
-    document.getElementById("samtale")?.scrollIntoView({ block: "nearest" });
+    const id = apnet;
+    try {
+      const svar = await api("/companies/" + companyId + "/agent/oppgaver/" + id);
+      if (id === apnet) spor = svar.historikk;
+    } catch (error) {
+      toast(error.message, false);
+    }
   }
 
-  async function gi(event) {
-    event.preventDefault();
-    if (!melding.trim()) return;
+  // The conversation is between the reader and the agent; opening it is
+  // idempotent, so this is also how an existing one is found.
+  async function skrivTil(i) {
     try {
-      await post("/companies/" + companyId + "/agent/oppgaver", {
-        melding: melding.trim(),
-        integration_id: mottaker || null,
-        frist: frist || null,
+      const opened = await post("/chat/conversations", {
+        person_id: i.person_id,
+        company_id: companyId,
       });
-      toast("Oppgaven er gitt", true);
-      melding = "";
-      frist = "";
-      onDone();
+      location.hash = "#/c/" + companyId + "/meldinger/" + opened.conversation_id;
     } catch (error) {
       toast(error.message, false);
     }
@@ -91,122 +94,120 @@
   }
 </script>
 
-<Card title="Oppgaver til en agent">
-  <p class="text-sm opacity-70 mb-2">
-    Skriv hva agenten skal gjøre. Den henter køen når den arbeider, og svarer tilbake her — også
-    når den trenger en avgjørelse av deg framfor å gjette. Et svar kan ikke trekkes tilbake, så
-    sporet viser hele veien fra bestilling til resultat.
+<Card title="Agentenes oppgaver">
+  <p class="text-sm opacity-70 mb-3">
+    Du gir en agent en oppgave ved å skrive til den i Meldinger, som til en kollega. Svar og
+    spørsmål kommer i samme samtale. Her står sporet: hva hver agent er bedt om, og hvor det endte.
   </p>
 
-  {#if apne.length}
-    <table class="table table-sm mb-3">
-      <thead>
-        <tr>
-          <th>Oppgave</th><th class="hidden sm:table-cell">Agent</th><th>Status</th>
-          <th class="hidden md:table-cell">Siste svar</th><th><span class="sr-only">Handlinger</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each apne as o (o.oppgave_id)}
-          <tr>
-            <td>
-              {o.melding}
-              {#if o.frist}<br /><span class="text-xs opacity-60">frist {formatDate(o.frist)}</span>{/if}
-            </td>
-            <td class="hidden sm:table-cell">{o.agent || "enhver agent"}</td>
-            <td>
-              <span class="badge badge-sm {MERKE[o.status] || 'badge-ghost'}">
-                {TEKST[o.status] || o.status}
-              </span>
-            </td>
-            <td class="hidden md:table-cell text-xs opacity-70">
-              {#if o.siste_notat}
-                {o.siste_notat}<br />
-                <span class="opacity-60">{o.siste_av}, {formatTime(o.siste_tidspunkt)}</span>
-              {/if}
-            </td>
-            <td class="text-right">
-              <button
-                class="btn btn-xs {apnet === o.oppgave_id ? '' : 'btn-ghost'}"
-                aria-expanded={apnet === o.oppgave_id}
-                aria-controls="samtale"
-                onclick={() => visSamtale(o)}
-              >
-                Samtale
-              </button>
-              {#if kanGi}
-                <button class="btn btn-xs btn-ghost" onclick={() => avslutt(o)}>Trekk tilbake</button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p class="text-sm opacity-70 mb-3">Ingen åpne oppgaver.</p>
-  {/if}
-
-  {#if valgt}
-    <div class="mb-3" id="samtale">
-      <Samtale
-        {companyId}
-        kanSvare={kanGi}
-        oppgave={valgt}
-        agent={integrasjoner.find((i) => i.navn === valgt.agent) || null}
-        onDone={onDone}
-      />
-    </div>
-  {/if}
-
-  {#if !kanGi}
-    <!-- Nothing to add: reading the queue is all this person may do. -->
-  {:else if !aktive.length}
-    <p class="text-sm">
-      Selskapet har ingen aktiv agent å gi oppgaver til.
-      <a class="link" href={"#/c/" + companyId + "/admin/brukere"}>Legg til en agent under Brukere og roller</a>.
-    </p>
-  {:else}
-  <form class="flex gap-2 items-end flex-wrap" onsubmit={gi}>
-    <label class="form-control w-full sm:w-80">
-      <span class="label-text text-xs">Oppgave</span>
-      <input
-        class="input input-sm w-full"
-        placeholder="Importer regnskapet fra Conta og avstem mot årsregnskapet"
-        bind:value={melding}
-      />
-    </label>
-    <label class="form-control">
-      <span class="label-text text-xs">Agent</span>
-      <select class="select select-sm" bind:value={mottaker}>
-        <option value="">enhver agent</option>
-        {#each aktive as i (i.integration_id)}
-          <option value={i.integration_id}>{i.navn}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="form-control">
-      <span class="label-text text-xs">Frist</span>
-      <input class="input input-sm" type="date" bind:value={frist} />
-    </label>
-    <button class="btn btn-sm" disabled={!melding.trim()}>Gi oppgaven</button>
-  </form>
-  {/if}
-
-  {#if lukkede.length}
-    <h3 class="font-semibold text-sm mt-3 mb-1">Avsluttede</h3>
-    {#each lukkede.slice(0, LUKKEDE_VIST) as o (o.oppgave_id)}
-      <div class="text-xs opacity-70 py-0.5">
-        <span class="badge badge-xs {MERKE[o.status] || 'badge-ghost'}">{TEKST[o.status] || o.status}</span>
-        <button class="link" aria-controls="samtale" onclick={() => visSamtale(o)}>
-          {o.melding}
+  {#if aktive.length}
+    <div class="flex flex-wrap gap-2 mb-4">
+      {#each aktive as i (i.grant_id)}
+        <button class="btn btn-sm gap-2" onclick={() => skrivTil(i)}>
+          <Agentansikt navn={i.navn} farge={i.avatar_farge} ikon={i.avatar_ikon} storrelse="w-6" />
+          Skriv til {i.navn}
         </button>
-        {#if o.siste_notat}· {o.siste_notat}{/if}
-      </div>
-    {/each}
+      {/each}
+    </div>
+  {:else}
+    <p class="text-sm mb-3">
+      Selskapet har ingen aktiv agent.
+      <a class="link" href={"#/c/" + companyId + "/admin/brukere"}>Legg til en under Brukere og roller</a>.
+    </p>
+  {/if}
+
+  {#if rader.length}
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Gitt</th>
+            <th class="hidden sm:table-cell">Agent</th>
+            <th>Bestilling</th>
+            <th>Status</th>
+            <th class="hidden lg:table-cell">Siste svar</th>
+            <th><span class="sr-only">Handlinger</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each rader as o (o.oppgave_id)}
+            <tr class="align-top">
+              <td class="whitespace-nowrap text-xs">
+                {formatTime(o.opprettet)}<br />
+                <span class="opacity-60">{o.opprettet_av}</span>
+              </td>
+              <td class="hidden sm:table-cell">{o.agent || "enhver agent"}</td>
+              <td class="max-w-md">
+                <!-- From a conversation: what the person wrote, not the
+                     order wrapped around it (that is in the trail). -->
+                <span class="line-clamp-2">{o.fra_melding || o.melding}</span>
+                {#if o.frist}<span class="text-xs opacity-60">frist {formatDate(o.frist)}</span>{/if}
+              </td>
+              <td>
+                <span class="badge badge-sm {MERKE[o.status] || 'badge-ghost'}">
+                  {TEKST[o.status] || o.status}
+                </span>
+              </td>
+              <td class="hidden lg:table-cell max-w-sm text-xs opacity-70">
+                {#if o.siste_notat}
+                  <span class="line-clamp-2">{o.siste_notat}</span>
+                  <span class="opacity-60">{o.siste_av}, {formatTime(o.siste_tidspunkt)}</span>
+                {/if}
+              </td>
+              <td class="text-right whitespace-nowrap">
+                <button
+                  class="btn btn-xs {apnet === o.oppgave_id ? '' : 'btn-ghost'}"
+                  aria-expanded={apnet === o.oppgave_id}
+                  onclick={() => visSpor(o)}
+                >
+                  Spor
+                </button>
+                {#if kanGi && !o.avsluttet}
+                  <button class="btn btn-xs btn-ghost" onclick={() => avslutt(o)}>Trekk tilbake</button>
+                {/if}
+              </td>
+            </tr>
+            {#if apnet === o.oppgave_id}
+              <tr>
+                <td colspan="6" class="bg-base-200">
+                  {#if !spor}
+                    <span class="loading loading-spinner loading-sm"></span>
+                  {:else}
+                    <ol class="flex flex-col gap-2 text-sm">
+                      {#each spor as h, n (n)}
+                        <li>
+                          <span class="text-xs opacity-60">{formatTime(h.tidspunkt)} · {h.av}</span>
+                          <span class="badge badge-xs {MERKE[h.status] || 'badge-ghost'}">
+                            {TEKST[h.status] || h.status}
+                          </span>
+                          {#if h.notat}
+                            <div class="break-words [&_p]:my-1 [&_ul]:list-disc [&_ul]:ml-5 [&_ol]:list-decimal [&_ol]:ml-5">
+                              {@html renderMarkdown(h.notat)}
+                            </div>
+                          {/if}
+                        </li>
+                      {:else}
+                        <li class="opacity-70">Agenten har ikke svart ennå.</li>
+                      {/each}
+                    </ol>
+                    <details class="mt-2 text-xs">
+                      <summary class="cursor-pointer opacity-70">Bestillingen slik agenten fikk den</summary>
+                      <p class="whitespace-pre-wrap mt-1">{o.melding}</p>
+                    </details>
+                  {/if}
+                </td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    </div>
     {#if lukkede.length > LUKKEDE_VIST}
       <p class="text-xs opacity-60 mt-1">
         Viser de {LUKKEDE_VIST} siste av {lukkede.length} avsluttede oppgaver.
       </p>
     {/if}
+  {:else}
+    <p class="text-sm opacity-70">Ingen oppgaver ennå.</p>
   {/if}
 </Card>

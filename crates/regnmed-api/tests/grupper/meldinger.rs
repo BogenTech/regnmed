@@ -362,6 +362,32 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     assert_eq!(thread["attach_to"], json!([company]));
     let (_, unread) = call(&state, "GET", "/chat/unread", &eva.token, None).await;
     assert_eq!(unread["unread"], 1, "{unread}");
+    // The bell: the agent's question is a message from the agent, pointing
+    // at the conversation -- for Eva, and for nobody else.
+    let (_, bell) = call(&state, "GET", "/notifications", &eva.token, None).await;
+    assert_eq!(bell["varsler"].as_array().unwrap().len(), 1, "{bell}");
+    assert_eq!(bell["varsler"][0]["type"], "melding");
+    assert_eq!(bell["varsler"][0]["conversation_id"], with_agent.as_str());
+    assert_eq!(bell["varsler"][0]["fra"], n("Bokføreren"));
+    assert_eq!(
+        bell["varsler"][0]["tekst"],
+        "Bevertning eller kontorrekvisita?"
+    );
+    let (_, bell) = call(&state, "GET", "/notifications", &anne.token, None).await;
+    assert_eq!(bell["varsler"], json!([]), "someone else's conversation");
+    // The task list shows what Eva wrote, not the wrapped order.
+    let (_, tasks) = call(
+        &state,
+        "GET",
+        &format!("/companies/{company}/agent/oppgaver"),
+        &anne.token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        tasks["oppgaver"][0]["fra_melding"], "Kan du bokføre denne for meg?",
+        "{tasks}"
+    );
 
     // Her reply continues the SAME task.
     let (_, posted) = call(
@@ -375,6 +401,12 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     assert_eq!(posted["task_id"], task_id.as_str(), "{posted}");
     let (_, unread) = call(&state, "GET", "/chat/unread", &eva.token, None).await;
     assert_eq!(unread["unread"], 0, "writing marks the conversation read");
+    let (_, bell) = call(&state, "GET", "/notifications", &eva.token, None).await;
+    assert_eq!(
+        bell["varsler"],
+        json!([]),
+        "a read conversation rings no bell"
+    );
 
     // ---- Client and byrå contact talk; the newest conversation is on top ----
     let (_, opened) = call(
@@ -418,6 +450,13 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     );
     let (_, list) = call(&state, "GET", "/chat/conversations", &kari.token, None).await;
     assert_eq!(list["conversations"][0]["unread"], 1, "{list}");
+    // «Marker alle som lest» empties the bell without opening anything.
+    let (_, bell) = call(&state, "GET", "/notifications", &kari.token, None).await;
+    assert_eq!(bell["varsler"][0]["uleste"], 1, "{bell}");
+    let (status, _) = call(&state, "POST", "/chat/read-all", &kari.token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, bell) = call(&state, "GET", "/notifications", &kari.token, None).await;
+    assert_eq!(bell["varsler"], json!([]), "{bell}");
 
     // An outsider cannot read it, even knowing the id.
     let (status, _) = call(

@@ -172,7 +172,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/health", get(health))
         .route("/me", get(me))
-        .route("/notifications", get(agent_task::notifications))
+        .route("/notifications", get(chat::notifications))
         // Public by design: root hashes only — every independent copy of
         // a root is one more witness a database rewrite cannot reach.
         .route("/anchors", get(anchor::list_anchors))
@@ -267,6 +267,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(chat::read),
         )
         .route("/chat/unread", get(chat::unread))
+        .route("/chat/read-all", axum::routing::post(chat::read_all))
         .route("/chat/stream", get(chat::stream))
         .route("/firms/{firm_id}/contacts", get(chat::firm_contacts))
         .route(

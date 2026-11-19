@@ -6,17 +6,51 @@
 // not EventSource, because EventSource cannot send the Authorization
 // header.
 
-import { api, request } from "./api.js";
+import { api, post, request } from "./api.js";
+import { toast } from "./toast.svelte.js";
 
-export const chat = $state({ tick: 0, unread: 0 });
+// `varsler` is the bell's list (docs/meldinger.md §7.2): one item per
+// conversation with unread messages. Derived on the server from the read
+// marks, so the bell, the menu badge and the conversation list cannot
+// disagree -- `unread` is the same list, summed.
+export const chat = $state({ tick: 0, unread: 0, varsler: [] });
 
 let abort = null;
+let hilst = false;
 
 export async function refreshUnread() {
   try {
-    chat.unread = (await api("/chat/unread")).unread;
+    // `?? []`: a reply without the list (an older server) must not reach
+    // a template as undefined -- an uncaught throw there freezes the page.
+    chat.varsler = (await api("/notifications"))?.varsler ?? [];
+    chat.unread = chat.varsler.reduce((sum, v) => sum + (v.uleste || 0), 0);
   } catch {
     // The badge is a convenience; the conversation view says what is wrong.
+    return;
+  }
+  // Once per sign-in: say what is waiting, without making anyone look.
+  if (!hilst) {
+    hilst = true;
+    if (chat.unread > 0) {
+      toast(
+        chat.unread === 1
+          ? "Du har én ulest melding. Se bjella øverst."
+          : "Du har " + chat.unread + " uleste meldinger. Se bjella øverst.",
+        true,
+      );
+    }
+  }
+}
+
+/** The bell's «Marker alle som lest». The tick makes an open Meldinger
+ * reload its list, so its badges go with the bell's. */
+export async function markAllRead() {
+  try {
+    await post("/chat/read-all", {});
+    chat.tick += 1;
+    await refreshUnread();
+  } catch (error) {
+    toast(error.message, false);
   }
 }
 

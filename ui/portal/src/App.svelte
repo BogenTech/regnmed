@@ -6,8 +6,7 @@
   import { toast } from "./lib/toast.svelte.js";
   import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
-  import { chat, connect, disconnect } from "./lib/chat.svelte.js";
-  import { hentVarsler } from "./lib/varsler.svelte.js";
+  import { connect, disconnect, refreshUnread } from "./lib/chat.svelte.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
   import Shell from "./components/Shell.svelte";
@@ -107,15 +106,13 @@
     if (me.loaded) preloadWhenIdle([...Object.values(SECTIONS), Byra, Plattform, Meldinger]);
   });
 
-  // The notification centre: at sign-in, on every chat event, and once a
-  // minute while the tab is visible (an agent's question comes from a
-  // worker, not from this page).
+  // The bell's backstop: the live stream refreshes it on every message,
+  // and this covers an event lost on the way, once a minute while the tab
+  // is visible.
   $effect(() => {
     if (!me.loaded || !session.authed) return;
-    chat.tick;
-    hentVarsler();
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") hentVarsler();
+      if (document.visibilityState === "visible") refreshUnread();
     }, 60_000);
     return () => clearInterval(timer);
   });

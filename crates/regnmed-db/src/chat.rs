@@ -778,6 +778,15 @@ pub async fn mark_read(
     Ok(())
 }
 
+/// Everything is read: the bell's «Marker alle som lest».
+pub async fn mark_all_read(pool: &PgPool, me: Uuid) -> Result<()> {
+    sqlx::query("update chat_participant set read_until = now() where person_id = $1")
+        .bind(me)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// The byrå's chosen contacts per engagement: `engagement_id -> persons`.
 pub async fn firm_contacts(pool: &PgPool, firm: Uuid) -> Result<HashMap<Uuid, Vec<Uuid>>> {
     let rows: Vec<(Uuid, Vec<Uuid>)> = sqlx::query_as(
