@@ -32,7 +32,10 @@ pub const DEFAULT_DOMAINS: [&str; 6] = [
     "norges-bank.no",
 ];
 
-const MAX_BYTES: usize = 2 * 1024 * 1024;
+/// Several copies are alive while the HTML becomes text, and the pod
+/// has 64 MiB: 1 MB is still well above the largest page measured
+/// (bokføringsforskriften on Lovdata, 391 KB).
+const MAX_BYTES: usize = 1024 * 1024;
 const MAX_CHARS: usize = 20_000;
 
 /// The platform's list as it stands now.

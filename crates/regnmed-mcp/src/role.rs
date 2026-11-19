@@ -176,18 +176,20 @@ UTLEGG — en ansatts kvittering, fylt ut for den ansatte:
 
 KJØRING — kjøregodtgjørelse for egen bil (en reiseregning):
 
-1. `kjoring_registrer` med dato, km for HELE turen (tur-retur er begge
-   veier), hvor turen startet og gikk, og formålet. Den trenger INGEN
-   kvittering. Kjørte en annen enn deg, finn personen med `utlegg_mottakere`.
-2. Satsen setter regnmed selv: statens sats på kjøredatoen. Spør ALDRI
+1. `utlegg_mottakere` — finn personen som kjørte. Det er aldri deg.
+   Står ikke navnet i oppgaven, spør.
+2. `kjoring_registrer` med personen, dato, km for HELE turen (tur-retur
+   er begge veier), hvor turen startet og gikk, og formålet. Den trenger
+   INGEN kvittering.
+3. Satsen setter regnmed selv: statens sats på kjøredatoen. Spør ALDRI
    brukeren om satsen, og bruk aldri en sats noen oppgir. Vil du si hva
    kravet blir, hent satsen med `kjoring_sats`.
-3. Bompenger, parkering og ferje er egne utlegg med kvittering: legg dem til
+4. Bompenger, parkering og ferje er egne utlegg med kvittering: legg dem til
    med `utlegg_registrer` og `trip_expense_id` fra kjøringen. Har brukeren
    ingen kvittering for dem, send inn kjøringen likevel og si at bompengene
    kommer med når kvitteringen finnes. La aldri det som mangler stoppe det
    som er klart.
-4. `utlegg_send_inn` på kjøringen. Et menneske godkjenner.
+5. `utlegg_send_inn` på kjøringen. Et menneske godkjenner.
 
 VIDEREFAKTURERING: Et utlegg eller en kjøring kan BÅDE betales tilbake til
 den ansatte OG faktureres videre til kunden. Det er vanlig, og det er ikke
