@@ -258,6 +258,22 @@ async fn every_tool_in_the_table_still_matches_the_api() {
         .as_str()
         .unwrap()
         .to_string();
+    // The search takes KRONER (its description says so), the answer is øre.
+    let (failed, text) = calls(
+        &server,
+        "bank_poster_sok",
+        json!({"account": "1920", "q": "200"}),
+    )
+    .await;
+    assert!(!failed, "{text}");
+    assert!(
+        serde_json::from_str::<Value>(&text).unwrap()["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["entry_id"] == entry.as_str()),
+        "200 kr fant ikke bilagslinjen på -20000 øre: {text}"
+    );
     let (failed, text) = calls(
         &server,
         "bank_koble",

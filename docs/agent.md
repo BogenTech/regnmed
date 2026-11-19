@@ -266,6 +266,17 @@ på kontoen hoppes over (bank.md), så et nytt forsøk etter et tapt svar
 gir ingen kopi. Bankene begrenser antall hentinger per døgn, så
 `bank_hent` sier at den ikke skal kalles i løkke.
 
+**Prøvd i prod 2026-11-19**, med en lese-oppgave til den hostede
+agenten: den kalte bare de tre verktøyene den fikk, skrev ingenting, og
+tallene stemte — unntatt saldoen. `balance_ore: 111775` ble rapportert
+som 111 775 kr, ikke 1 117,75 kr. Grunnregel 4 sa at beløp er øre, men
+var skrevet om det agenten SKRIVER; den gjelder nå uttrykkelig også det
+den leser. `bank_kontoer` sier enheten med et eksempel, og
+`bank_poster_sok` sier at søkebeløpet er KRONER (API-et tolker `q` som
+kroner, som søkefeltet i portalen) — det eneste stedet en agent skal
+skrive kroner til systemet. Integrasjonstesten fester at «200» finner en
+linje på −20000 øre, og at «-20000» ikke gjør det.
+
 ### Filer går som sti, ikke som base64
 
 `bilag_last_opp`, `saft_analyser`, `saft_importer` og de to
