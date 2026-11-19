@@ -62,8 +62,8 @@ sertifikat — da uten mellomledd og uten pris per konto.
 **Tre regler, alle testet og sett feile:**
 
 1. *Uten konfigurert leverandør finnes ikke funksjonen.* `ENABLEBANKING_APP_ID`
-   og `ENABLEBANKING_KEY_FILE` (begge eller ingen; nøkkelen er en fil utenfor
-   repo og image, docs/secrets.md). Uten dem svarer status `konfigurert: false`,
+   sammen med `ENABLEBANKING_KEY` (PEM-tekst) eller `ENABLEBANKING_KEY_FILE` (alt
+   eller ingenting; nøkkelen ligger utenfor repo og image, docs/secrets.md). Uten dem svarer status `konfigurert: false`,
    portalen viser ikke kortet, og hvert kall nekter.
 2. *Uten tillegget kan selskapet verken koble til eller hente.* `company_addon`
    er dekningsrader per tillegg (som `abonnement`): tildeling er en innsetting,
@@ -114,10 +114,20 @@ egne ord går til loggen, aldri til portalen) og neste henting prøver igjen.
 konto, feil valuta, tapt kappløp), økten en fornyelse erstatter, og økten bak
 «Koble fra» lukkes hos leverandøren.
 
-**Ikke bygget:** nattlig henting (bare «Hent nå» i portalen; en planlagt jobb
-kommer når en applikasjon er registrert og nøkkelen ligger i clusteret), varsel
-før samtykket utløper, kjøp og fakturering av tillegget, og saldo fra banken
-(utdraget har ingen inn-/utgående saldo, som CSV). **Kjente begrensninger:**
+**Automatisk henting.** Når en kobling fullføres, får selskapet en tidsplan
+(`bank_sync`, docs/jobs.md «Tidsplaner») til et nattlig standardtidspunkt spredt
+per selskap, så ikke alle spør leverandøren i samme minutt. Den som har
+`BANK_AVSTEM` kan endre klokkeslettene (høyst fire i døgnet: bankene begrenser
+henting uten at brukeren er til stede) eller sette den på pause. Jobben kjører
+NØYAKTIG samme funksjon som «Hent nå» (`regnmed-db::bank_feed::sync`) for hver
+kobling. En kobling som feiler, feiler ikke jobben — nye forsøk ville bare brukt
+opp bankens dagskvote — den står i resultatets `feil`, på norsk. Arbeideren
+trenger de samme leverandørinnstillingene som API-et: begge leser dem fra den
+valgfrie hemmeligheten `bank-feed` (`ENABLEBANKING_APP_ID`, `ENABLEBANKING_KEY`).
+
+**Ikke bygget:** varsel før samtykket utløper, kjøp og fakturering av tillegget,
+og saldo fra banken (utdraget har ingen inn-/utgående saldo, som CSV).
+**Kjente begrensninger:**
 laster noen opp en fil for dager koblingen ALT har hentet, kommer de linjene to
 ganger (filimporten kjenner ikke strømmen); og sidestørrelsen hos leverandøren er
 ikke dokumentert — klienten stopper først etter 1000 sider, og nekter da heller

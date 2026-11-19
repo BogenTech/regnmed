@@ -30,6 +30,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/platform/plans` | platform role |
 | PUT | `/platform/plans/{slug}` | platform role |
 | POST | `/platform/plans/{slug}/prices` | platform role |
+| GET | `/platform/schedules` | platform role |
 | GET | `/platform/settings` | platform role |
 | PUT | `/platform/settings` | platform role |
 | GET | `/platform/subscriptions` | platform role |

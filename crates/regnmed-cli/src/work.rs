@@ -35,10 +35,16 @@ const DRAIN: Duration = Duration::from_secs(110);
 pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-work".into());
     let slots = Arc::new(Semaphore::new(concurrency.max(1)));
+    // What jobs need beyond the database: the bank providers, from the same
+    // environment the API reads (docs/bank.md). None is fine: a scheduled
+    // fetch then reports that no provider is set up.
+    let runtime = regnmed_db::job::Runtime {
+        bank: regnmed_gov::bankfeed::Providers::from_env()?,
+    };
 
     if once {
         // Drain what is waiting, then exit (an operator's or a test's tool).
-        sweep(&pool, &name, &slots).await;
+        sweep(&pool, &name, &slots, &runtime).await;
         let _ = slots.acquire_many(concurrency.max(1) as u32).await?;
         return Ok(());
     }
@@ -59,20 +65,22 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     );
 
     let sweeper = {
-        let (pool, name, slots) = (pool.clone(), name.clone(), slots.clone());
+        let (pool, name, slots, runtime) =
+            (pool.clone(), name.clone(), slots.clone(), runtime.clone());
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(every);
             loop {
                 tick.tick().await;
-                sweep(&pool, &name, &slots).await;
+                sweep(&pool, &name, &slots, &runtime).await;
             }
         })
     };
 
     let listener = js.map(|js| {
-        let (pool, name, slots) = (pool.clone(), name.clone(), slots.clone());
+        let (pool, name, slots, runtime) =
+            (pool.clone(), name.clone(), slots.clone(), runtime.clone());
         tokio::spawn(async move {
-            if let Err(e) = listen(&pool, &js, &name, &slots).await {
+            if let Err(e) = listen(&pool, &js, &name, &slots, &runtime).await {
                 eprintln!("the job queue listener stopped: {e:#}");
             }
         })
@@ -93,8 +101,21 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     Ok(())
 }
 
-/// Claims and starts jobs while there are free slots and claimable jobs.
-async fn sweep(pool: &PgPool, name: &str, slots: &Arc<Semaphore>) {
+/// Turns due schedules into jobs (docs/jobs.md, «Tidsplaner»), then claims
+/// and starts jobs while there are free slots and claimable jobs. Every
+/// replica does this; `skip locked` keeps two of them from taking the same
+/// schedule or the same job.
+async fn sweep(
+    pool: &PgPool,
+    name: &str,
+    slots: &Arc<Semaphore>,
+    runtime: &regnmed_db::job::Runtime,
+) {
+    match regnmed_db::schedule::enqueue_due(pool).await {
+        Ok(jobs) if jobs.is_empty() => {}
+        Ok(jobs) => println!("{} scheduled job(s) created", jobs.len()),
+        Err(e) => eprintln!("could not check the schedules: {e:#}"),
+    }
     match regnmed_db::job::fail_abandoned(pool).await {
         Ok(0) => {}
         Ok(n) => eprintln!("{n} abandoned job(s) marked failed"),
@@ -105,7 +126,7 @@ async fn sweep(pool: &PgPool, name: &str, slots: &Arc<Semaphore>) {
             return;
         };
         match regnmed_db::job::claim_next(pool, name).await {
-            Ok(Some(job)) => spawn_job(pool, name, job, permit),
+            Ok(Some(job)) => spawn_job(pool, name, job, permit, runtime),
             Ok(None) => return,
             Err(e) => {
                 eprintln!("the sweep could not claim: {e:#}");
@@ -120,6 +141,7 @@ async fn listen(
     js: &jetstream::Context,
     name: &str,
     slots: &Arc<Semaphore>,
+    runtime: &regnmed_db::job::Runtime,
 ) -> Result<()> {
     jobqueue::ensure_stream(js).await?;
     let consumer = js
@@ -158,7 +180,7 @@ async fn listen(
         // job it cannot start.
         let permit = slots.clone().acquire_owned().await?;
         match regnmed_db::job::claim(pool, nudge.job_id, name).await {
-            Ok(Some(job)) => spawn_job(pool, name, job, permit),
+            Ok(Some(job)) => spawn_job(pool, name, job, permit, runtime),
             Ok(None) => {} // someone else has it, or it is finished
             Err(e) => eprintln!("could not claim job {}: {e:#}", nudge.job_id),
         }
@@ -174,11 +196,12 @@ fn spawn_job(
     name: &str,
     job: regnmed_db::job::Claimed,
     permit: tokio::sync::OwnedSemaphorePermit,
+    runtime: &regnmed_db::job::Runtime,
 ) {
-    let (pool, name) = (pool.clone(), name.to_owned());
+    let (pool, name, runtime) = (pool.clone(), name.to_owned(), runtime.clone());
     tokio::spawn(async move {
         let started = std::time::Instant::now();
-        match regnmed_db::job::process(&pool, &job, &name).await {
+        match regnmed_db::job::process(&pool, &job, &name, &runtime).await {
             Ok(()) => println!(
                 "job {} ({}) finished in {:?}",
                 job.id,

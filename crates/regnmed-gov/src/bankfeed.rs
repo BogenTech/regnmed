@@ -92,3 +92,106 @@ pub trait BankFeed: Send + Sync {
     /// Ends the consent at the provider.
     fn end_session<'a>(&'a self, session_id: &'a str) -> Fut<'a, ()>;
 }
+
+/// One bank as offered through one provider.
+#[derive(Debug, Clone)]
+pub struct Offer {
+    pub provider: &'static str,
+    pub bank: Bank,
+}
+
+/// The list of banks changes rarely; a connect should not depend twice on
+/// the provider being up.
+const BANKS_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// The configured providers, in priority order. Built once per process, by
+/// the API (the consent flow, «Hent nå») and by the worker (the scheduled
+/// fetch), from the same environment.
+pub struct Providers {
+    providers: Vec<std::sync::Arc<dyn BankFeed>>,
+    banks: std::sync::Mutex<Option<(std::time::Instant, Vec<Offer>)>>,
+}
+
+impl Providers {
+    /// None when no provider is given: the feature then does not exist.
+    pub fn new(providers: Vec<std::sync::Arc<dyn BankFeed>>) -> Option<std::sync::Arc<Self>> {
+        (!providers.is_empty()).then(|| {
+            std::sync::Arc::new(Self {
+                providers,
+                banks: std::sync::Mutex::new(None),
+            })
+        })
+    }
+
+    /// Every provider the environment configures. Each is "all of its
+    /// settings or none"; a key is PEM text in a variable or a file outside
+    /// the repo and the image (docs/secrets.md).
+    pub fn from_env() -> anyhow::Result<Option<std::sync::Arc<Self>>> {
+        use anyhow::Context;
+        let mut providers: Vec<std::sync::Arc<dyn BankFeed>> = Vec::new();
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+        let key = match (var("ENABLEBANKING_KEY"), var("ENABLEBANKING_KEY_FILE")) {
+            (Some(pem), _) => Some(pem.into_bytes()),
+            (None, Some(file)) => Some(
+                std::fs::read(&file)
+                    .with_context(|| format!("reading ENABLEBANKING_KEY_FILE {file}"))?,
+            ),
+            (None, None) => None,
+        };
+        match (var("ENABLEBANKING_APP_ID"), key) {
+            (Some(app_id), Some(pem)) => {
+                providers.push(std::sync::Arc::new(crate::enablebanking::Client::new(
+                    &app_id,
+                    &pem,
+                    var("ENABLEBANKING_API_BASE").as_deref(),
+                )?))
+            }
+            (None, None) => {}
+            _ => anyhow::bail!(
+                "set ENABLEBANKING_APP_ID together with ENABLEBANKING_KEY or ENABLEBANKING_KEY_FILE, or none of them"
+            ),
+        }
+        Ok(Self::new(providers))
+    }
+
+    pub fn ids(&self) -> Vec<&'static str> {
+        self.providers.iter().map(|p| p.id()).collect()
+    }
+
+    pub fn get(&self, id: &str) -> Option<&dyn BankFeed> {
+        self.providers.iter().find(|p| p.id() == id).map(|p| &**p)
+    }
+
+    /// Every bank on offer in `country`, first provider first. One provider
+    /// being down does not hide the others' banks; all failing is an error.
+    pub async fn offers(&self, country: &str) -> Result<Vec<Offer>, FeedError> {
+        if let Some((at, offers)) = self.banks.lock().unwrap().as_ref()
+            && at.elapsed() < BANKS_TTL
+        {
+            return Ok(offers.clone());
+        }
+        let mut offers = Vec::new();
+        let mut failure = None;
+        for p in &self.providers {
+            match p.banks(country).await {
+                Ok(banks) => offers.extend(banks.into_iter().map(|bank| Offer {
+                    provider: p.id(),
+                    bank,
+                })),
+                Err(e) => {
+                    eprintln!("bank feed: provider {} could not list banks: {e}", p.id());
+                    failure = Some(e);
+                }
+            }
+        }
+        match failure {
+            Some(e) if offers.is_empty() => Err(e),
+            // A partial list is not cached: the missing provider is asked again next time.
+            Some(_) => Ok(offers),
+            None => {
+                *self.banks.lock().unwrap() = Some((std::time::Instant::now(), offers.clone()));
+                Ok(offers)
+            }
+        }
+    }
+}

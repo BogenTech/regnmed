@@ -8,6 +8,8 @@
   import { session } from "../lib/auth.svelte.js";
   import { toast } from "../lib/toast.svelte.js";
   import { IKONSTILER } from "../lib/ikoner.js";
+  import { formatTime } from "../lib/format.js";
+  import { JOBBSTATUS, tiderTekst } from "../lib/tidsplan.js";
   import { prefs, setIkonstil } from "../lib/prefs.svelte.js";
   import UserMenu from "./UserMenu.svelte";
   import Card from "./Card.svelte";
@@ -19,6 +21,7 @@
 
   // [slug, navn, ikon] — ikonet gjør fanene gjenkjennbare på et blikk,
   // samme faste tilordning som selskapsmenyen (lib/ikoner.js).
+  // (Tidsplaner: begge roller leser, som Planer og priser.)
   const FANER = $derived(
     [
       ["oversikt", "Oversikt", "oversikt"],
@@ -26,6 +29,7 @@
       ["byraer", "Byråer", "byraer"],
       ["brukere", "Brukere", "brukere"],
       ["planer", "Planer og priser", "abonnementer"],
+      ["tidsplaner", "Tidsplaner", "periode"],
       ...(systemadmin
         ? [
             ["abonnementer", "Abonnementer", "abonnementer"],
@@ -58,6 +62,7 @@
       else if (fane === "innstillinger") rader = await api("/platform/settings");
       // Planer-fanen henter selv; [] slipper den forbi lastesnurren.
       else if (fane === "planer") rader = [];
+      else if (fane === "tidsplaner") rader = (await api("/platform/schedules")).tidsplaner ?? [];
     } catch (error) {
       rader = [];
       toast(error.message, false);
@@ -208,7 +213,7 @@
         }}
       />
     {:else}
-    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer" && fane !== "innstillinger" && fane !== "planer"}
+    {#if fane !== "medlemmer" && fane !== "oversikt" && fane !== "abonnementer" && fane !== "innstillinger" && fane !== "planer" && fane !== "tidsplaner"}
       <form class="mb-4 flex gap-2" onsubmit={sokSubmit}>
         <input
           class="input input-sm w-full max-w-xs"
@@ -299,6 +304,39 @@
               </tr>
             {:else}
               <tr><td colspan="6" class="opacity-70">Ingen selskaper.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </Card>
+    {:else if fane === "tidsplaner"}
+      <Card title="Tidsplaner">
+        <p class="text-sm opacity-70 mb-2">
+          Det som kjører av seg selv, per selskap. En tidsplan blir til en vanlig bakgrunnsjobb når tiden er inne;
+          klokkeslettene er norsk tid og endres av selskapet selv.
+        </p>
+        <table class="table table-sm">
+          <thead>
+            <tr><th>Selskap</th><th>Hva</th><th>Klokkeslett</th><th>Aktiv</th><th>Neste</th><th>Sist</th></tr>
+          </thead>
+          <tbody>
+            {#each Array.isArray(rader) ? rader : [] as t (t.company_id + ":" + t.kind)}
+              <tr>
+                <td>{t.selskap ?? "–"}</td>
+                <td>{t.navn ?? t.kind}</td>
+                <td class="tabular-nums">{tiderTekst(t.tider) || "–"}</td>
+                <td>
+                  <span class="badge badge-sm {t.aktiv ? 'badge-success' : 'badge-ghost'}">{t.aktiv ? "aktiv" : "pause"}</span>
+                </td>
+                <td class="tabular-nums">{t.aktiv && t.neste ? formatTime(t.neste) : "–"}</td>
+                <td class="tabular-nums">
+                  {#if t.sist_status}
+                    <span class={t.sist_status === "failed" ? "text-error" : ""}>{JOBBSTATUS[t.sist_status] ?? t.sist_status}</span>
+                    {#if t.sist_ferdig}<span class="opacity-70"> {formatTime(t.sist_ferdig)}</span>{/if}
+                  {:else}–{/if}
+                </td>
+              </tr>
+            {:else}
+              <tr><td colspan="6" class="opacity-70">Ingen tidsplaner ennå.</td></tr>
             {/each}
           </tbody>
         </table>

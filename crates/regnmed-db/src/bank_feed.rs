@@ -523,3 +523,113 @@ pub async fn addon_rows(
     .fetch_all(pool)
     .await?)
 }
+
+/// What the user is told about a provider failure. The provider's own words
+/// are for the operator and go to the log, never to the portal.
+pub fn user_message(e: &regnmed_gov::bankfeed::FeedError) -> &'static str {
+    use regnmed_gov::bankfeed::FeedError;
+    match e {
+        FeedError::ConsentGone(_) => {
+            "Samtykket hos banken er utløpt eller trukket tilbake. Koble til på nytt."
+        }
+        FeedError::RateLimited => {
+            "Banken tillater ikke flere hentinger akkurat nå. Prøv igjen om noen timer."
+        }
+        FeedError::Other(_) => "Banken svarte ikke som ventet. Prøv igjen senere.",
+    }
+}
+
+/// One fetch for one connection: «Hent nå» in the portal and the scheduled
+/// job run exactly this. A consent the bank says is gone ends the connection
+/// (the user must connect again); any other failure is noted on the row in
+/// the user's language and the next fetch tries again. The error returned is
+/// the provider's, for the caller to turn into its own kind of answer.
+pub async fn sync(
+    pool: &PgPool,
+    client: &dyn regnmed_gov::bankfeed::BankFeed,
+    connection: &Live,
+) -> Result<std::result::Result<SyncSummary, regnmed_gov::bankfeed::FeedError>> {
+    use regnmed_gov::bankfeed::FeedError;
+    if connection.valid_until <= Utc::now() {
+        return Ok(Err(FeedError::ConsentGone("expired by date".into())));
+    }
+    let today = Utc::now().date_naive();
+    let from = fetch_from(pool, connection.account_id, today).await?;
+    match client
+        .transactions(&connection.external_account_id, from)
+        .await
+    {
+        Ok(fetched) => Ok(Ok(record_fetch(pool, connection, &fetched).await?)),
+        Err(e) => {
+            eprintln!("bank feed: connection {}: {e}", connection.id);
+            if matches!(e, FeedError::ConsentGone(_)) {
+                end(
+                    pool,
+                    connection.company_id,
+                    connection.id,
+                    "samtykke utlopt hos banken",
+                )
+                .await?;
+            } else {
+                note_error(pool, connection.id, user_message(&e)).await?;
+            }
+            Ok(Err(e))
+        }
+    }
+}
+
+/// Every completed, not ended connection of a company.
+pub async fn live_connections(pool: &PgPool, company_id: Uuid) -> Result<Vec<Live>> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "select id from bank_connection
+         where company_id = $1 and ended_at is null and session_id is not null
+         order by created_at",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::new();
+    for id in ids {
+        if let Some(c) = live(pool, company_id, id).await? {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
+/// The scheduled fetch for one company (job kind `bank_sync`): every live
+/// connection, one after the other. A connection that fails does not fail
+/// the job — retrying would only spend the bank's daily fetch allowance —
+/// it is reported in `feil`, in the user's language.
+pub async fn sync_company(
+    pool: &PgPool,
+    providers: Option<&regnmed_gov::bankfeed::Providers>,
+    company_id: Uuid,
+) -> Result<serde_json::Value> {
+    let mut summary = (0usize, 0usize, 0usize);
+    let mut errors: Vec<String> = Vec::new();
+    if !addon_active(pool, company_id, ADDON).await? {
+        errors.push("Selskapet har ikke tillegget Bankkobling.".into());
+    } else {
+        for connection in live_connections(pool, company_id).await? {
+            let Some(client) = providers.and_then(|p| p.get(&connection.provider)) else {
+                errors.push("Leverandøren bak koblingen er ikke satt opp.".into());
+                continue;
+            };
+            summary.0 += 1;
+            match sync(pool, client, &connection).await? {
+                Ok(s) => {
+                    summary.1 += s.new;
+                    summary.2 += s.auto_matched;
+                }
+                Err(e) => errors.push(user_message(&e).into()),
+            }
+        }
+    }
+    Ok(serde_json::json!({
+        "koblinger": summary.0,
+        "nye": summary.1,
+        "auto_matchet": summary.2,
+        "feil": errors,
+    }))
+}

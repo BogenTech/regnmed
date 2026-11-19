@@ -9,12 +9,13 @@
   // a file. The user logs in AT THE BANK (BankID); regnmed only keeps the consent
   // reference, and the consent has an end date the card keeps in view. Without a
   // configured provider the card does not exist; without the add-on it only says so.
-  import { api, post } from "../../lib/api.js";
+  import { api, post, send } from "../../lib/api.js";
   import { formatDate, formatTime, today } from "../../lib/format.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { route } from "../../lib/router.svelte.js";
   import { bankvalg, koblingsstatus, maskert, retur } from "../../lib/bankkobling.js";
+  import { parseTider, planTekst, sistTekst, tiderTekst } from "../../lib/tidsplan.js";
 
   let { companyId, accounts, query, canReconcile, onSynced } = $props();
 
@@ -24,10 +25,16 @@
   let feed = $state(null); // null = loading or unavailable: nothing is drawn
   let busy = $state(null); // connection id, "ny" or "fullfor"
 
+  // The automatic fetch: the company's bank_sync schedule, when it has one.
+  let plan = $state(null);
+
   function load() {
     api(base)
       .then((r) => (feed = r))
       .catch(() => (feed = null));
+    api("/companies/" + companyId + "/schedules")
+      .then((r) => (plan = (r.tidsplaner ?? []).find((t) => t.kind === "bank_sync") ?? null))
+      .catch(() => (plan = null));
   }
   $effect(() => {
     load();
@@ -171,6 +178,52 @@
     load();
   }
 
+  // Ask until the answer is valid: a mistyped time keeps what was written.
+  async function endrePlan() {
+    if (busy || !plan) return;
+    let tider = tiderTekst(plan.tider).replace(" og ", ", ");
+    let aktiv = plan.aktiv;
+    for (;;) {
+      const svar = await skjema(
+        "Automatisk henting fra banken",
+        [
+          {
+            navn: "tider",
+            etikett: "Klokkeslett (norsk tid)",
+            standard: tider,
+            hjelp: "For eksempel 03:15, eller flere: 03:15, 12:00. Høyst " + plan.maks_per_dag + " per dag.",
+          },
+          { navn: "aktiv", etikett: "Hent automatisk", type: "checkbox", standard: aktiv },
+        ],
+        {
+          ok: "Lagre",
+          melding:
+            "Bankene begrenser hvor ofte bankposter kan hentes uten at du selv er logget inn, derfor er det et tak på antall hentinger per dag.",
+        },
+      );
+      if (!svar) return;
+      tider = svar.tider;
+      aktiv = !!svar.aktiv;
+      let kropp;
+      try {
+        kropp = { tider: parseTider(svar.tider, plan.maks_per_dag), aktiv };
+      } catch (e) {
+        toast(e.message, false);
+        continue;
+      }
+      busy = "plan";
+      try {
+        await send("PUT", "/companies/" + companyId + "/schedules/bank_sync", kropp);
+        toast("Lagret", true);
+      } catch (e) {
+        toast(e.message, false);
+      }
+      busy = null;
+      return load();
+    }
+  }
+
+  const sist = $derived(plan ? sistTekst(plan.sist, plan.sist?.ferdig ? formatTime(plan.sist.ferdig) : "") : null);
   const synlige = $derived((feed?.koblinger ?? []).filter((k) => k.status !== "avsluttet"));
 </script>
 
@@ -200,6 +253,16 @@
           Bankpostene hentes rett fra banken. Du logger inn hos banken med BankID, regnmed ser aldri innloggingen, og
           samtykket må fornyes innen datoen som står på koblingen.
         </p>
+        {#if plan}
+          <p class="text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="font-medium">{planTekst(plan)}</span>
+            {#if plan.aktiv && plan.neste}<span class="opacity-70">Neste: {formatTime(plan.neste)}</span>{/if}
+            {#if sist}<span class={sist.feil ? "text-error" : "opacity-70"} role="status">{sist.tekst}</span>{/if}
+            {#if canReconcile}
+              <button class="btn btn-xs" onclick={endrePlan} disabled={!!busy}>Endre</button>
+            {/if}
+          </p>
+        {/if}
         {#if synlige.length === 0}
           <p>Ingen bank er koblet til ennå.</p>
         {:else}

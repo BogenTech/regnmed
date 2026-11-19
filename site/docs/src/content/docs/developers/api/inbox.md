@@ -38,6 +38,8 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/companies/{company_id}/jobs/saft-import` | — |
 | GET | `/companies/{company_id}/jobs/{job_id}` | — |
 | POST | `/companies/{company_id}/opening-balance` | `MIGRERING_ADMIN` |
+| GET | `/companies/{company_id}/schedules` | `SELSKAP_LES` |
+| PUT | `/companies/{company_id}/schedules/{kind}` | `SELSKAP_ADMIN` |
 
 ## Opplasting
 

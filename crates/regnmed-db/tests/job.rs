@@ -92,12 +92,16 @@ async fn a_dead_workers_job_is_taken_over_and_it_cannot_overwrite_the_result() {
         .expect("b takes over");
 
     // a wakes up and finishes: its outcome is NOT recorded.
-    job::process(&pool, &a, "a").await.unwrap();
+    job::process(&pool, &a, "a", &Default::default())
+        .await
+        .unwrap();
     let status = job::get(&pool, company, id).await.unwrap().unwrap();
     assert_eq!(status.status, "running");
     assert_eq!(status.attempts, 2);
 
-    job::process(&pool, &b, "b").await.unwrap();
+    job::process(&pool, &b, "b", &Default::default())
+        .await
+        .unwrap();
     let status = job::get(&pool, company, id).await.unwrap().unwrap();
     assert_eq!(status.status, "done", "{status:?}");
     assert_eq!(status.result.unwrap()["alle_ok"], true);

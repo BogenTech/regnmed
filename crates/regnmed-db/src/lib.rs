@@ -54,6 +54,7 @@ pub mod roles;
 pub mod saft;
 pub mod saft_import;
 pub mod sales_document;
+pub mod schedule;
 pub mod settings;
 pub mod share_register;
 pub mod shareholder_return_submission;

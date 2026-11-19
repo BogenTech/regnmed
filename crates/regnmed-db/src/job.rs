@@ -30,6 +30,8 @@ pub const MAX_ATTEMPTS: i32 = 3;
 pub enum Kind {
     SaftImport,
     AuditReport,
+    /// The scheduled bank fetch (docs/bank.md): every live connection of the company.
+    BankSync,
 }
 
 impl Kind {
@@ -37,12 +39,14 @@ impl Kind {
         match self {
             Kind::SaftImport => "saft_import",
             Kind::AuditReport => "audit_report",
+            Kind::BankSync => "bank_sync",
         }
     }
     pub fn parse(s: &str) -> Option<Kind> {
         match s {
             "saft_import" => Some(Kind::SaftImport),
             "audit_report" => Some(Kind::AuditReport),
+            "bank_sync" => Some(Kind::BankSync),
             _ => None,
         }
     }
@@ -248,7 +252,7 @@ async fn finish(pool: &PgPool, job_id: Uuid, worker: &str, outcome: Result<Value
 /// records the result or the error. A job's own failure (a SAF-T file
 /// that does not reconcile) is an outcome, written to the row for the
 /// user to read; only failing to record it is an `Err` here.
-pub async fn process(pool: &PgPool, job: &Claimed, worker: &str) -> Result<()> {
+pub async fn process(pool: &PgPool, job: &Claimed, worker: &str, runtime: &Runtime) -> Result<()> {
     let beat = {
         let (pool, id, worker) = (pool.clone(), job.id, worker.to_owned());
         tokio::spawn(async move {
@@ -262,12 +266,20 @@ pub async fn process(pool: &PgPool, job: &Claimed, worker: &str) -> Result<()> {
             }
         })
     };
-    let outcome = execute(pool, job).await;
+    let outcome = execute(pool, job, runtime).await;
     beat.abort();
     finish(pool, job.id, worker, outcome).await
 }
 
-async fn execute(pool: &PgPool, job: &Claimed) -> Result<Value> {
+/// What a job may need from the process running it, beyond the database.
+/// Built once at start-up by the worker and by the API.
+#[derive(Clone, Default)]
+pub struct Runtime {
+    /// The bank providers (docs/bank.md); None when none is configured.
+    pub bank: Option<std::sync::Arc<regnmed_gov::bankfeed::Providers>>,
+}
+
+async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Value> {
     match Kind::parse(&job.kind) {
         Some(Kind::SaftImport) => {
             let (bytes, content_type) = input(pool, job.id).await?;
@@ -304,6 +316,9 @@ async fn execute(pool: &PgPool, job: &Claimed) -> Result<Value> {
             let mut value = crate::audit::audit_json(&report);
             value["tekst"] = regnmed_core::audit::render_text(&report).into();
             Ok(value)
+        }
+        Some(Kind::BankSync) => {
+            crate::bank_feed::sync_company(pool, runtime.bank.as_deref(), job.company_id).await
         }
         None => bail!("unknown job kind {}", job.kind),
     }

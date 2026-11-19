@@ -264,7 +264,7 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     let pem = key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
     // Two providers: the real client against the mock, and a second one, to
     // hold the seam open — regnmed is not tied to one provider.
-    state.bank_feed = regnmed_api::bank_feed::BankFeeds::new(vec![
+    state.bank_feed = regnmed_gov::bankfeed::Providers::new(vec![
         Arc::new(
             regnmed_gov::enablebanking::Client::new(
                 APP_ID,
@@ -673,6 +673,143 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
         .push(booked("A4", "75.00", "DBIT", "Gebyr"));
     let (_, more) = call(&state, "POST", &sync, &admin, Value::Null).await;
     assert_eq!(more["nye"], 1);
+
+    // The fetch also runs by itself: completing the connection gave the company a
+    // schedule (docs/jobs.md, «Tidsplaner»), at a night-time default.
+    let schedules = format!("{base}/schedules");
+    let (code, plans) = call(&state, "GET", &schedules, &reader, Value::Null).await;
+    assert_eq!(code, StatusCode::OK, "{plans}");
+    let plan = &plans["tidsplaner"][0];
+    assert_eq!(plan["kind"], "bank_sync");
+    assert_eq!(plan["aktiv"], true);
+    assert_eq!(plan["tider"].as_array().unwrap().len(), 1);
+    assert_eq!(plan["maks_per_dag"], 4);
+    assert!(plan["neste"].is_string(), "{plan}");
+    assert!(plan["sist"].is_null(), "nothing has run by itself yet");
+
+    // Changing it takes the right to do the same by hand, and stays within the kind's rules.
+    let put = format!("{schedules}/bank_sync");
+    let twice = json!({ "tider": ["12:00", "03:15"], "aktiv": true });
+    assert_eq!(
+        call(&state, "PUT", &put, &reader, twice.clone()).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &put,
+            &admin,
+            json!({ "tider": ["01:00", "07:00", "13:00", "19:00", "23:00"], "aktiv": true })
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST,
+        "banks limit background fetches: at most four a day"
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &put,
+            &admin,
+            json!({ "tider": ["25:00"], "aktiv": true })
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &state,
+            "PUT",
+            &format!("{schedules}/audit_report"),
+            &admin,
+            twice.clone()
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(&state, "PUT", &put, &other_admin, twice.clone())
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let (code, changed) = call(&state, "PUT", &put, &admin, twice).await;
+    assert_eq!(code, StatusCode::OK, "{changed}");
+    assert_eq!(changed["tider"], json!(["03:15", "12:00"]));
+
+    // The schedule comes due: the worker's own code turns it into a job and runs
+    // it, and the new bank line arrives without anyone pressing «Hent nå».
+    shared
+        .lock()
+        .unwrap()
+        .transactions
+        .push(booked("A5", "20.00", "DBIT", "Gebyr"));
+    sqlx::query(
+        "update schedule set next_run_at = now() - interval '1 minute' where company_id = $1",
+    )
+    .bind(company)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    regnmed_db::schedule::enqueue_due(&state.pool)
+        .await
+        .unwrap();
+    let job_id: Uuid =
+        sqlx::query_scalar("select id from job where company_id = $1 and kind = 'bank_sync'")
+            .bind(company)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    let claimed = regnmed_db::job::claim(&state.pool, job_id, "test-worker")
+        .await
+        .unwrap()
+        .unwrap();
+    let runtime = regnmed_db::job::Runtime {
+        bank: state.bank_feed.clone(),
+    };
+    regnmed_db::job::process(&state.pool, &claimed, "test-worker", &runtime)
+        .await
+        .unwrap();
+    let (_, plans) = call(&state, "GET", &schedules, &admin, Value::Null).await;
+    let last = &plans["tidsplaner"][0]["sist"];
+    assert_eq!(last["status"], "done", "{last}");
+    assert_eq!(last["resultat"]["koblinger"], 1, "{last}");
+    assert_eq!(last["resultat"]["nye"], 1, "{last}");
+    assert_eq!(last["resultat"]["feil"], json!([]));
+    // Its outcome is read with the right to see the bank; the console lists the schedule.
+    assert_eq!(
+        call(
+            &state,
+            "GET",
+            &format!("{base}/jobs/{job_id}"),
+            &reader,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (code, everything) =
+        call(&state, "GET", "/platform/schedules", &sysadmin, Value::Null).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(
+        everything["tidsplaner"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["company_id"] == company.to_string() && t["sist_status"] == "done"),
+        "{everything}"
+    );
+    assert_eq!(
+        call(&state, "GET", "/platform/schedules", &admin, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
 
     // The bank rate limits: said in Norwegian, noted on the connection, and the
     // connection stays. The next fetch clears the note.
