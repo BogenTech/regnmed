@@ -345,6 +345,9 @@ Pakkene og prisene er data, og systemadmin redigerer dem i plattformkonsollen
   `bank` (direkte bankkobling, #70), som er listet som «kommer»
   (`available = false`) uten pris, og kan ikke bestilles før den virker. Flere
   legges til i konsollen etter hvert.
+- **Hvem som har et tillegg** står i `company_addon` (migrasjon 0096): daterte
+  dekningsrader per selskap og tillegg, tildelt av systemadmin med referanse inntil
+  kjøp i portalen og fakturering av tillegg er bygget (docs/bank.md «Bankkobling»).
 - **Pris** er fortsatt `abonnement_pris` (§4): daterte, innsettings-bare rader.
   Konsollen kan bare legge til en rad som gjelder fra i dag eller senere, med en
   kilde, så fakturering som slår opp pris etter dato aldri får en gammel måned

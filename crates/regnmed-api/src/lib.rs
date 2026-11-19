@@ -10,6 +10,7 @@ pub mod asset;
 pub mod auth;
 pub mod balance_documentation;
 pub mod bank;
+pub mod bank_feed;
 pub mod budget;
 pub mod cards;
 pub mod cash_register;
@@ -105,6 +106,10 @@ pub struct AppState {
     /// Skattekort til arbeidsgiver (docs/lonn.md). None when
     /// MASKINPORTEN_* is unset.
     pub tax_card: Option<Arc<TaxCardRail>>,
+    /// Direct bank connection through Enable Banking (docs/bank.md tier 2).
+    /// None when ENABLEBANKING_APP_ID/ENABLEBANKING_KEY_FILE are unset — the
+    /// portal then shows no bank-connection card at all.
+    pub bank_feed: Option<Arc<regnmed_gov::enablebanking::Client>>,
 }
 
 pub struct TaxCardRail {
@@ -443,6 +448,27 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(bank::import_statement),
         )
         .route("/companies/{company_id}/bank/accounts", get(bank::accounts))
+        .route("/companies/{company_id}/bank/feed", get(bank_feed::status))
+        .route("/companies/{company_id}/bank/feed/banks", get(bank_feed::banks))
+        .route(
+            "/companies/{company_id}/bank/feed/connect",
+            axum::routing::post(bank_feed::connect),
+        )
+        .route(
+            "/companies/{company_id}/bank/feed/complete",
+            axum::routing::post(bank_feed::complete),
+        )
+        .route(
+            "/companies/{company_id}/bank/feed/{connection_id}/sync",
+            axum::routing::post(bank_feed::sync),
+        )
+        .route(
+            "/companies/{company_id}/bank/feed/{connection_id}/end",
+            axum::routing::post(bank_feed::end),
+        )
+        // Open: where the bank sends the browser back. It only forwards the
+        // parameters to the portal; the signed-in user completes it.
+        .route("/bank/callback", get(bank_feed::callback))
         .route(
             "/companies/{company_id}/bank/reconciliation",
             get(bank::reconciliation),

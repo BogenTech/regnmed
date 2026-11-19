@@ -14,6 +14,8 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | --- | --- | --- |
 | GET | `/platform/companies` | platform role |
 | GET | `/platform/companies/{company_id}` | platform role |
+| POST | `/platform/companies/{company_id}/addons` | platform role |
+| POST | `/platform/companies/{company_id}/addons/{addon}/end` | platform role |
 | DELETE | `/platform/companies/{company_id}/members/{person_id}` | platform role |
 | POST | `/platform/companies/{company_id}/members/{person_id}/restore` | platform role |
 | PUT | `/platform/companies/{company_id}/settings` | platform role |

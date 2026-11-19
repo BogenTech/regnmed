@@ -73,6 +73,7 @@ pub async fn subscription_status(
         "dato": date.map(|d| d.to_string()),
         "planer": planer,
         "pakke": current.as_ref().map(|c| json!({ "slug": c.slug, "navn": c.name })),
+        "tillegg": regnmed_db::bank_feed::active_addons(&state.pool, company_id).await?,
         // Soft for vouchers (bookkeeping is never blocked), hard for employees
         // and integrations (refused where they are created: plans::ensure_room).
         "bruk": {

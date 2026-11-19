@@ -32,6 +32,7 @@ pub mod addresses;
 pub mod altinn_events;
 pub mod amelding;
 pub mod brreg;
+pub mod enablebanking;
 pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod norgesbank;

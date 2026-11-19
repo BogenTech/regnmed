@@ -10,7 +10,7 @@ ajourhold, and unexplained differences are the classic audit finding.
 | --- | --- | --- |
 | 1. File upload | **camt.053** (ISO 20022) exported from any Norwegian nettbank — no bank agreement needed | **Implemented** |
 | 1b. CSV upload | Bank CSV exports, layout auto-detected from headers | **Implemented** |
-| 2. PSD2 / open banking | Live account feeds via an AISP — requires a Finanstilsynet AISP license or a commercial aggregator (Neonomics, Tink, Mastercard/Aiia) | Later — commercial/licensing decision |
+| 2. PSD2 / open banking | Account feeds through an aggregator (Enable Banking) — the add-on «Bankkobling» | **Built, not switched on** — see «Bankkobling» below; needs a registered application and, before customers, a contract |
 | 3. Direct filutveksling | SFTP/ISO 20022 agreements per bank or via Mastercard Payment Services (also OCR-giro, issue #16) | Later — per-customer onboarding |
 
 All tiers feed the **same** reconciliation engine; only the transport
@@ -18,6 +18,64 @@ differs. A company card's statement is imported the same way, on the
 card's own ledger account — also a credit card account in class 2,
 which the account list then includes (docs/utlegg.md «Firmakort»). Building file-first was deliberate: it works for every customer
 on day one with zero agreements.
+
+## Bankkobling (tier 2, migration 0096, #70)
+
+Kontoutdrag hentet fra banken i stedet for lastet opp. Det er TRANSPORT rundt
+den samme motoren: det som kommer inn blir et vanlig `bank_statement` og
+matches som en fil.
+
+**Leverandør: Enable Banking.** Aggregatoren holder eIDAS-sertifikatene; vi har
+en applikasjons-id og en RSA-nøkkel og signerer en kort JWT per kall
+(`regnmed-gov::enablebanking`). Valgt fordi den har sandkasse og lar oss teste
+mot egne kontoer i produksjon før kontrakt; GoCardless/Nordigen tar ikke nye
+kunder, og Neonomics/Tink krever avtale først. Klienten er én modul, så et bytte
+er avgrenset. **Feltnavnene følger den publiserte API-referansen (lest
+2026-11-19) og er IKKE prøvd mot ekte trafikk ennå** — første ekte økt skal
+fanges og legges i testene (Stripe-lærdommen, CLAUDE.md punkt 56).
+
+**Tre regler, alle testet og sett feile:**
+
+1. *Uten konfigurert leverandør finnes ikke funksjonen.* `ENABLEBANKING_APP_ID`
+   og `ENABLEBANKING_KEY_FILE` (begge eller ingen; nøkkelen er en fil utenfor
+   repo og image, docs/secrets.md). Uten dem svarer status `konfigurert: false`,
+   portalen viser ikke kortet, og hvert kall nekter.
+2. *Uten tillegget kan selskapet verken koble til eller hente.* `company_addon`
+   er dekningsrader per tillegg (som `abonnement`): tildeling er en innsetting,
+   avslutning setter `valid_to`. Raden skrives foreløpig av systemadmin i
+   plattformkonsollen (`POST /platform/companies/{id}/addons`, med referanse);
+   kjøp i portalen og fakturering av tillegget er ikke bygget.
+3. *Kontoen banken gir tilgang til må være den brukeren oppga.* Brukeren oppgir
+   kontonummeret (standard: selskapets eget fra Firmaopplysninger) før de sendes
+   til banken; ved retur må økten inneholde nettopp den kontoen (IBAN eller
+   BBAN), i NOK. Ellers lukkes økten hos leverandøren og ingenting kobles.
+
+**Flyten.** `connect` skriver en ventende `bank_connection` (id-en er `state`) og
+gir en URL hos banken, der brukeren godkjenner med BankID. Banken sender
+nettleseren til `/bank/callback`, som er åpen av nødvendighet og derfor ikke gjør
+annet enn å gi parameterne videre til portalen; den innloggede brukeren fullfører
+med `complete`. Vi lagrer leverandørens øktreferanse, aldri bankens
+påloggingsdata. Samtykket varer det banken tillater, høyst 180 dager, og må så
+fornyes: å koble til en konto som alt har en kobling ERSTATTER den i samme
+transaksjon (aldri to strømmer inn i én konto).
+
+**Henting.** Bare bokførte transaksjoner (`BOOK`; ventende hoppes over som PDNG i
+camt.053). En transaksjon som ikke kan leses feiler hele hentingen: en halv
+import ville skjult en manglende linje. Hver transaksjon får en nøkkel
+(`regnmed-core::bankfeed::dedupe_keys`: bankens referanse, ellers hash av
+innholdet pluss ordenstall blant like transaksjoner den dagen), og nøklene
+skrives i `bank_feed_seen` per HOVEDBOKSKONTO i samme transaksjon som utdraget.
+Vinduene overlapper med vilje (banker bokfører sent), og dette er det som hindrer
+at overlapp blir en kopi. Første henting starter dagen etter nyeste linje som
+alt ligger på kontoen (opplastede filer hentes ikke om igjen), ellers 90 dager
+tilbake. Sier banken at samtykket er borte, avsluttes koblingen med beskjed om å
+koble til på nytt; andre feil noteres på raden og neste henting prøver igjen.
+
+**Ikke bygget:** nattlig henting (bare «Hent nå» i portalen; en planlagt jobb
+kommer når en applikasjon er registrert og nøkkelen ligger i clusteret), varsel
+før samtykket utløper, kjøp og fakturering av tillegget, og saldo fra banken
+(utdraget har ingen inn-/utgående saldo, som CSV). **Kjent begrensning:** laster
+noen opp en fil for dager koblingen alt har hentet, kommer de linjene to ganger.
 
 ## Data model (migration 0007)
 

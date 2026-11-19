@@ -160,6 +160,27 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
+    // Direct bank connection: both or neither. The key is a file outside
+    // the repo and the image (docs/secrets.md).
+    let bank_feed = match (
+        std::env::var("ENABLEBANKING_APP_ID"),
+        std::env::var("ENABLEBANKING_KEY_FILE"),
+    ) {
+        (Ok(app_id), Ok(key_file)) => {
+            let pem = std::fs::read(&key_file)
+                .with_context(|| format!("reading ENABLEBANKING_KEY_FILE {key_file}"))?;
+            let client = regnmed_gov::enablebanking::Client::new(
+                &app_id,
+                &pem,
+                std::env::var("ENABLEBANKING_API_BASE").ok().as_deref(),
+            )?;
+            println!("bank connection (Enable Banking) is on");
+            Some(std::sync::Arc::new(client))
+        }
+        (Err(_), Err(_)) => None,
+        _ => anyhow::bail!("set both ENABLEBANKING_APP_ID and ENABLEBANKING_KEY_FILE, or neither"),
+    };
+
     let app = router(AppState {
         pool,
         verifier,
@@ -173,6 +194,7 @@ async fn main() -> Result<()> {
         amelding,
         shareholder_return,
         tax_card,
+        bank_feed,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

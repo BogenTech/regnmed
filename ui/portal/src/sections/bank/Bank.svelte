@@ -8,7 +8,7 @@
   import Rates from "./Rates.svelte";
   import Cards from "./Cards.svelte";
 
-  let { companyId, extra } = $props();
+  let { companyId, extra, query } = $props();
 
   const TABS = [
     ["", "Avstemming"],
@@ -36,7 +36,7 @@
   </nav>
   {#key companyId + tab}
     {#if tab === ""}
-      <Reconcile {companyId} />
+      <Reconcile {companyId} adresseQuery={query} />
     {:else if tab === "betalinger"}
       <Payments {companyId} />
     {:else if tab === "kort"}

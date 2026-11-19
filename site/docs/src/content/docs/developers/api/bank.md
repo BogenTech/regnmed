@@ -14,6 +14,12 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | --- | --- | --- |
 | GET | `/companies/{company_id}/bank/accounts` | `BANK_LES` |
 | GET | `/companies/{company_id}/bank/entries` | `BANK_LES` |
+| GET | `/companies/{company_id}/bank/feed` | `BANK_LES` |
+| GET | `/companies/{company_id}/bank/feed/banks` | `BANK_LES` |
+| POST | `/companies/{company_id}/bank/feed/complete` | `BANK_AVSTEM` |
+| POST | `/companies/{company_id}/bank/feed/connect` | `BANK_AVSTEM` |
+| POST | `/companies/{company_id}/bank/feed/{connection_id}/end` | `BANK_AVSTEM` |
+| POST | `/companies/{company_id}/bank/feed/{connection_id}/sync` | `BANK_AVSTEM` |
 | POST | `/companies/{company_id}/bank/matches` | `BANK_AVSTEM` |
 | DELETE | `/companies/{company_id}/bank/matches/{bank_transaction_id}` | `BANK_AVSTEM` |
 | GET | `/companies/{company_id}/bank/reconciliation` | `BANK_LES` |

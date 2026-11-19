@@ -13,6 +13,7 @@ pub mod assets;
 pub mod audit;
 pub mod bank;
 pub mod bankcsv;
+pub mod bankfeed;
 pub mod budget;
 pub mod camt053;
 pub mod cash_register;
