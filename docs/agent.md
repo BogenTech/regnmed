@@ -277,6 +277,18 @@ kroner, som søkefeltet i portalen) — det eneste stedet en agent skal
 skrive kroner til systemet. Integrasjonstesten fester at «200» finner en
 linje på −20000 øre, og at «-20000» ikke gjør det.
 
+Det holdt ikke. Prøvd på nytt i prod etter v0.23.1 svarte agenten fortsatt
+111 775 kr — men hver ny melding gikk i SAMME samtale, så historikken bar
+det første svaret med seg, og agenten bekreftet sitt eget tall
+(«Forrige oppsummering stemmer»). Om regelen virket, lot seg derfor ikke
+måle. Svaret ble å fjerne regnestykket: MCP-serveren
+(`regnmed-mcp::with_kroner`) legger til et `<x>_kr`-felt ved siden av
+hvert heltalls `<x>_ore`-felt i et svar, med beløpet skrevet som en
+nordmann skriver det («1 117,75»). Øre-feltet står urørt — det er det en
+skriving tar — og et eksisterende felt overskrives aldri. Det gjelder
+alle verktøy, for både den hostede agenten og eksterne MCP-klienter, uten
+endring i API-et.
+
 ### Filer går som sti, ikke som base64
 
 `bilag_last_opp`, `saft_analyser`, `saft_importer` og de to
