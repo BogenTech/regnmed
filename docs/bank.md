@@ -111,8 +111,17 @@ overlapp blir en kopi.
 
 Første henting starter PÅ dagen til nyeste linje som alt ligger på kontoen
 (opplastet historikk hentes ikke om igjen, mens den siste dagen gjør det: en fil
-eksportert klokken tolv mangler ettermiddagen), ellers 90 dager tilbake, og aldri
-senere enn i dag. Sier banken at samtykket er borte, avsluttes koblingen med
+eksportert klokken tolv mangler ettermiddagen). Ligger det ingenting der, går den
+tilbake til starten av inneværende regnskapsår — året som skal bokføres, og
+banklinjene er arbeidslisten — men ikke inn i historikk hovedboken alt har: dagen
+etter nyeste importerte bilag (IMP-journalen, avstemt i det gamle systemet) eller
+datoen for en manuell åpningsbalanse. Aldri senere enn i dag. Det er den FØRSTE
+hentingen som skal nå langt tilbake: etter PSD2 gir bankene som regel mer enn 90
+dager bare kort tid etter at kunden har logget inn med BankID.
+
+«Hent eldre» (`?fra=` på «Hent nå») henter bakover fra en valgt dato én gang,
+så langt banken gir historikk. Den forlenger bare vinduet, kutter det aldri, og
+det som alt er hentet eller lastet opp, importeres ikke på nytt. Sier banken at samtykket er borte, avsluttes koblingen med
 beskjed om å koble til på nytt; andre feil noteres på raden PÅ NORSK (leverandørens
 egne ord går til loggen, aldri til portalen) og neste henting prøver igjen.
 

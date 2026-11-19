@@ -141,11 +141,12 @@
     );
   }
 
-  async function hent(k) {
+  // fra: reach back for history the usual fetch does not cover.
+  async function hent(k, fra) {
     if (busy) return;
     busy = k.id;
     try {
-      const r = await post(base + "/" + k.id + "/sync", {});
+      const r = await post(base + "/" + k.id + "/sync" + (fra ? "?fra=" + fra : ""), {});
       toast(
         r.nye === 0
           ? "Ingen nye bankposter"
@@ -158,6 +159,16 @@
     }
     busy = null;
     load();
+  }
+
+  async function hentEldre(k) {
+    if (busy) return;
+    const svar = await skjema(
+      "Hent eldre bankposter",
+      [{ navn: "fra", etikett: "Hent fra og med", type: "date", hjelp: "Banken bestemmer hvor langt tilbake den gir historikk, ofte 12–24 måneder. Poster som alt er hentet eller lastet opp, hentes ikke på nytt." }],
+      { ok: "Hent" },
+    );
+    if (svar?.fra) hent(k, svar.fra);
   }
 
   async function kobleFra(k) {
@@ -295,6 +306,7 @@
                           {#if busy === k.id}<span class="loading loading-spinner loading-xs"></span>{/if}
                           Hent nå
                         </button>
+                        <button class="btn btn-xs btn-ghost" onclick={() => hentEldre(k)} disabled={!!busy}>Hent eldre</button>
                       {/if}
                       <button class="btn btn-xs btn-ghost" onclick={() => kobleFra(k)} disabled={!!busy}>Koble fra</button>
                     {/if}

@@ -14,8 +14,6 @@ use uuid::Uuid;
 
 /// The add-on slug (subscription_plan, kind `addon`).
 pub const ADDON: &str = "bank";
-/// History fetched on the very first sync of an account with no statements.
-const FIRST_SYNC_DAYS: i64 = 90;
 /// Later syncs re-read this many days: banks book late, and the dedupe
 /// table makes the overlap free.
 const OVERLAP_DAYS: i64 = 10;
@@ -318,8 +316,12 @@ pub async fn note_error(pool: &PgPool, id: Uuid, error: &str) -> Result<()> {
 /// newest statement line already on the account: history uploaded as files is
 /// not fetched again, while that last day is — a file exported at noon lacks
 /// the afternoon, and `record_fetch` leaves out what the file already has.
-/// With nothing on the account it goes back a fixed number of days. Never
-/// later than today.
+/// With nothing on the account it goes back to the start of this fiscal year
+/// — the year still to be booked, and the bank lines are its to-do list — but
+/// not into history the ledger already holds: the day after the newest
+/// imported voucher, or the date of the opening balance. Never later than today.
+/// It is the first fetch that reaches back: banks release more than 90 days
+/// only shortly after the customer has authenticated.
 pub async fn fetch_from(pool: &PgPool, account_id: Uuid, today: NaiveDate) -> Result<NaiveDate> {
     let r = sqlx::query(
         "select max(t.booking_date) filter (where s.statement_ref like 'feed:%') fed,
@@ -335,7 +337,24 @@ pub async fn fetch_from(pool: &PgPool, account_id: Uuid, today: NaiveDate) -> Re
     let from = match (fed, newest) {
         (Some(fed), _) => fed - chrono::Days::new(OVERLAP_DAYS as u64),
         (None, Some(newest)) => newest,
-        (None, None) => today - chrono::Days::new(FIRST_SYNC_DAYS as u64),
+        (None, None) => {
+            let year_start =
+                regnmed_core::fiscal_year::period(regnmed_core::fiscal_year::of(today))
+                    .context("fiscal year out of range")?
+                    .0;
+            // Imported history (the IMP journal) is the old system's, reconciled
+            // there; a manual opening balance summarizes everything before it.
+            let history_end: Option<NaiveDate> = sqlx::query_scalar(
+                "select max(case when j.code = 'IMP' then v.voucher_date + 1 else v.voucher_date end)
+                 from voucher v join journal j on j.id = v.journal_id
+                 where v.company_id = (select company_id from account where id = $1)
+                   and (j.code = 'IMP' or (v.chain_seq = 1 and v.description = 'Åpningsbalanse'))",
+            )
+            .bind(account_id)
+            .fetch_one(pool)
+            .await?;
+            history_end.map_or(year_start, |d| d.max(year_start))
+        }
     };
     Ok(from.min(today))
 }
@@ -566,10 +585,15 @@ pub fn user_message(e: &regnmed_gov::bankfeed::FeedError) -> &'static str {
 /// (the user must connect again); any other failure is noted on the row in
 /// the user's language and the next fetch tries again. The error returned is
 /// the provider's, for the caller to turn into its own kind of answer.
+///
+/// `back_to` reaches further back than the usual window (history the first
+/// fetch did not cover); it never shortens it. What was already imported is
+/// absorbed by the dedupe table, so reaching back is safe to repeat.
 pub async fn sync(
     pool: &PgPool,
     client: &dyn regnmed_gov::bankfeed::BankFeed,
     connection: &Live,
+    back_to: Option<NaiveDate>,
 ) -> Result<std::result::Result<SyncSummary, regnmed_gov::bankfeed::FeedError>> {
     use regnmed_gov::bankfeed::FeedError;
     if connection.valid_until <= Utc::now() {
@@ -584,7 +608,8 @@ pub async fn sync(
         return Ok(Err(FeedError::ConsentGone("expired by date".into())));
     }
     let today = Utc::now().date_naive();
-    let from = fetch_from(pool, connection.account_id, today).await?;
+    let usual = fetch_from(pool, connection.account_id, today).await?;
+    let from = back_to.map_or(usual, |d| d.min(usual));
     match client
         .transactions(&connection.external_account_id, from)
         .await
@@ -647,7 +672,7 @@ pub async fn sync_company(
                 continue;
             };
             summary.0 += 1;
-            match sync(pool, client, &connection).await? {
+            match sync(pool, client, &connection, None).await? {
                 Ok(s) => {
                     summary.1 += s.new;
                     summary.2 += s.auto_matched;
