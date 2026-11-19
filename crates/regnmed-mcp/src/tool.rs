@@ -388,6 +388,126 @@ pub const TOOLS: &[Tool] = &[
             "note":{"type":"string","description":"Hvorfor dokumentet avvises"}},
             "additionalProperties":false}"#,
     },
+    // ---------- Bank ----------
+    Tool {
+        name: "bank_kontoer",
+        description: "Selskapets bankkontoer i regnskapet (19xx) med saldo, hvor langt \
+                      kontoutdragene går, og hvor mange banklinjer som ikke er avstemt. \
+                      Kontonummeret herfra er `account` i de andre bankverktøyene.",
+        method: "GET",
+        path: "/companies/{selskap}/bank/accounts",
+        right: Some("BANK_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_avstemming",
+        description: "Bankavstemmingen for én konto: banklinjer uten bilag (`unmatched_bank`, \
+                      hver med forslag til bilag med samme beløp), bilagslinjer uten banklinje \
+                      (`unmatched_entries`) og hvilke kontoutdrag som er lest inn. \
+                      Beløp i øre; positivt = inn på kontoen.",
+        method: "GET",
+        path: "/companies/{selskap}/bank/reconciliation",
+        right: Some("BANK_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["account"],"properties":{COMPANY,
+            "account":{"type":"string","description":"Bankkontoen i regnskapet, f.eks. 1920"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_poster_sok",
+        description: "Søker i bilagslinjer på bankkontoen som ennå ikke er koblet til en \
+                      banklinje — når forslagene i bank_avstemming ikke treffer.",
+        method: "GET",
+        path: "/companies/{selskap}/bank/entries",
+        right: Some("BANK_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["account"],"properties":{COMPANY,
+            "account":{"type":"string","description":"Bankkontoen i regnskapet, f.eks. 1920"},
+            "q":{"type":"string","description":"Tekst eller beløp å søke etter"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_importer",
+        description: "Leser et kontoutdrag fra disk inn på en bankkonto: camt.053 (XML) eller \
+                      CSV fra nettbanken. Linjer som alt ligger på kontoen (samme dag, samme \
+                      beløp — fra en annen fil eller bankkoblingen) hoppes over, og svaret sier \
+                      hvor mange (`skipped`). Samme fil to ganger avvises. Banklinjene kobles \
+                      automatisk mot bilag med samme beløp og dato. Import bokfører INGENTING.",
+        method: "POST",
+        path: "/companies/{selskap}/bank/statements",
+        right: Some("BANK_AVSTEM"),
+        body: Body::File,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["fil","account"],"properties":{COMPANY,
+            "fil":{"type":"string","description":"Full sti til kontoutdraget (XML eller CSV)"},
+            "account":{"type":"string","description":"Bankkontoen i regnskapet, f.eks. 1920"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_koble",
+        description: "Kobler én banklinje til én bilagslinje på bankkontoen. Beløpene må være \
+                      like. Bruk forslagene fra bank_avstemming; koble bare når du er sikker.",
+        method: "POST",
+        path: "/companies/{selskap}/bank/matches",
+        right: Some("BANK_AVSTEM"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["bank_transaction_id","entry_id"],"properties":{COMPANY,
+            "bank_transaction_id":{"type":"string","description":"Fra unmatched_bank i bank_avstemming"},
+            "entry_id":{"type":"string","description":"Fra suggestions, unmatched_entries eller bank_poster_sok"}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_bokfor_linje",
+        description: "Bokfører en banklinje som ikke har noe bilag bak seg — gebyr, renter — \
+                      rett fra kontoutdraget, og kobler den i samme steg. Bankkontoen mot \
+                      `konto`, datert bankens bokføringsdato, UTEN mva. Alt med mva eller \
+                      kvittering hører i innboksen (bilag_bokfor). Usikker på kontoen: svar \
+                      på oppgaven med status «sporsmal».",
+        method: "POST",
+        path: "/companies/{selskap}/bank/transactions/{linje}/post",
+        right: Some("BANK_AVSTEM"),
+        body: Body::Json,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["linje","konto"],"properties":{COMPANY,
+            "linje":{"type":"string","description":"bank_transaction_id fra bank_avstemming"},
+            "konto":{"type":"string","description":"Motkontoen, f.eks. 7770 bankgebyr eller 8040 renteinntekt"},
+            "tekst":{"type":"string","description":"Bilagstekst. Standard: bankens tekst."}},
+            "additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bankkoblinger",
+        description: "Selskapets direkte bankkoblinger: hvilken bank og konto, om samtykket \
+                      gjelder, når det sist ble hentet og siste feil. `id` herfra er `kobling` \
+                      i bank_hent.",
+        method: "GET",
+        path: "/companies/{selskap}/bank/feed",
+        right: Some("BANK_LES"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","properties":{COMPANY},"additionalProperties":false}"#,
+    },
+    Tool {
+        name: "bank_hent",
+        description: "Henter nye transaksjoner fra banken gjennom en bankkobling nå, som \
+                      «Hent nå» i portalen. Med `fra` hentes historikk fra og med den datoen, \
+                      så langt banken gir (ofte 12–24 måneder). Det som alt er hentet eller \
+                      lastet opp, hentes ikke på nytt. Banker begrenser antall hentinger per \
+                      døgn: ikke kall den i løkke.",
+        method: "POST",
+        path: "/companies/{selskap}/bank/feed/{kobling}/sync",
+        right: Some("BANK_AVSTEM"),
+        body: Body::None,
+        reply: Reply::Text,
+        schema: r#"{"type":"object","required":["kobling"],"properties":{COMPANY,
+            "kobling":{"type":"string","description":"id fra bankkoblinger"},
+            "fra":{"type":"string","description":"YYYY-MM-DD. Utelates for vanlig henting."}},
+            "additionalProperties":false}"#,
+    },
     // ---------- Salg ----------
     Tool {
         name: "kunder",

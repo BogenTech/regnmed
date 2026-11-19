@@ -106,7 +106,7 @@ innenfor containergrensen på 64 MB, og dette gjør ikke det.
 
 ## 3. Verktøyene
 
-`crates/regnmed-mcp/src/tool.rs` er en **kuratert** liste på ~55
+`crates/regnmed-mcp/src/tool.rs` er en **kuratert** liste på ~65
 verktøy, ikke en generert en.
 
 #102 foreslo å generere verktøylisten fra samme rutetabell som
@@ -233,6 +233,38 @@ ansatt-prompten sier derfor: kall `timer_liste` før et nytt forsøk.
 To konvensjoner er gjentatt i hvert skjema der de gjelder, fordi en
 liten modell ikke skal måtte utlede dem: **beløp er heltall øre**
 (positivt = debet), og **datoer er `YYYY-MM-DD`**.
+
+### Bank (2026-11-19)
+
+Agenten hadde ingen bankverktøy, så avstemming — den jobben en
+regnskapsfører gjør hver måned — var umulig å be den om. Nå dekker tabellen
+[bank.md](bank.md):
+
+| Verktøy | Endepunkt | Rettighet |
+| --- | --- | --- |
+| `bank_kontoer` | `GET …/bank/accounts` | `BANK_LES` |
+| `bank_avstemming` | `GET …/bank/reconciliation?account=` | `BANK_LES` |
+| `bank_poster_sok` | `GET …/bank/entries?account=&q=` | `BANK_LES` |
+| `bankkoblinger` | `GET …/bank/feed` | `BANK_LES` |
+| `bank_importer` | `POST …/bank/statements?account=` (fil fra disk) | `BANK_AVSTEM` |
+| `bank_hent` | `POST …/bank/feed/{kobling}/sync?fra=` | `BANK_AVSTEM` |
+| `bank_koble` | `POST …/bank/matches` | `BANK_AVSTEM` |
+| `bank_bokfor_linje` | `POST …/bank/transactions/{linje}/post` | `BANK_AVSTEM` (+ `BILAG_BOKFOR`, sjekket av API-et) |
+
+Å **fjerne** en kobling (`DELETE …/bank/matches/{id}`) har ikke eget
+verktøy: en gal kobling rettes av et menneske, og et verktøy for å angre
+er et verktøy en liten modell bruker for å «rydde» i det den ikke forstår.
+
+Bokfører-prompten fikk en BANK-del, og regnskapsførerens avstemmingssteg
+nevner `bank_avstemming`. Grensen er den samme som for innboksen: **en
+banklinje er ikke et bilag.** Bare gebyr og renter bokføres rett fra
+linjen (`bank_bokfor_linje`, uten mva — samme regel som i portalen); et
+kjøp uten kvittering er et spørsmål, ikke en postering.
+
+`bank_importer` og `bank_hent` er trygge å gjenta: linjer som alt ligger
+på kontoen hoppes over (bank.md), så et nytt forsøk etter et tapt svar
+gir ingen kopi. Bankene begrenser antall hentinger per døgn, så
+`bank_hent` sier at den ikke skal kalles i løkke.
 
 ### Filer går som sti, ikke som base64
 
