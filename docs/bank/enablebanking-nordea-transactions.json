@@ -1,0 +1,271 @@
+{
+  "transactions": [
+    {
+      "entry_reference": null,
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "12.40"
+      },
+      "creditor": null,
+      "creditor_account": null,
+      "creditor_agent": null,
+      "debtor": {
+        "name": "KORTINNLOSER NOK PAY",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "debtor_account": {
+        "iban": null,
+        "other": {
+          "identification": "1503.10.20304",
+          "scheme_name": "BBAN",
+          "issuer": null
+        }
+      },
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Transfer",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "CRDT",
+      "status": "PDNG",
+      "booking_date": null,
+      "value_date": "2026-11-19",
+      "transaction_date": "2026-11-19",
+      "balance_after_transaction": null,
+      "reference_number": "100000000000000001PC000N01",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "100000000000000001PC000N01",
+        "NO DETAILS"
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    },
+    {
+      "entry_reference": "2026-08-032026-08-04-00.34.32.503616",
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "11"
+      },
+      "creditor": {
+        "name": "Omkostninger",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "creditor_account": null,
+      "creditor_agent": null,
+      "debtor": null,
+      "debtor_account": null,
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Omkostninger",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "DBIT",
+      "status": "BOOK",
+      "booking_date": "2026-08-03",
+      "value_date": "2026-08-03",
+      "transaction_date": "2026-08-03",
+      "balance_after_transaction": null,
+      "reference_number": "699701 100001 Omkost.",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "699701 100001 Omkost.",
+        "EGENREF 7300100000001\nSe spesifikasjoner på kontoutskrift ved"
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    },
+    {
+      "entry_reference": "2026-07-172026-07-17-23.44.32.271985",
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "2500"
+      },
+      "creditor": {
+        "name": "Fjordvik Konsult AS",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "creditor_account": {
+        "iban": null,
+        "other": {
+          "identification": "1234.56.78903",
+          "scheme_name": "BBAN",
+          "issuer": null
+        }
+      },
+      "creditor_agent": null,
+      "debtor": null,
+      "debtor_account": null,
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Betaling med melding",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "DBIT",
+      "status": "BOOK",
+      "booking_date": "2026-07-17",
+      "value_date": "2026-07-17",
+      "transaction_date": "2026-07-17",
+      "balance_after_transaction": null,
+      "reference_number": "668121 100004 Bet.mld",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "668121 100004 Bet.mld",
+        "Kjøp av aksjer"
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    },
+    {
+      "entry_reference": "2026-07-172026-07-17-23.44.32.270865",
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "7500"
+      },
+      "creditor": null,
+      "creditor_account": null,
+      "creditor_agent": null,
+      "debtor": {
+        "name": "KARI NORDMANN",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "debtor_account": null,
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Overførsel",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "CRDT",
+      "status": "BOOK",
+      "booking_date": "2026-07-17",
+      "value_date": "2026-07-17",
+      "transaction_date": "2026-07-17",
+      "balance_after_transaction": null,
+      "reference_number": "600101 100003 Ovf",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "600101 100003 Ovf",
+        "Lån fra eier"
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    },
+    {
+      "entry_reference": "2026-03-022026-03-03-00.42.26.616676",
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "5.5"
+      },
+      "creditor": {
+        "name": "Omkostninger",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "creditor_account": null,
+      "creditor_agent": null,
+      "debtor": null,
+      "debtor_account": null,
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Omkostninger",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "DBIT",
+      "status": "BOOK",
+      "booking_date": "2026-03-02",
+      "value_date": "2026-03-02",
+      "transaction_date": "2026-03-02",
+      "balance_after_transaction": null,
+      "reference_number": "699701 100002 Omkost.",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "699701 100002 Omkost.",
+        "EGENREF 7300100000002\nSe spesifikasjoner på kontoutskrift ved"
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    },
+    {
+      "entry_reference": "2025-12-312025-12-31-23.46.51.018123",
+      "merchant_category_code": null,
+      "transaction_amount": {
+        "currency": "NOK",
+        "amount": "3.21"
+      },
+      "creditor": null,
+      "creditor_account": null,
+      "creditor_agent": null,
+      "debtor": {
+        "name": "Renter",
+        "postal_address": null,
+        "organisation_id": null,
+        "private_id": null,
+        "contact_details": null
+      },
+      "debtor_account": null,
+      "debtor_agent": null,
+      "bank_transaction_code": {
+        "description": "Renter",
+        "code": null,
+        "sub_code": null
+      },
+      "credit_debit_indicator": "CRDT",
+      "status": "BOOK",
+      "booking_date": "2025-12-31",
+      "value_date": "2026-01-01",
+      "transaction_date": "2025-12-31",
+      "balance_after_transaction": null,
+      "reference_number": "607597 000000 Renter",
+      "reference_number_schema": null,
+      "remittance_information": [
+        "607597 000000 Renter",
+        ""
+      ],
+      "debtor_account_additional_identification": null,
+      "creditor_account_additional_identification": null,
+      "exchange_rate": null,
+      "note": null,
+      "transaction_id": null
+    }
+  ],
+  "continuation_key": null
+}
