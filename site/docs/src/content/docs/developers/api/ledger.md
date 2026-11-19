@@ -50,6 +50,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | `VEDLEGG_SKRIV` |
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/reverse` | `BILAG_BOKFOR` |
 | GET | `/notifications` | — |
+| GET | `/web` | — |
 
 ## Les mer
 
