@@ -691,6 +691,9 @@ async fn the_hosted_worker_runs_a_real_tool_and_reports_back() {
         .collect();
     assert!(tools.contains(&"bilag_bokfor") && tools.contains(&"saldobalanse"));
     assert!(!tools.contains(&"saft_importer") && !tools.contains(&"timer_las"));
+    // The worker writes the report from the closing marker; offering the
+    // reporting tool too made the model post each question twice.
+    assert!(!tools.contains(&"oppgave_svar"));
 
     // The role prompt went with it — a `bokforing` agent must not be
     // told it is something else, or it spends its turns being refused.
@@ -1239,6 +1242,79 @@ async fn an_agent_files_a_claim_and_a_human_decides_it() {
         .filter(|m| m["content"].is_array())
         .count();
     assert_eq!(pictures, 1, "{}", sett[2]);
+}
+
+/// A model that reports through `oppgave_svar` anyway (the role prompt
+/// it shares with external agents tells it to) is turned away without
+/// touching the trail, and its marked reply is the one report. In test
+/// 2026-11-19 every such turn posted the question twice.
+#[tokio::test]
+async fn the_hosted_worker_reports_once_even_when_the_model_calls_the_report_tool() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    let company = regnmed_db::create_company(&state.pool, &unique_orgnumber(), "Ettsvar AS")
+        .await
+        .unwrap();
+    let client_id = format!("ettsvar-{}", Uuid::new_v4());
+    regnmed_db::grant_integration(
+        &state.pool,
+        company,
+        &client_id,
+        "Agenten",
+        None,
+        "bokforing",
+        "Eier Eiersen",
+    )
+    .await
+    .unwrap();
+    let base = serve(state.clone()).await;
+    let server = Server::new(Client::new(
+        &base,
+        Some(company.to_string()),
+        &idp.token(&client_id, ""),
+    ));
+    let mock = FakeSupplier::default();
+    let supplier = serve_supplier(
+        mock.clone(),
+        vec![
+            json!({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{
+            "id":"call_1","type":"function","function":{
+                "name":"oppgave_svar",
+                "arguments":"{\"oppgave\":\"00000000-0000-0000-0000-000000000000\",\"status\":\"sporsmal\",\"notat\":\"Hvor mange km?\"}"
+            }}]}}]}),
+            json!({"choices":[{"message":{"role":"assistant",
+                "content":"SPØRSMÅL: Hvor mange km?"}}]}),
+        ],
+    )
+    .await;
+    let model = regnmed_agent::llm::Llm::new(&supplier, "testmodell", "sk-test").unwrap();
+    let outcome = regnmed_agent::run_loop(
+        &model,
+        &server,
+        "bokforing",
+        None,
+        "Lag en reiseregning.",
+        &[],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        outcome,
+        regnmed_agent::Outcome::Question("Hvor mange km?".into())
+    );
+    let sett = mock.sett.lock().unwrap().clone();
+    let told = sett[1]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .unwrap()["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(told.contains("SPØRSMÅL:"), "{told}");
 }
 
 /// The web tool reads only what the platform listed, and the refusal
