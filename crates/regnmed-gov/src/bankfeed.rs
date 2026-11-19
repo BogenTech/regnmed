@@ -23,6 +23,9 @@ pub enum FeedError {
     ConsentGone(String),
     /// The bank refuses more fetches for now; try again later.
     RateLimited,
+    /// The bank does not give history that far back. Not a fault of the
+    /// connection: a later start date works.
+    PeriodRefused,
     Other(anyhow::Error),
 }
 
@@ -31,6 +34,7 @@ impl std::fmt::Display for FeedError {
         match self {
             FeedError::ConsentGone(why) => write!(f, "consent is gone: {why}"),
             FeedError::RateLimited => write!(f, "the bank is rate limiting"),
+            FeedError::PeriodRefused => write!(f, "the bank refuses that transaction period"),
             FeedError::Other(e) => write!(f, "{e:#}"),
         }
     }

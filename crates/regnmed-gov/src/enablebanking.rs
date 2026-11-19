@@ -92,6 +92,7 @@ impl Client {
                 FeedError::ConsentGone(message)
             }
             "ASPSP_RATE_LIMIT_EXCEEDED" => FeedError::RateLimited,
+            "WRONG_TRANSACTIONS_PERIOD" => FeedError::PeriodRefused,
             _ if status.as_u16() == 429 => FeedError::RateLimited,
             _ => FeedError::Other(anyhow!("Enable Banking {status}: {code} {message}")),
         })

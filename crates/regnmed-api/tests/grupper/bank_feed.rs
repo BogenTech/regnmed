@@ -15,7 +15,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -33,6 +33,8 @@ struct Bank {
     transactions: Vec<Value>,
     expired: bool,
     rate_limited: bool,
+    /// The earliest `date_from` the bank accepts.
+    earliest: Option<String>,
     /// The `date_from` of the last fetch.
     last_from: Option<String>,
     /// Sessions closed at the provider (DELETE /sessions/{id}).
@@ -103,6 +105,14 @@ async fn mock_bank(shared: Shared) -> String {
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(
                     json!({ "message": "ASPSP Rate limit exceeded", "code": 429, "error": "ASPSP_RATE_LIMIT_EXCEEDED" }),
+                ),
+            );
+        }
+        if bank.earliest.as_deref() > q.get("date_from").map(String::as_str) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(
+                    json!({ "message": "Wrong transactions period requested", "code": 422, "error": "WRONG_TRANSACTIONS_PERIOD" }),
                 ),
             );
         }
@@ -595,6 +605,27 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
         "lines": [{ "account": "1920", "amount_ore": 1_250_000 }, { "account": "1950", "amount_ore": -1_250_000 }]
     })).await;
     assert_eq!(code, StatusCode::OK, "{why}");
+    // A bank that refuses the start of the year still gives the first fetch
+    // its last 90 days. Nothing to fetch yet, so the account stays empty.
+    let floor = today - chrono::Days::new(90);
+    shared.lock().unwrap().earliest = Some(floor.to_string());
+    let (code, empty) = call(
+        &state,
+        "POST",
+        &format!("{base}/bank/feed/{pending}/sync"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{empty}");
+    let jan1 = today.with_month(1).unwrap().with_day(1).unwrap();
+    assert_eq!(
+        shared.lock().unwrap().last_from.as_deref(),
+        Some(jan1.max(floor).to_string().as_str()),
+        "refused from 1 January, fetched from the floor"
+    );
+    shared.lock().unwrap().earliest = None;
+
     // A file uploaded earlier already holds yesterday's 640 kr payment.
     let yesterday = today - chrono::Days::new(1);
     regnmed_db::bank::import_statement(
@@ -696,6 +727,31 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
         shared.lock().unwrap().last_from.as_deref(),
         Some(long_ago.to_string().as_str())
     );
+    // Further back than the bank gives: told so, and the connection is not
+    // marked as failing.
+    shared.lock().unwrap().earliest = Some((today - chrono::Days::new(500)).to_string());
+    let too_far = today - chrono::Days::new(600);
+    let (code, refused) = call(
+        &state,
+        "POST",
+        &format!("{sync}?fra={too_far}"),
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.to_string().contains("så langt tilbake"),
+        "{refused}"
+    );
+    let last_error: Option<String> =
+        sqlx::query_scalar("select last_error from bank_connection where id = $1")
+            .bind(pending)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(last_error, None);
+    shared.lock().unwrap().earliest = None;
     let (_, later) = call(
         &state,
         "POST",
@@ -1170,7 +1226,7 @@ impl regnmed_gov::bankfeed::BankFeed for OtherProvider {
 /// fiscal year, but never inside history the ledger already holds.
 #[tokio::test]
 async fn the_first_fetch_reaches_back_to_the_year_but_not_into_imported_history() {
-    use chrono::{Datelike, NaiveDate};
+    use chrono::NaiveDate;
     use regnmed_core::Ore;
     use regnmed_core::voucher::{EntryDraft, VoucherDraft};
     let idp = TestIdp::new();
