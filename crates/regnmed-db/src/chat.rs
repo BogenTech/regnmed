@@ -617,16 +617,25 @@ async fn order_agent(
         text.push_str(&files.join("\n- "));
     }
 
+    // «Ny samtale»: nothing before the newest restart reaches the agent,
+    // not even a question it is still waiting on.
+    let restarted: Option<DateTime<Utc>> =
+        sqlx::query_scalar("select max(created_at) from chat_restart where conversation_id = $1")
+            .bind(conversation)
+            .fetch_one(&mut **tx)
+            .await?;
     let open: Option<(Uuid, Option<String>)> = sqlx::query_as(
         "select m.task_id,
                 (select h.status from agent_oppgave_hendelse h where h.oppgave_id = m.task_id
                  order by h.created_at desc, h.id desc limit 1)
          from chat_message m
          where m.conversation_id = $1 and m.task_id is not null
+           and ($2::timestamptz is null or m.created_at > $2)
          order by m.created_at desc, m.id desc
          limit 1",
     )
     .bind(conversation)
+    .bind(restarted)
     .fetch_optional(&mut **tx)
     .await?;
     if let Some((task_id, Some(status))) = open
@@ -650,10 +659,12 @@ async fn order_agent(
     let context: Vec<(String, String)> = sqlx::query_as(
         "select author_name, body from (
              select author_name, body, created_at, id from chat_message
-             where conversation_id = $1 order by created_at desc, id desc limit 10
+             where conversation_id = $1 and ($2::timestamptz is null or created_at > $2)
+             order by created_at desc, id desc limit 10
          ) t order by created_at, id",
     )
     .bind(conversation)
+    .bind(restarted)
     .fetch_all(&mut **tx)
     .await?;
     let mut order = format!(
@@ -692,6 +703,31 @@ async fn order_agent(
     .execute(&mut **tx)
     .await?;
     Ok(task_id)
+}
+
+/// «Ny samtale»: the agent starts fresh from now. Nothing is deleted;
+/// the next order simply carries nothing from before this moment.
+pub async fn restart(pool: &PgPool, conversation: Uuid, person: Uuid) -> Result<DateTime<Utc>> {
+    Ok(sqlx::query_scalar(
+        "insert into chat_restart (id, conversation_id, person_id) values ($1, $2, $3)
+         returning created_at",
+    )
+    .bind(Uuid::now_v7())
+    .bind(conversation)
+    .bind(person)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// When the agent was told to start fresh, oldest first: the thread draws
+/// a line there.
+pub async fn restarts(pool: &PgPool, conversation: Uuid) -> Result<Vec<DateTime<Utc>>> {
+    Ok(sqlx::query_scalar(
+        "select created_at from chat_restart where conversation_id = $1 order by created_at",
+    )
+    .bind(conversation)
+    .fetch_all(pool)
+    .await?)
 }
 
 /// Puts an agent's answer to an order from a conversation back into it.

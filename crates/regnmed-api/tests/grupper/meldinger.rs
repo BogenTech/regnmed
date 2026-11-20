@@ -422,6 +422,84 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
         "a read conversation rings no bell"
     );
 
+    // ---- «Ny samtale»: the agent starts fresh ----
+    // The agent asks again, and Eva starts over instead of answering. Every
+    // order carries the recent conversation, and an agent trusts its own
+    // earlier answers -- so a wrong one kept coming back (prod, 2026-11-19).
+    let (status, _) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{task_id}/svar"),
+        &agent_token,
+        Some(json!({"status": "sporsmal", "notat": "Hvilken konto?"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, restarted) = call(
+        &state,
+        "POST",
+        &format!("/chat/conversations/{with_agent}/restart"),
+        &eva.token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{restarted}");
+    let (_, thread) = call(
+        &state,
+        "GET",
+        &format!("/chat/conversations/{with_agent}"),
+        &eva.token,
+        None,
+    )
+    .await;
+    assert_eq!(thread["ny_start"].as_array().unwrap().len(), 1, "{thread}");
+    assert!(
+        thread["messages"].as_array().unwrap().len() >= 4,
+        "nothing is deleted: {thread}"
+    );
+    let order_text = |task: &str| {
+        let state = state.clone();
+        let token = anne.token.clone();
+        let url = format!("/companies/{company}/agent/oppgaver/{task}");
+        async move {
+            let (_, task) = call(&state, "GET", &url, &token, None).await;
+            task["oppgave"]["melding"].as_str().unwrap().to_string()
+        }
+    };
+    let (_, posted) = call(
+        &state,
+        "POST",
+        &format!("/chat/conversations/{with_agent}/messages"),
+        &eva.token,
+        Some(json!({"text": "Hva er saldoen på 1920?"})),
+    )
+    .await;
+    let fresh = posted["task_id"].as_str().unwrap().to_string();
+    assert_ne!(fresh, task_id, "the open question is not continued");
+    let order = order_text(&fresh).await;
+    assert!(!order.contains("Kontorrekvisita"), "{order}");
+    assert!(!order.contains("Tidligere i samtalen"), "{order}");
+    // What is said after the restart is the new conversation.
+    call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/agent/oppgaver/{fresh}/svar"),
+        &agent_token,
+        Some(json!({"status": "utfort", "notat": "Saldoen er 1 117,75 kr."})),
+    )
+    .await;
+    let (_, posted) = call(
+        &state,
+        "POST",
+        &format!("/chat/conversations/{with_agent}/messages"),
+        &eva.token,
+        Some(json!({"text": "Og 1950?"})),
+    )
+    .await;
+    let order = order_text(posted["task_id"].as_str().unwrap()).await;
+    assert!(order.contains("Saldoen er 1 117,75 kr."), "{order}");
+    assert!(!order.contains("Kontorrekvisita"), "{order}");
+
     // ---- Client and byrå contact talk; the newest conversation is on top ----
     let (_, opened) = call(
         &state,
@@ -442,6 +520,16 @@ async fn people_reach_their_colleagues_their_byra_and_their_own_agents() {
     )
     .await;
     assert_eq!(again["conversation_id"], with_kari.as_str());
+    // Starting over only means something to an agent.
+    let (status, _) = call(
+        &state,
+        "POST",
+        &format!("/chat/conversations/{with_kari}/restart"),
+        &eva.token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = call(
         &state,
         "POST",

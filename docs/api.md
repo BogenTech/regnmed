@@ -51,6 +51,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/chat/conversations/{conversation_id}` | GET |
 | `/chat/conversations/{conversation_id}/messages` | POST |
 | `/chat/conversations/{conversation_id}/read` | POST |
+| `/chat/conversations/{conversation_id}/restart` | POST |
 | `/chat/unread` | GET |
 | `/chat/read-all` | POST |
 | `/chat/stream` | GET (server-sent events) |

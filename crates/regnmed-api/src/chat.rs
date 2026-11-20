@@ -315,10 +315,16 @@ pub async fn messages(
         (true, Some(c), None) => Some(db::agent_runs_here(&state.pool, c, other.person_id).await?),
         _ => None,
     };
+    // Where the agent was told to start fresh: the thread draws a line.
+    let restarts = match other.agent {
+        true => db::restarts(&state.pool, conversation).await?,
+        false => Vec::new(),
+    };
     Ok(Json(json!({
         "me": person.person_id,
         "with": contact_json(&other),
         "runs_here": runs_here,
+        "ny_start": restarts.iter().map(|t| t.to_rfc3339()).collect::<Vec<_>>(),
         // Where an attachment can go: the agent's company, or a company
         // both sides work in.
         "attach_to": match company {
@@ -339,6 +345,24 @@ pub async fn messages(
             "task_status": m.task_status,
         })).collect::<Vec<_>>(),
     })))
+}
+
+/// «Ny samtale» with an agent: from now on, nothing said before reaches
+/// it with the next order -- not the earlier answers it would otherwise
+/// trust, and not a question it is still waiting on. The messages stay.
+pub async fn restart(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(conversation): Path<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let (_, other) = guard(&state, person.person_id, conversation).await?;
+    if !other.agent || person.integration.is_some() {
+        return Err(ApiError::BadRequest(
+            "en ny samtale startes bare med en agent".into(),
+        ));
+    }
+    let at = db::restart(&state.pool, conversation, person.person_id).await?;
+    Ok(Json(json!({ "ny_start": at.to_rfc3339() })))
 }
 
 #[derive(Deserialize)]
