@@ -839,6 +839,10 @@ pub fn router(state: AppState) -> Router {
             get(altinn::status).post(altinn::request),
         )
         .route(
+            "/companies/{company_id}/altinn/system-user/check",
+            axum::routing::post(altinn::check),
+        )
+        .route(
             "/companies/{company_id}/tax-cards/{order_id}/answer",
             axum::routing::post(tax_card::answer),
         )

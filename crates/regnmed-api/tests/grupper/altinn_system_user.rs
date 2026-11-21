@@ -233,6 +233,111 @@ async fn a_company_requests_approval_once_and_sees_it_complete() {
 }
 
 #[tokio::test]
+async fn a_revoked_approval_is_shown_without_requesting_a_new_one() {
+    let idp = TestIdp::new();
+    let Some(mut state) = test_state(&idp).await else {
+        return;
+    };
+    let (base, altinn) = mock_altinn().await;
+    state.system_user = Some(rail(&idp, &base));
+    let (company, token) = company_with(&state, &idp, "admin").await;
+    accept_terms(&state, &token, company).await;
+    let uri = format!("/companies/{company}/altinn/system-user");
+    let check = format!("{uri}/check");
+    call(&state, &token, "POST", &uri, json!({})).await;
+    altinn.lock().unwrap().set_status("Accepted");
+
+    let (status, approved) = call(&state, &token, "POST", &check, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["godkjent"], true);
+
+    altinn.lock().unwrap().requests.clear();
+    let (_, revoked) = call(&state, &token, "POST", &check, json!({})).await;
+    assert_eq!(revoked["status"], "Revoked");
+    assert_eq!(revoked["godkjent"], false);
+    assert!(revoked["godkjenningslenke"].is_null());
+    let (_, stored) = call(&state, &token, "GET", &uri, Value::Null).await;
+    assert_eq!(stored["status"], "Revoked");
+    let (_, unchanged) = call(&state, &token, "POST", &check, json!({})).await;
+    assert_eq!(unchanged["status"], "Revoked");
+    assert_eq!(altinn.lock().unwrap().created, 1);
+
+    let (_, again) = call(&state, &token, "POST", &uri, json!({})).await;
+    assert_eq!(again["status"], "New");
+    assert!(again["godkjenningslenke"].is_string());
+    assert_eq!(altinn.lock().unwrap().created, 2);
+}
+
+#[tokio::test]
+async fn a_stray_not_found_does_not_leave_an_approval_revoked() {
+    let idp = TestIdp::new();
+    let Some(mut state) = test_state(&idp).await else {
+        return;
+    };
+    let (base, altinn) = mock_altinn().await;
+    state.system_user = Some(rail(&idp, &base));
+    let (company, token) = company_with(&state, &idp, "admin").await;
+    accept_terms(&state, &token, company).await;
+    let uri = format!("/companies/{company}/altinn/system-user");
+    let check = format!("{uri}/check");
+    call(&state, &token, "POST", &uri, json!({})).await;
+    altinn.lock().unwrap().set_status("Accepted");
+    call(&state, &token, "POST", &check, json!({})).await;
+
+    let filed = std::mem::take(&mut altinn.lock().unwrap().requests);
+    let (_, gone) = call(&state, &token, "POST", &check, json!({})).await;
+    assert_eq!(gone["status"], "Revoked");
+
+    altinn.lock().unwrap().requests = filed;
+    let (_, back) = call(&state, &token, "POST", &check, json!({})).await;
+    assert_eq!(back["godkjent"], true);
+}
+
+#[tokio::test]
+async fn an_approval_without_a_request_is_not_called_revoked() {
+    let idp = TestIdp::new();
+    let Some(mut state) = test_state(&idp).await else {
+        return;
+    };
+    let (base, altinn) = mock_altinn().await;
+    altinn.lock().unwrap().refuse_with = Some("AUTH-00006");
+    state.system_user = Some(rail(&idp, &base));
+    let (company, token) = company_with(&state, &idp, "admin").await;
+    accept_terms(&state, &token, company).await;
+    let uri = format!("/companies/{company}/altinn/system-user");
+    call(&state, &token, "POST", &uri, json!({})).await;
+
+    let (_, checked) = call(&state, &token, "POST", &format!("{uri}/check"), json!({})).await;
+    assert_eq!(checked["godkjent"], true);
+    assert_eq!(checked["kontrollerbar"], false);
+}
+
+#[tokio::test]
+async fn an_approval_made_after_a_rejection_does_not_inherit_its_request() {
+    let idp = TestIdp::new();
+    let Some(mut state) = test_state(&idp).await else {
+        return;
+    };
+    let (base, altinn) = mock_altinn().await;
+    state.system_user = Some(rail(&idp, &base));
+    let (company, token) = company_with(&state, &idp, "admin").await;
+    accept_terms(&state, &token, company).await;
+    let uri = format!("/companies/{company}/altinn/system-user");
+    call(&state, &token, "POST", &uri, json!({})).await;
+    altinn.lock().unwrap().set_status("Rejected");
+    call(&state, &token, "POST", &uri, json!({})).await;
+
+    // The customer creates the system user directly in Altinn.
+    altinn.lock().unwrap().refuse_with = Some("AUTH-00004");
+    let (_, approved) = call(&state, &token, "POST", &uri, json!({})).await;
+    assert_eq!(approved["godkjent"], true);
+    assert!(altinn.lock().unwrap().requests.is_empty());
+
+    let (_, checked) = call(&state, &token, "POST", &format!("{uri}/check"), json!({})).await;
+    assert_eq!(checked["status"], "Accepted");
+}
+
+#[tokio::test]
 async fn a_rejected_request_can_be_sent_again() {
     let idp = TestIdp::new();
     let Some(mut state) = test_state(&idp).await else {
@@ -309,6 +414,8 @@ async fn only_a_company_admin_can_connect_altinn() {
     let (other, _) = company_with(&state, &idp, "admin").await;
     let uri = format!("/companies/{company}/altinn/system-user");
     let (status, _) = call(&state, &reader, "POST", &uri, json!({})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(&state, &reader, "POST", &format!("{uri}/check"), json!({})).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let foreign = format!("/companies/{other}/altinn/system-user");
     let (status, _) = call(&state, &reader, "GET", &foreign, Value::Null).await;

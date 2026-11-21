@@ -128,6 +128,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/anchors` | GET |
 | `/companies/{company_id}/anchors/verify` | GET |
 | `/companies/{company_id}/altinn/system-user` | GET POST |
+| `/companies/{company_id}/altinn/system-user/check` | POST |
 | `/companies/{company_id}/assets` | GET POST |
 | `/companies/{company_id}/assets/depreciate` | POST |
 | `/companies/{company_id}/assets/saldo` | GET |
