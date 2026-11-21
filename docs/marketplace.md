@@ -95,14 +95,32 @@ holds an active autorisasjon of that kind:
   (`autorisasjon_verified_at`, `autorisasjon_ref`) — audit trail for the
   directory (#23) and for revisjon.
 
-**Adapter status**: Finanstilsynets virksomhetsregister is public, but
-its API endpoint is not stably documented, so
-`regnmed-gov::finanstilsynet` is a thin adapter behind
-`FINANSTILSYNET_API_URL` expecting
-`GET {base}/virksomheter/{orgnr}` → `{"autorisasjoner":[{"kode","aktiv"}]}`.
-The URL and field mapping get pinned against the live register during
-pilot onboarding; the enforcement point, flow and tests are real today
-and only the adapter may move. Re-verification cadence (licenses can be revoked) is a pilot decision.
+**Registeret**: `regnmed-gov::finanstilsynet` bruker Finanstilsynets åpne
+API, `FINANSTILSYNET_API_URL=https://api.finanstilsynet.no/registry/v2`
+(OpenAPI: `/registry/swagger/v2/swagger.json`, ingen nøkkel, 1 000 kall per
+minutt per IP, svar kan være opptil én time gamle). Oppslaget er
+`GET /legal-entities/search?query={orgnr}`, der bare treff med nøyaktig samme
+orgnr teller, og deretter `GET /legal-entities?ids=…` for lisensene.
+
+| `kind` | Teller for foretak | Teller for enkeltpersonforetak |
+| --- | --- | --- |
+| `regnskap` | `REGS`, `REGNSN` | `REGP` |
+| `revisjon` | `REVS` | `REVP` |
+
+Et foretak må selv stå som lisenshaver (`serviceProviderType = Licensed`). Et
+enkeltpersonforetak står oppført med innehaverens personlige lisens
+(`SoleProprietorship`). Agenter og filialer av en lisenshaver teller ikke,
+heller ikke `REVTHIRD`. Registeret viser gjeldende lisenser og har ikke noe
+aktiv-felt. Hvor ofte en lisens skal kontrolleres på nytt etter at byrået er
+registrert, er ikke avgjort.
+
+**Testmiljøet** bruker det ekte registeret, fordi Finanstilsynet ikke har noe
+testregister. Tenors syntetiske selskaper står ikke der, så de får alltid
+«ikke autorisert», og ekte byråer finnes ikke i Brønnøysunds testregister. Et
+vellykket byråoppslag gjennom hele flyten kan derfor ikke kjøres i test.
+Tilkoblingen bevises med
+`cargo nextest run -p regnmed-gov --run-ignored only finanstilsynet`, som går
+mot det ekte registeret, og flyten dekkes av integrasjonstesten.
 
 ## Firm membership (byråmedlemmer, #78)
 
