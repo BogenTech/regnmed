@@ -202,6 +202,7 @@ pub(crate) async fn render_invoice_ehf(
             // dokumentet mva» — en eksportfaktura fra en registrert
             // selger skal fortsatt ha PartyTaxScheme (#81).
             vat_registered: reg.vat_registered,
+            business_registered: reg.business_registered,
             email: head.get("selger_epost"),
         },
         buyer: EhfPart {
@@ -216,6 +217,7 @@ pub(crate) async fn render_invoice_ehf(
             postal_city: buyer_postal_city,
             land: "NO".into(),
             vat_registered: false,
+            business_registered: false,
             email: head.get("kjoper_epost"),
         },
         account_number: if paid_at_issue {

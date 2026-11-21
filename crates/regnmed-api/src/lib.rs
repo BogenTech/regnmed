@@ -37,6 +37,7 @@ pub mod migration;
 pub mod ocr;
 pub mod payments;
 pub mod payroll;
+pub mod peppol;
 pub mod period;
 pub mod platform;
 pub mod portal;
@@ -112,6 +113,9 @@ pub struct AppState {
     /// in priority order. None when there is none — the portal then shows no
     /// bank-connection card at all.
     pub bank_feed: Option<Arc<regnmed_gov::bankfeed::Providers>>,
+    /// Signs Recommand's webhooks (RECOMMAND_WEBHOOK_SECRET). The API holds
+    /// nothing else of the Peppol rail: workers make every provider call.
+    pub peppol_webhook_secret: Option<String>,
 }
 
 pub struct TaxCardRail {
@@ -592,6 +596,14 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(dispatch::send_invoice),
         )
         .route(
+            "/companies/{company_id}/invoices/{invoice_id}/delivery-check",
+            axum::routing::post(dispatch::delivery_check),
+        )
+        .route(
+            "/companies/{company_id}/peppol/sender",
+            get(peppol::sender_status).post(peppol::setup_sender),
+        )
+        .route(
             "/companies/{company_id}/invoices/{invoice_id}/reminders/{reminder_id}/send",
             axum::routing::post(dispatch::send_reminder),
         )
@@ -977,6 +989,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/webhooks/stripe",
             axum::routing::post(subscription::stripe_webhook),
+        )
+        .route(
+            "/webhooks/recommand",
+            axum::routing::post(peppol::recommand_webhook),
         )
         .route(
             "/companies/{company_id}/parties/{party_id}/contact",

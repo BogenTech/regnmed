@@ -43,6 +43,12 @@ spec:
             - secretRef:
                 name: bank-feed
                 optional: true
+            # Peppol access point (docs/efaktura.md): RECOMMAND_API_KEY,
+            # RECOMMAND_API_SECRET and RECOMMAND_TEAM_ID. Only workers hold
+            # these. Without the secret, EHF sending is off.
+            - secretRef:
+                name: peppol-provider
+                optional: true
           env:
             - name: JOB_CONCURRENCY
               value: "2"

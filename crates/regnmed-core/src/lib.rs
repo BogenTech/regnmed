@@ -41,6 +41,7 @@ pub mod payroll;
 pub mod payslip;
 pub mod pdf;
 pub mod pdftext;
+pub mod peppol;
 pub mod qr;
 pub mod rates;
 pub mod reminders;

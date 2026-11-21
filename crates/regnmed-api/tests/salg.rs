@@ -16,6 +16,8 @@ mod faktura_pdf;
 mod invoice;
 #[path = "grupper/invoice_template.rs"]
 mod invoice_template;
+#[path = "grupper/peppol_dispatch.rs"]
+mod peppol_dispatch;
 #[path = "grupper/products.rs"]
 mod products;
 #[path = "grupper/reminders.rs"]

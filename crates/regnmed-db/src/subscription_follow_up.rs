@@ -12,6 +12,7 @@
 
 use anyhow::{Context, Result, ensure};
 use chrono::NaiveDate;
+use regnmed_core::peppol::EventKind;
 use regnmed_core::rates::value_on;
 use regnmed_core::reminders::{Step, next_step};
 use regnmed_core::subscription::BLOCK_AFTER_DUE_DAYS;
@@ -36,7 +37,8 @@ pub struct SubscriptionInvoice {
     pub invoice_no: i64,
     pub due_date: NaiveDate,
     pub remaining_ore: i64,
-    /// At least one mail about this invoice has gone out.
+    /// It reached the buyer: a mail went out, or Peppol confirmed delivery.
+    /// An attempt with an unknown outcome is not enough to start dunning.
     pub sent: bool,
     pub last_steg: Option<String>,
     pub last_sent: Option<NaiveDate>,
@@ -49,7 +51,12 @@ pub async fn open_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<Subscriptio
         "select r.company_id, c.name as company_navn, c.email as epost,
                 i.id as invoice_id, i.invoice_no, i.due_date,
                 o.remaining_ore::bigint as remaining_ore,
-                exists(select 1 from utsendelse u where u.invoice_id = i.id) as sendt,
+                exists(select 1 from utsendelse u
+                       where u.invoice_id = i.id
+                         and (u.channel = 'epost'
+                              or exists(select 1 from dispatch_event e
+                                        where e.dispatch_id = u.id and e.kind = 'levert')))
+                    as sendt,
                 rem.steg as last_steg, rem.sent_date as last_sent
          from abonnement_faktura_run r
          join invoice i on i.id = r.invoice_id
@@ -102,6 +109,16 @@ pub struct UnsentInvoice {
     pub invoice_no: i64,
     pub is_credit_note: bool,
     pub remaining_ore: i64,
+    /// Why the latest send job failed, for the operator's report.
+    pub last_error: Option<String>,
+}
+
+/// A Peppol send a human must decide on. It is neither resent nor dunned.
+#[derive(Debug)]
+pub struct DispatchNeedingAttention {
+    pub company_name: String,
+    pub invoice_no: i64,
+    pub status: String,
 }
 
 /// Abonnement documents without a dispatch row, SETTLED ONES INCLUDED
@@ -115,13 +132,33 @@ pub async fn unsent_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentInv
         "select r.company_id, c.name as company_name, c.email,
                 i.id as invoice_id, i.invoice_no,
                 (i.credits_invoice_id is not null) as is_credit_note,
-                o.remaining_ore::bigint as remaining_ore
+                o.remaining_ore::bigint as remaining_ore,
+                (select j.error from job j
+                 where j.company_id = i.company_id and j.kind = 'invoice_dispatch'
+                   and j.dedup_key = i.id::text
+                 order by j.created_at desc limit 1) as last_error
          from invoice i
          join abonnement_faktura_run r on r.invoice_id = coalesce(i.credits_invoice_id, i.id)
          join company c on c.id = r.company_id
          join subledger_entry_open o on o.entry_id = i.receivable_entry_id
          where i.company_id = $1
-           and not exists (select 1 from utsendelse u where u.invoice_id = i.id)
+           -- Sent, unless the Peppol row never got an attempt (a worker died
+           -- first) or its latest attempt provably never left.
+           and not exists (
+               select 1 from utsendelse u
+               where u.invoice_id = i.id
+                 and not (u.channel = 'peppol' and (
+                     not exists (select 1 from dispatch_event n where n.dispatch_id = u.id)
+                     or exists (
+                     select 1 from dispatch_event e
+                     where e.dispatch_id = u.id and e.kind = 'ikke_sendt'
+                       and e.attempt = (select max(l.attempt) from dispatch_event l
+                                        where l.dispatch_id = u.id)
+                       and not exists (
+                           select 1 from dispatch_event x
+                           where x.dispatch_id = u.id and x.attempt = e.attempt
+                             and x.kind in ('uavklart', 'akseptert', 'leveringsfeil',
+                                            'avvist', 'levert'))))))
            and (o.remaining_ore > 0 or i.invoice_date >= $2::date)
          order by i.invoice_date, i.invoice_no",
     )
@@ -139,8 +176,47 @@ pub async fn unsent_invoices(pool: &PgPool, drift: Uuid) -> Result<Vec<UnsentInv
             invoice_no: r.get("invoice_no"),
             is_credit_note: r.get("is_credit_note"),
             remaining_ore: r.get("remaining_ore"),
+            last_error: r.get("last_error"),
         })
         .collect())
+}
+
+/// Subscription documents whose latest Peppol attempt has an outcome only
+/// a human can settle (docs/efaktura.md §3.3).
+pub async fn dispatches_needing_attention(
+    pool: &PgPool,
+    drift: Uuid,
+) -> Result<Vec<DispatchNeedingAttention>> {
+    let rows = sqlx::query(
+        "select c.name as company_name, i.invoice_no, u.id as dispatch_id
+         from utsendelse u
+         join invoice i on i.id = u.invoice_id
+         join abonnement_faktura_run r on r.invoice_id = coalesce(i.credits_invoice_id, i.id)
+         join company c on c.id = r.company_id
+         where i.company_id = $1 and u.channel = 'peppol'
+         order by i.invoice_no",
+    )
+    .bind(drift)
+    .fetch_all(pool)
+    .await?;
+    let mut attention = Vec::new();
+    for row in rows {
+        let Some((_, status)) = crate::peppol::latest_status(pool, row.get("dispatch_id")).await?
+        else {
+            continue;
+        };
+        if matches!(
+            status,
+            EventKind::Unresolved | EventKind::DeliveryFailed | EventKind::Rejected
+        ) {
+            attention.push(DispatchNeedingAttention {
+                company_name: row.get("company_name"),
+                invoice_no: row.get("invoice_no"),
+                status: status.as_str().to_string(),
+            });
+        }
+    }
+    Ok(attention)
 }
 
 /// Takes the next reminder step for one invoice if the cadence says one
@@ -153,6 +229,10 @@ pub async fn purr(
     invoice: &SubscriptionInvoice,
     today: NaiveDate,
 ) -> Result<Option<(Uuid, String)>> {
+    // No fee or reminder for an invoice the buyer may never have received.
+    if !invoice.sent {
+        return Ok(None);
+    }
     let last = match (&invoice.last_steg, invoice.last_sent) {
         (Some(s), Some(d)) => Some((
             Step::parse(s).with_context(|| format!("ukjent steg «{s}» i historikken"))?,

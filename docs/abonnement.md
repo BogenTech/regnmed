@@ -234,10 +234,12 @@ kolliderer med at vi fører vårt eget regnskap i vårt eget system.
 driftsselskapets egen fakturering er nettopp maskinell. Den daglige
 CronJobben `regnmed abonnement-oppfolging` lukker livssyklusen:
 
-1. **Send**: abonnementsfakturaer uten utsendelsesrad e-postes til
-   kundeselskapets egen adresse (Firmaopplysninger) med PDF-en vedlagt.
-   Utsendelses-id-en er Nats-Msg-Id, så en omsending kan aldri
-   dobbeltlevere. **Også et oppgjort salgsdokument sendes** (#223):
+1. **Send**: abonnementsfakturaer uten utsendelsesrad legges som
+   `invoice_dispatch`-jobber. Arbeideren velger EHF eller e-post
+   (docs/efaktura.md §3.1); e-post går til kundeselskapets egen adresse
+   (Firmaopplysninger) med PDF-en vedlagt. En Peppol-sending som beviselig
+   aldri gikk (`ikke_sendt`), får en ny jobb. `uavklart`, `leveringsfeil`
+   og `avvist` sendes ikke automatisk på nytt, men rapporteres av jobben. **Også et oppgjort salgsdokument sendes** (#223):
    kjøperen er bokføringspliktig, og fra 1.1.2028 skal salgsdokumentet
    alltid sendes til en bokføringspliktig kjøper
    (bokføringsforskriften § 5-2-1 fjerde ledd). Det gjelder en faktura
@@ -267,7 +269,9 @@ CronJobben `regnmed abonnement-oppfolging` lukker livssyklusen:
    maskinen: inkasso hører til bevillingshavere (docs/purring.md).
    Hvert skritt går gjennom samme `create_reminder` som menneskene
    bruker — stegreglene og satsregisteret håndhever lovligheten, kravet
-   bokføres i samme transaksjon, dokumentet lagres. En purring må nå
+   bokføres i samme transaksjon, dokumentet lagres. **Purretrappen starter
+   først når fakturaen har nådd kjøperen:** en e-post er sendt, eller
+   Peppol har meldt `levert`. En purring må nå
    noen: selskap uten e-postadresse purres ikke, men rapporteres
    høylytt til noen retter adressen.
 3. **Sperr**: står fakturaen ubetalt

@@ -313,11 +313,23 @@ pub async fn log_dispatch(
     Ok(())
 }
 
+/// Whether this send is already in the log.
+pub async fn dispatch_exists(pool: &PgPool, id: Uuid) -> Result<bool> {
+    Ok(
+        sqlx::query_scalar("select exists(select 1 from utsendelse where id = $1)")
+            .bind(id)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
 #[derive(Debug)]
 pub struct DispatchRow {
     pub id: Uuid,
     pub reminder_id: Option<Uuid>,
-    pub to_email: String,
+    pub channel: String,
+    /// The e-mail address or Peppol participant, per channel.
+    pub to: String,
     pub subject: String,
     pub sent_by: String,
     pub sent_at: chrono::DateTime<chrono::Utc>,
@@ -329,7 +341,9 @@ pub async fn list_dispatches(
     invoice_id: Uuid,
 ) -> Result<Vec<DispatchRow>> {
     let rows = sqlx::query(
-        "select id, reminder_id, to_email, subject, sent_by, created_at
+        "select id, reminder_id, channel,
+                coalesce(to_email, peppol_receiver) as recipient,
+                subject, sent_by, created_at
          from utsendelse where company_id = $1 and invoice_id = $2
          order by created_at",
     )
@@ -342,7 +356,8 @@ pub async fn list_dispatches(
         .map(|r| DispatchRow {
             id: r.get("id"),
             reminder_id: r.get("reminder_id"),
-            to_email: r.get("to_email"),
+            channel: r.get("channel"),
+            to: r.get("recipient"),
             subject: r.get("subject"),
             sent_by: r.get("sent_by"),
             sent_at: r.get("created_at"),

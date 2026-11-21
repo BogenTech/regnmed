@@ -8,7 +8,8 @@
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
-  import { sendDocument } from "../../lib/utsendelse.js";
+  import { sendInvoice } from "../../lib/utsendelse.js";
+  import { dispatchStatus } from "../../lib/ehf.js";
   import Card from "../../components/Card.svelte";
   import InvoiceStatus, { daysOverdue } from "./InvoiceStatus.svelte";
   import PurringForm from "./PurringForm.svelte";
@@ -126,7 +127,11 @@
   }
 
   async function send() {
-    if (await sendDocument(base + "/send")) load();
+    if (await sendInvoice(companyId, base)) load();
+  }
+
+  async function resend() {
+    if (await sendInvoice(companyId, base, { resend: true })) load();
   }
 
   function pdf() {
@@ -349,7 +354,17 @@
             Ikke sendt
           {:else}
             {#each sends as s (s.utsendelse_id)}
-              <span class="block">{formatDate(s.sent_at)} til {s.to}</span>
+              <span class="block">
+                {formatDate(s.sent_at)} til {s.to}
+                {#if s.kanal === "peppol"}
+                  {@const status = dispatchStatus(s.status)}
+                  <span class="badge badge-soft badge-sm badge-{status.tone}">EHF: {status.text}</span>
+                  {#if s.detalj}<span class="block text-sm opacity-70">{s.detalj}</span>{/if}
+                  {#if s.kan_sendes_pa_nytt}
+                    <button class="btn btn-xs mt-1" onclick={resend}>Send EHF på nytt</button>
+                  {/if}
+                {/if}
+              </span>
             {/each}
           {/if}
         </dd>

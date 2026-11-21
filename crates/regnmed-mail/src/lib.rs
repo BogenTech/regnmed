@@ -21,6 +21,7 @@ pub use async_nats::jetstream;
 pub mod chatbus;
 pub mod follow_up;
 pub mod jobqueue;
+pub mod peppol_events;
 pub mod taskqueue;
 #[cfg(test)]
 mod testnats;

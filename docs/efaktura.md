@@ -252,10 +252,9 @@ fram, kan prøves på nytt; er utfallet ukjent, gjelder §3.3.
 
 Tre ting følger av at kanalen først avgjøres i arbeideren:
 
-- **`POST …/send` endrer svar fra `200` med `utsendelse_id` til `202`
-  med `job_id`.** Det er en endring i det offentlige API-et. Portalen,
-  MCP-verktøyene og docs/api.md følger med i samme endring, og
-  integrasjoner må varsles før den slippes.
+- **`POST …/send` svarer `202` med `job_id`**, ikke `200` med
+  `utsendelse_id`. Regnmed har ingen kunder ennå (2026-11-21), så endringen
+  gjøres uten versjonering. Portalen og docs/api.md følger med.
 - **Dobbeltklikk blir ikke to jobber.** `job` får en valgfri
   `dedup_key` (faktura-id-en) og en delvis unik indeks over
   `(company_id, kind, dedup_key)` mens status er `queued` eller
@@ -341,6 +340,14 @@ create table dispatch_provider_document (
     unique (dispatch_id, attempt)
 );  -- innsettings-bar
 
+create table peppol_sender (
+    company_id          uuid primary key references company (id),
+    provider_company_id text not null unique,
+    is_verified         boolean not null default false,
+    created_at          timestamptz not null default now(),
+    updated_at          timestamptz not null default now()
+);  -- driftstilstand: verifiseringen endrer seg over tid
+
 alter table job add column dedup_key text;
 create unique index job_open_dedup on job (company_id, kind, dedup_key)
     where dedup_key is not null and status in ('queued', 'running');
@@ -423,6 +430,7 @@ webhook-køen og fra avstemmingen:
 | `ikke_sendt` | regnmed | forespørselen nådde beviselig aldri fram |
 | `uavklart` | regnmed | utfallet er ukjent, ingen vet om C2 tok imot dokumentet |
 | `akseptert` | leverandøren | validert og tatt imot av C2 |
+| `leveringsfeil` | leverandøren | aksesspunktet melder feil uten bevis for at kjøperen ikke fikk dokumentet, for eksempel en transportfeil. Behandles som `uavklart` ved omsending |
 | `avvist` | leverandøren | Schematron-/valideringsfeil — **detail** bærer regelen og teksten |
 | `levert` | AS4-kvittering via leverandøren | fremme hos kjøperens aksesspunkt |
 | `mlr` | Peppol MLR | kjøperens system avviste/godtok meldingen |
@@ -431,8 +439,9 @@ webhook-køen og fra avstemmingen:
 Hendelsene dedupliseres på `event_key` (unik kolonne, som
 `payment_intent_id` på kortbetaling, migrasjon 0043). Flere arbeidere
 kan behandle hendelser i ulik rekkefølge, så statusen per forsøk regnes
-etter **rang, ikke ankomst**: `avvist` og `levert` slår `akseptert`, som
-slår `uavklart`, som slår `ikke_sendt`, som slår `sendeforsok`. Bare
+etter **rang, ikke ankomst**: `levert` slår `avvist`, som slår
+`leveringsfeil`, som slår `akseptert`, som slår `uavklart`, som slår
+`ikke_sendt`, som slår `sendeforsok`. Bare
 `ikke_sendt` og `avvist` gir lov til et nytt forsøk uten
 duplikatkontroll. `GET …/invoices/{iid}/utsendelser`
 viser den beregnede statusen per rad. En `avvist` er **ikke** en feil som
@@ -445,9 +454,10 @@ periodisk avstemming i `regnmed work` henter derfor status for utsendelser uten
 endelig hendelse med `GET /api/v1/documents/{documentId}`, og fra fase 3
 innkommende dokumenter sidevis fra `GET /api/v1/documents` med
 `direction`, `from` og `to`. `GET /api/v1/inbox` brukes ikke, siden den
-ikke er paginert. Replikaene tar utsendelsene med `for update skip
-locked`, og hendelsene går inn i samme `dispatch_event` og dedupliseres
-på samme nøkkel.
+ikke er paginert. Én replika avstemmer om gangen (advisory lock), hvert
+femte minutt, og går gjennom alle åpne utsendelser side for side, slik at
+gamle rader ikke fortrenger nye. Hendelsene går inn i samme
+`dispatch_event` og dedupliseres på samme nøkkel.
 
 ### 3.4 Validering: XSD er ikke Schematron
 
@@ -460,11 +470,18 @@ UBL, ikke at PEPPOL BIS-reglene holder. Tre lag:
    og ny faktura. Kjøperens orgnr, adresse og landkode, og
    **kjøperreferanse** (se under).
 2. **I CI** — den offisielle Schematron-en for PEPPOL BIS Billing 3.0
-   (EN16931 + PEPPOL + de norske reglene) vendores i `docs/ehf/` med
-   versjon og dato, og kjøres mot en matrise av rendrede dokumenter
-   (faktura, kreditnota, valuta, nullsats, flere satser, uten KID).
+   (EN16931 + PEPPOL + de norske reglene, versjon 3.0.22) hentes av
+   `scripts/ehf-schematron.sh`, festet med SHA-256, og kjøres mot en matrise
+   av rendrede dokumenter (faktura, kreditnota, valuta, nullsats, flere
+   satser, uten KID, selger uten mva). Filene vendores ikke, fordi
+   OpenPEPPOLs repo ikke oppgir en lisens vi kan videredistribuere dem under.
    Schematron-ene er XSLT 2.0, så CI trenger en XSLT 2-prosessor (Saxon
-   HE) — **bare i CI**, aldri i drift, som xmllint i dag. Peppol slipper
+   HE) — **bare i CI**, aldri i drift, som xmllint i dag. Første kjøring
+   fant to feil som ville gitt avvisning: manglende landkode på
+   leveringssted (BR-57) og feil mva-kategori for selger uten mva-registrering
+   (BR-Z-02). Den fant også at «Foretaksregisteret» manglet. Peppol gir bare
+   en advarsel for det (NO-R-002), men opplysningen er lovpålagt, så CI
+   feiler på den. Peppol slipper
    nye regelversjoner to ganger i året med fast ikrafttredelse; det legges
    på regelverksrevisjonens sjekkliste (docs/regelverk.md).
 3. **Ved innsending** — leverandøren validerer; en avvisning blir en
@@ -476,8 +493,9 @@ PEPPOL-EN16931-R003). BT-10 bar **vårt eget kundenummer**; nå bærer den
 «Deres referanse» fra fakturaen, eller kundens faste referanse
 (docs/faktura.md). En faktura uten noen av dem faller fortsatt tilbake
 til kundenummeret. Det består valideringen, men en offentlig kjøper kan
-ikke rute den — fase 1 bør derfor **advare før utstedelse** når kjøperen
-mottar EHF og ingen referanse er satt.
+ikke rute den. Fase 1 **advarer i sendedialogen** når kjøperen mottar EHF
+og ingen referanse er satt. En advarsel før utstedelse krever et
+leverandøroppslag i skjemaet og er ikke bygget.
 
 ### 3.5 Lagring av det som ble sendt
 
@@ -606,7 +624,7 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
    `regnmed work`, med migrasjonen og rettighetene i §3.3.
    `POST …/delivery-check` og
    `POST …/send` legger bare jobben i køen (§3.1). Oppslag som feiler
-   stopper sendingen. Portal, MCP og docs/api.md følger `202`-svaret.
+   stopper sendingen. Portalen og docs/api.md følger `202`-svaret.
 3. Migrasjonen i §3.3 (kanal, Peppol-mottaker, vedleggsreferanse,
    hendelsestabell, kobling til leverandørens dokument-id), leserne av
    `to_email` oppdatert; webhook til `REGNMED_PEPPOL_EVENTS` med

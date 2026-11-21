@@ -104,6 +104,18 @@ jobs:
         env:
           # Absolute: nextest runs each test binary from its crate directory.
           OCR_MODELS_DIR: ${{ github.workspace }}/target/ocr-models
+      # The rules an access point rejects on (docs/efaktura.md §3.4). Java
+      # lives here and never in the product. Cached by the pinned checksums.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: target/ehf-schematron
+          key: ehf-schematron-${{ hashFiles('scripts/ehf-schematron.sh') }}
+      - name: EHF against the official Peppol rules
+        run: scripts/ehf-schematron.sh
 
   frugality:
     runs-on: ubuntu-latest

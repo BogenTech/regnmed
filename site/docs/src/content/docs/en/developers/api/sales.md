@@ -26,6 +26,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/companies/{company_id}/invoices/overdue` | `PURRING_LES` |
 | GET | `/companies/{company_id}/invoices/{invoice_id}` | `FAKTURA_LES` |
 | POST | `/companies/{company_id}/invoices/{invoice_id}/credit-note` | `FAKTURA_SKRIV` |
+| POST | `/companies/{company_id}/invoices/{invoice_id}/delivery-check` | `FAKTURA_SEND` |
 | GET | `/companies/{company_id}/invoices/{invoice_id}/ehf` | `FAKTURA_LES` |
 | POST | `/companies/{company_id}/invoices/{invoice_id}/payments` | `FAKTURA_SKRIV`, `BILAG_BOKFOR` |
 | GET | `/companies/{company_id}/invoices/{invoice_id}/pdf` | `FAKTURA_LES` |

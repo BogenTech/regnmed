@@ -15,6 +15,7 @@
   import Ikon from "../../components/Ikon.svelte";
   import LoadError from "../../components/LoadError.svelte";
   import Firmaopplysninger from "../oversikt/Firmaopplysninger.svelte";
+  import EhfSender from "../oversikt/EhfSender.svelte";
   import Abonnement from "../oversikt/Abonnement.svelte";
   import Brukere from "../brukere/Brukere.svelte";
   import Oppdrag from "../oppdrag/Oppdrag.svelte";
@@ -234,6 +235,7 @@
     <div class="alert alert-info"><span>Firmaopplysninger krever lesetilgang til selskapet.</span></div>
   {:else}
     <Firmaopplysninger {companyId} {settings} onDone={lastSettings} />
+    <EhfSender {companyId} />
     <Kundevilkar {companyId} />
   {/if}
 {:else if fane === "abonnement"}

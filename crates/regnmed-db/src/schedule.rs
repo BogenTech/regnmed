@@ -48,7 +48,11 @@ pub fn rules(kind: Kind) -> Option<Rules> {
                           and a.valid_from <= current_date
                           and (a.valid_to is null or a.valid_to > current_date))",
         }),
-        Kind::SaftImport | Kind::AuditReport => None,
+        Kind::SaftImport
+        | Kind::AuditReport
+        | Kind::PeppolLookup
+        | Kind::InvoiceDispatch
+        | Kind::PeppolSenderSetup => None,
     }
 }
 

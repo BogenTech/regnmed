@@ -20,7 +20,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use futures_util::StreamExt;
-use regnmed_mail::{jetstream, jobqueue};
+use regnmed_db::peppol_worker::{self, EventAction};
+use regnmed_mail::{jetstream, jobqueue, peppol_events};
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 
@@ -31,6 +32,9 @@ const SWEEP_WITHOUT_QUEUE: Duration = Duration::from_secs(3);
 /// Longest a shutdown waits for running jobs (the pod's grace period
 /// should be a little longer).
 const DRAIN: Duration = Duration::from_secs(110);
+/// How often replicas check open Peppol dispatches against the provider.
+const RECONCILE_EVERY: Duration = Duration::from_secs(5 * 60);
+const PEPPOL_RETRY: Duration = Duration::from_secs(5);
 
 pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-work".into());
@@ -38,8 +42,14 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     // What jobs need beyond the database: the bank providers, from the same
     // environment the API reads (docs/bank.md). None is fine: a scheduled
     // fetch then reports that no provider is set up.
+    let js = regnmed_mail::connect_from_env().await?;
     let runtime = regnmed_db::job::Runtime {
         bank: regnmed_gov::bankfeed::Providers::from_env()?,
+        peppol: regnmed_gov::recommand::Recommand::from_env()?.map(Arc::new),
+        mail: js
+            .clone()
+            .map(|js| regnmed_mail::follow_up::job_mail(pool.clone(), js)),
+        directory_answer: None,
     };
 
     if once {
@@ -51,7 +61,6 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
         return Ok(());
     }
 
-    let js = regnmed_mail::connect_from_env().await?;
     let every = if js.is_some() {
         SWEEP_WITH_QUEUE
     } else {
@@ -78,6 +87,27 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
         })
     };
 
+    let reconciler = runtime.peppol.clone().map(|provider| {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(RECONCILE_EVERY);
+            loop {
+                tick.tick().await;
+                if let Err(e) = peppol_worker::reconcile(&pool, &provider).await {
+                    eprintln!("peppol reconciliation failed: {e:#}");
+                }
+            }
+        })
+    });
+    let events = js.clone().map(|js| {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = listen_peppol_events(&pool, &js).await {
+                eprintln!("the Peppol event listener stopped: {e:#}");
+            }
+        })
+    });
+
     let listener = js.map(|js| {
         let (pool, name, slots, runtime) =
             (pool.clone(), name.clone(), slots.clone(), runtime.clone());
@@ -93,6 +123,9 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     sweeper.abort();
     if let Some(l) = listener {
         l.abort();
+    }
+    for task in [reconciler, events].into_iter().flatten() {
+        task.abort();
     }
     match tokio::time::timeout(DRAIN, slots.acquire_many(concurrency.max(1) as u32)).await {
         Ok(_) => println!("{name} stopped cleanly"),
@@ -193,6 +226,56 @@ async fn listen(
         // Acked once claimed (or found taken): from here the database row
         // and its heartbeat are what recover a crash, not a redelivery.
         let _ = message.ack().await;
+    }
+    Ok(())
+}
+
+/// Webhook events (docs/efaktura.md §3.7). Each is committed before its
+/// ack, so a crash means redelivery and the event key absorbs it.
+async fn listen_peppol_events(pool: &PgPool, js: &jetstream::Context) -> Result<()> {
+    peppol_events::ensure_stream(js).await?;
+    let team = std::env::var("RECOMMAND_TEAM_ID").ok();
+    let consumer = js
+        .get_stream(peppol_events::STREAM)
+        .await?
+        .get_or_create_consumer(
+            peppol_events::CONSUMER,
+            jetstream::consumer::pull::Config {
+                durable_name: Some(peppol_events::CONSUMER.into()),
+                ack_wait: Duration::from_secs(60),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let mut messages = consumer.messages().await?;
+    while let Some(message) = messages.next().await {
+        let message = match message {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("the Peppol event queue returned an error: {e:#}");
+                continue;
+            }
+        };
+        let delivered = message.info().map(|i| i.delivered).unwrap_or(1);
+        let action = peppol_worker::handle_provider_event(
+            pool,
+            team.as_deref(),
+            &message.payload,
+            delivered,
+        )
+        .await;
+        let ack = match action {
+            EventAction::Ack => message.ack().await,
+            EventAction::Retry => {
+                message
+                    .ack_with(jetstream::AckKind::Nak(Some(PEPPOL_RETRY)))
+                    .await
+            }
+            EventAction::Drop => message.ack_with(jetstream::AckKind::Term).await,
+        };
+        if let Err(e) = ack {
+            eprintln!("could not acknowledge a Peppol event: {e:#}");
+        }
     }
     Ok(())
 }

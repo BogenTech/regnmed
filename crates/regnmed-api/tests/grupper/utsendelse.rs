@@ -20,9 +20,9 @@ use uuid::Uuid;
 
 use regnmed_api::{AppState, mailq, router};
 
-struct NatsServer {
+pub(crate) struct NatsServer {
     child: Child,
-    url: String,
+    pub(crate) url: String,
     dir: std::path::PathBuf,
 }
 
@@ -42,7 +42,7 @@ fn free_port() -> u16 {
         .port()
 }
 
-async fn start_nats() -> Option<NatsServer> {
+pub(crate) async fn start_nats() -> Option<NatsServer> {
     let dir = std::env::temp_dir().join(format!("regnmed-nats-{}", Uuid::new_v4().simple()));
     std::fs::create_dir_all(&dir).ok()?;
     let port = free_port();
@@ -61,7 +61,8 @@ async fn start_nats() -> Option<NatsServer> {
     };
     let url = format!("nats://127.0.0.1:{port}");
     let server = NatsServer { child, url, dir };
-    for _ in 0..50 {
+    // A loaded machine can take many seconds to start a JetStream server.
+    for _ in 0..300 {
         if mailq::connect(&server.url, None, None).await.is_ok() {
             return Some(server);
         }
@@ -195,8 +196,46 @@ async fn invoice_mail_rides_the_shared_rail() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {sent}");
-    assert_eq!(sent["to"], "kunde@example.test");
+    assert_eq!(status, StatusCode::ACCEPTED, "body: {sent}");
+    // The API only queued it: the mail leaves from the worker.
+    assert_eq!(
+        js.get_stream(mailq::STREAM)
+            .await
+            .unwrap()
+            .info()
+            .await
+            .unwrap()
+            .state
+            .messages,
+        0
+    );
+    let job_id: Uuid = sent["job_id"].as_str().unwrap().parse().unwrap();
+    let claimed = regnmed_db::job::claim(&state.pool, job_id, "test-worker")
+        .await
+        .unwrap()
+        .unwrap();
+    let runtime = regnmed_db::job::Runtime {
+        mail: Some(regnmed_mail::follow_up::job_mail(
+            state.pool.clone(),
+            js.clone(),
+        )),
+        ..Default::default()
+    };
+    regnmed_db::job::process(&state.pool, &claimed, "test-worker", &runtime)
+        .await
+        .unwrap();
+    let (status, done) = request(
+        &state,
+        "GET",
+        &format!("/companies/{company}/jobs/{job_id}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(done["status"], "done", "job: {done}");
+    assert_eq!(done["result"]["kanal"], "epost");
+    assert_eq!(done["result"]["to"], "kunde@example.test");
 
     // The message is really on the stream, in regnid's wire format.
     let stream = js.get_stream(mailq::STREAM).await.unwrap();
@@ -496,21 +535,40 @@ async fn the_follow_up_sends_a_credited_invoice_and_its_credit_note() {
         .await
         .unwrap();
 
-    let outcomes = regnmed_mail::follow_up::send_unsent_invoices(&state.pool, &js, drift)
+    let queued = regnmed_mail::follow_up::queue_unsent_invoices(&state.pool, &js, drift)
         .await
         .unwrap();
-    assert_eq!(outcomes.len(), 2, "{outcomes:?}");
-    for (_, sent) in &outcomes {
-        assert_eq!(sent.as_deref().unwrap(), "kunde@example.test");
-    }
+    assert_eq!(queued.len(), 2, "{queued:?}");
     assert!(
-        outcomes
+        queued
             .iter()
             .any(|(f, _)| f.is_credit_note && f.invoice_id == credit.invoice_id),
         "kreditnotaen sendes også"
     );
+    let runtime = regnmed_db::job::Runtime {
+        mail: Some(regnmed_mail::follow_up::job_mail(
+            state.pool.clone(),
+            js.clone(),
+        )),
+        ..Default::default()
+    };
+    for (_, job_id) in &queued {
+        let job_id = *job_id.as_ref().unwrap();
+        let claimed = regnmed_db::job::claim(&state.pool, job_id, "test-worker")
+            .await
+            .unwrap()
+            .unwrap();
+        regnmed_db::job::process(&state.pool, &claimed, "test-worker", &runtime)
+            .await
+            .unwrap();
+        let job = regnmed_db::job::get(&state.pool, drift, job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.result.unwrap()["to"], "kunde@example.test");
+    }
     assert!(
-        regnmed_mail::follow_up::send_unsent_invoices(&state.pool, &js, drift)
+        regnmed_mail::follow_up::queue_unsent_invoices(&state.pool, &js, drift)
             .await
             .unwrap()
             .is_empty(),

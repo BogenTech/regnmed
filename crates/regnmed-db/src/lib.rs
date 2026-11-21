@@ -44,6 +44,8 @@ pub mod ocr;
 pub mod opening;
 pub mod payments;
 pub mod payroll;
+pub mod peppol;
+pub mod peppol_worker;
 pub mod period;
 pub mod plans;
 pub mod platform;

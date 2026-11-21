@@ -61,6 +61,14 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
+            # Verifies Recommand's webhooks. The API gets this one value
+            # and never the provider's API key (docs/efaktura.md §3.7).
+            - name: RECOMMAND_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: peppol-webhook
+                  key: secret
+                  optional: true
             - name: DATABASE_URL
               value: postgres://regnmed:regnmed@postgres:5432/regnmed
             - name: OIDC_ISSUER

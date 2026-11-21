@@ -273,6 +273,7 @@ mod tests {
             postal_city: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: true,
+            business_registered: false,
             email: None,
         }
     }
