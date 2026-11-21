@@ -104,6 +104,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         tax_card: None,
         bank_feed: None,
         peppol_webhook_secret: None,
+        system_user: None,
     })
 }
 

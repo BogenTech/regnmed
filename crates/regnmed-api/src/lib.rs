@@ -4,6 +4,7 @@
 pub mod access;
 pub mod accrual;
 pub mod agent_task;
+pub mod altinn;
 pub mod anchor;
 pub mod approval;
 pub mod asset;
@@ -116,6 +117,13 @@ pub struct AppState {
     /// Signs Recommand's webhooks (RECOMMAND_WEBHOOK_SECRET). The API holds
     /// nothing else of the Peppol rail: workers make every provider call.
     pub peppol_webhook_secret: Option<String>,
+    /// Requests for Altinn system users. None when MASKINPORTEN_* is unset.
+    pub system_user: Option<Arc<SystemUserRail>>,
+}
+
+pub struct SystemUserRail {
+    pub tokens: regnmed_gov::maskinporten::TokenProvider,
+    pub client: regnmed_gov::altinn_system_user::SystemUserClient,
 }
 
 pub struct TaxCardRail {
@@ -825,6 +833,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/tax-cards",
             get(tax_card::list).post(tax_card::order),
+        )
+        .route(
+            "/companies/{company_id}/altinn/system-user",
+            get(altinn::status).post(altinn::request),
         )
         .route(
             "/companies/{company_id}/tax-cards/{order_id}/answer",

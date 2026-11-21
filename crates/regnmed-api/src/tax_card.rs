@@ -157,7 +157,7 @@ pub async fn order(
         company_id,
         q.year,
         &order.reference,
-        &order.dialog_reference,
+        order.dialog_reference.as_deref(),
         nins.len(),
         by,
     )
