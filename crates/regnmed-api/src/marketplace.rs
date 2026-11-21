@@ -52,7 +52,14 @@ pub async fn registry_preview(
             finanstilsynet.has_authorisation(&orgnumber, "regnskap"),
             finanstilsynet.has_authorisation(&orgnumber, "revisjon"),
         );
-        json!({ "regnskap": statements.unwrap_or(false), "revisjon": audit.unwrap_or(false) })
+        // Only a hint for the signup route, but an outage must show in the log.
+        let held = |answer: anyhow::Result<bool>| {
+            answer.unwrap_or_else(|e| {
+                eprintln!("finanstilsynet lookup for {orgnumber}: {e:#}");
+                false
+            })
+        };
+        json!({ "regnskap": held(statements), "revisjon": held(audit) })
     } else {
         serde_json::Value::Null
     };
@@ -182,10 +189,21 @@ pub async fn create_firm(
         return Err(ApiError::BadRequest("enheten er under avvikling".into()));
     }
 
+    if !["regnskap", "revisjon"].contains(&request.kind.as_str()) {
+        return Err(ApiError::BadRequest(
+            "kind må være «regnskap» eller «revisjon»".into(),
+        ));
+    }
     let verified = regnmed_gov::finanstilsynet::FinanstilsynetClient::from_env()
         .has_authorisation(&request.orgnumber, &request.kind)
         .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        .map_err(|e| {
+            eprintln!("finanstilsynet lookup for {}: {e:#}", request.orgnumber);
+            ApiError::BadRequest(
+                "Fikk ikke kontrollert autorisasjonen hos Finanstilsynet. Prøv igjen senere."
+                    .into(),
+            )
+        })?;
     if !verified {
         return Err(ApiError::Forbidden(
             "orgnr har ingen aktiv autorisasjon i Finanstilsynets register",

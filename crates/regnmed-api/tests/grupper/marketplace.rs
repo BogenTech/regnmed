@@ -73,18 +73,40 @@ async fn start_mock_registries() -> String {
             }),
         )
         .route(
-            "/virksomheter/{orgnumber}",
-            get(|axum::extract::Path(orgnumber): axum::extract::Path<String>| async move {
-                if orgnumber == FIRM_ORGNUMBER {
-                    (
-                        StatusCode::OK,
-                        axum::Json(serde_json::json!({
-                            "autorisasjoner": [{"kode": "Regnskapsforerselskap", "aktiv": true}]
-                        })),
-                    )
-                } else {
-                    (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({})))
-                }
+            "/legal-entities/search",
+            get(
+                |axum::extract::Query(query): axum::extract::Query<
+                    std::collections::HashMap<String, String>,
+                >| async move {
+                    let hits = if query.get("query").map(String::as_str) == Some(FIRM_ORGNUMBER) {
+                        serde_json::json!([{
+                            "legalEntityId": 7,
+                            "legalEntityType": "Company",
+                            "organisationNumber": FIRM_ORGNUMBER,
+                            "name": "TALL & ORDEN REGNSKAP AS"
+                        }])
+                    } else {
+                        serde_json::json!([])
+                    };
+                    axum::Json(serde_json::json!({ "page": 1, "legalEntities": hits }))
+                },
+            ),
+        )
+        .route(
+            "/legal-entities",
+            get(|| async {
+                axum::Json(serde_json::json!({
+                    "hitsReturned": 1,
+                    "legalEntities": [{
+                        "legalEntityId": 7,
+                        "organisationNumber": FIRM_ORGNUMBER,
+                        "licences": [{
+                            "licensedEntity": {"legalEntityId": 7},
+                            "licenceType": {"code": "REGS"},
+                            "serviceProviderType": "Licensed"
+                        }]
+                    }]
+                }))
             }),
         );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

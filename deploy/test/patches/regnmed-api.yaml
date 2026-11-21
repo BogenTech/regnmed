@@ -182,6 +182,9 @@ spec:
             # 2026-11-11); companies already in the test database stay.
             - name: BRREG_API_URL
               value: https://data.ppe.brreg.no/enhetsregisteret/api
+            # The real public register: Finanstilsynet has no test one.
+            - name: FINANSTILSYNET_API_URL
+              value: https://api.finanstilsynet.no/registry/v2
           volumeMounts:
             - name: maskinporten
               mountPath: /secrets/maskinporten
