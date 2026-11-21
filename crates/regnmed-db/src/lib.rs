@@ -7,6 +7,7 @@
 pub mod accrual;
 pub mod agent_task;
 pub mod agentllm;
+pub mod altinn_system_user;
 pub mod amelding_submission;
 pub mod anchor;
 pub mod approval;

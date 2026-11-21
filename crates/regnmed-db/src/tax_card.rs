@@ -188,7 +188,7 @@ pub async fn record_order(
     company_id: Uuid,
     income_year: i32,
     reference: &str,
-    dialog_reference: &str,
+    dialog_reference: Option<&str>,
     employee_count: usize,
     requested_by: &str,
 ) -> Result<()> {

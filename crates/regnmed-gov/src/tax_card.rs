@@ -4,7 +4,8 @@
 //! Two calls, both with the **systembruker token for the employer**:
 //!
 //! 1. `POST {base}/bestillSkattekort?idempotensid=` -- orders the cards
-//!    (JSON). Answers `{bestillingsreferanse: "BR…", dialogreferanse}`.
+//!    (JSON). Answers `{bestillingsreferanse: "BR…"}`, until 2026-12-15 also
+//!    with a `dialogreferanse`. After that date polling is the only pattern.
 //! 2. `GET {base}/skattekortTilArbeidsgiver/svar/{bestillingsreferanse}` --
 //!    the answer, or 204 while it is not ready. In test it was ready on
 //!    the first poll, 3 s after ordering (2026-11-12).
@@ -47,8 +48,8 @@ pub struct TaxCardClient {
 pub struct Order {
     #[serde(rename = "bestillingsreferanse")]
     pub reference: String,
-    #[serde(rename = "dialogreferanse")]
-    pub dialog_reference: String,
+    #[serde(rename = "dialogreferanse", default)]
+    pub dialog_reference: Option<String>,
 }
 
 impl TaxCardClient {
@@ -329,6 +330,17 @@ fn basis_points(n: &Value) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_order_receipt_needs_no_dialog_after_the_polling_change() {
+        let before: Order =
+            serde_json::from_str(r#"{"bestillingsreferanse":"BR1","dialogreferanse":"d-1"}"#)
+                .unwrap();
+        assert_eq!(before.dialog_reference.as_deref(), Some("d-1"));
+        let after: Order = serde_json::from_str(r#"{"bestillingsreferanse":"BR2"}"#).unwrap();
+        assert_eq!(after.reference, "BR2");
+        assert_eq!(after.dialog_reference, None);
+    }
 
     fn real() -> Vec<TaxCard> {
         let answer: Value = serde_json::from_str(include_str!(

@@ -468,7 +468,7 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
         company,
         year - 1,
         &format!("BR{}", old.as_u128() % 1_000_000_000),
-        "d-1",
+        Some("d-1"),
         4,
         "Test",
     )

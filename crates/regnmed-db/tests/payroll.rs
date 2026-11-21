@@ -1935,7 +1935,7 @@ async fn an_unapplied_skattekort_is_named_in_the_run() {
         company,
         2026,
         &format!("BR{}", order.as_u128() % 1_000_000_000),
-        "d-1",
+        Some("d-1"),
         2,
         "Test",
     )
@@ -2065,7 +2065,7 @@ async fn frikort_counts_the_year_and_twelve_month_cards_withhold_on_holiday_pay(
         company,
         2026,
         &format!("BR{}", order.as_u128() % 1_000_000_000),
-        "d-1",
+        Some("d-1"),
         3,
         "Test",
     )

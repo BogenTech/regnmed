@@ -594,6 +594,23 @@ Tre ting å vite til neste gang:
 - **Godkjenningssiden viste «levert av N/A»** med riktig orgnr — TT02
   kjenner ikke BogenTechs navn. Sjekk at navnet vises i produksjon.
 
+### Godkjenning fra portalen
+
+En kunde kobler regnmed til Altinn under **Administrasjon →
+Firmaopplysninger → Altinn-tilgang** (`SELSKAP_ADMIN`, og kundevilkårene må
+være godtatt). `POST /companies/{id}/altinn/system-user` sender
+forespørselen med de tre ressursene over, og portalen lenker til Altinns
+`confirmUrl`, der noen med fullmakt i selskapet godkjenner. Et nytt kall
+sjekker en åpen forespørsel i stedet for å lage en ny. En avvist forespørsel
+slettes hos Altinn før en ny sendes, fordi Altinn ellers svarer med den gamle
+og `externalRef` må forbli standardverdien for at Maskinporten skal finne
+systembrukeren. En forespørsel Altinn ikke lenger har, regnes som utløpt.
+Svarer Altinn `AUTH-00004` eller `AUTH-00006`, har selskapet alt godkjent
+systemet. «Sjekk status» spør Altinn også etter en godkjenning, så en
+systembruker kunden har fjernet, gir en ny forespørsel. Bare lenker til
+`altinn.no` vises.
+Klient-systembrukere for regnskapsførere er ikke bygget ennå.
+
 ### Første a-melding, 2026-11-11: mottatt uten avvik
 
 Første ekte kall mot Skatteetatens a-melding-API, med

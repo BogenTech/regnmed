@@ -6,6 +6,8 @@
 
 mod common;
 
+#[path = "grupper/altinn_system_user.rs"]
+mod altinn_system_user;
 #[path = "grupper/amelding.rs"]
 mod amelding;
 #[path = "grupper/ansattkobling.rs"]

@@ -141,6 +141,19 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
+    // Asking companies to approve regnmed in Altinn: same client, its own scopes.
+    let system_user = match std::env::var("MASKINPORTEN_CLIENT_ID") {
+        Ok(_) => {
+            let mut config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+            config.scopes = regnmed_gov::altinn_system_user::SCOPES.into();
+            Some(std::sync::Arc::new(regnmed_api::SystemUserRail {
+                tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
+                client: regnmed_gov::altinn_system_user::SystemUserClient::from_env(),
+            }))
+        }
+        Err(_) => None,
+    };
+
     // The aksjonærregisteroppgave rail: same client, its own scope, and
     // Skatteetatens TEST environment unless AKSJONAERREGISTER_URL says otherwise.
     let shareholder_return = match std::env::var("MASKINPORTEN_CLIENT_ID") {
@@ -187,6 +200,7 @@ async fn main() -> Result<()> {
         tax_card,
         bank_feed,
         peppol_webhook_secret,
+        system_user,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

@@ -17,6 +17,8 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/companies/{company_id}/accounts` | `BILAG_BOKFOR` |
 | PUT | `/companies/{company_id}/accounts/{account_number}` | `BILAG_BOKFOR` |
 | PUT | `/companies/{company_id}/accounts/{account_number}/reskontro` | `RESKONTRO_SKRIV` |
+| GET | `/companies/{company_id}/altinn/system-user` | `SELSKAP_ADMIN` |
+| POST | `/companies/{company_id}/altinn/system-user` | `SELSKAP_ADMIN` |
 | GET | `/companies/{company_id}/arsavslutning` | `RAPPORT_LES` |
 | POST | `/companies/{company_id}/arsavslutning` | `BILAG_BOKFOR`, `PERIODE_LAAS` |
 | GET | `/companies/{company_id}/arsavslutning/{year}/forslag` | `RAPPORT_LES` |
