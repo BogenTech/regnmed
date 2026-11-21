@@ -198,30 +198,28 @@ faktura. Der simuleres leveransen, så ekte Peppol-levering er ikke prøvd.
 | --- | --- | --- |
 | Sertifisering | Recommand oppgir selv at de er sertifisert aksesspunkt og SMP. Oppføringen i OpenPeppols liste er **ikke kontrollert** | Kontrolleres før signering (fase 0) |
 | Flerkunde-API | Oppfylt: ubegrenset antall selskaper i ett team, felles volum, ingen pris per selskap. **Prøvd:** norsk AS uten mva-nummer godtas, men sending gir 403 til en representant har fullført identitetssjekken | Arbeideren oppretter avsenderen, kunden verifiserer (§3.6) |
-| Oppslag per dokumenttype | Delvis: `POST /api/v1/verify-document-support` skiller faktura og kreditnota, men `isValid: false` skiller ikke «ikke registrert» fra «oppslaget feilet». ELMA-støtten i dette endepunktet er **ikke verifisert** | Eget SML/SMP-oppslag før e-post velges (§3.2) |
+| Oppslag per dokumenttype | Delvis. **Kildekoden:** SML → SMP for alle skjemaer, uten særregel for `0192`. Interne SML-/SMP-feil blir likevel HTTP 200 med `isValid: false`, så «ikke registrert» og «oppslaget feilet» kan ikke skilles | Eget SML/SMP-oppslag før e-post velges (§3.2) |
 | Idempotensnøkkel ved innsending | **Mangler** i `POST /api/v1/{companyId}/send`. **Prøvd:** samme XML sendt to ganger ble levert to ganger, uten `duplicate` | Aldri automatisk omsending etter tapt svar (§3.3) |
 | Avstemming av sendt XML | **Prøvd:** XML-en lagres byte-identisk og kan hentes per dokument. Sendt rå-XML fikk `type: unknown`, og søk på fakturanummer fant bare den mottatte kopien. Listen over dokumenter bærer ikke XML-en | Sammenligner SHA-256 av hvert dokument i tidsvinduet (§3.3) |
 | Tidlig validering | Oppfylt: `errors` per feltsti. **Prøvd:** feil sluttsum ble avvist med `BR-CO-16` | Vises som `avvist` |
-| Status, MLR og IMR | Delvis: leveringsstatus finnes og MLR kan sendes. Om innkommende MLR gir hendelse, er ikke verifisert. **Invoice Response (IMR) støttes ikke** | Fakturasvar utgår inntil videre (§4, fase 2) |
-| Webhook | **Prøvd:** `document.sent` og `document.received` kom signert med HMAC-SHA256. Etter et 500-svar kom samme levering igjen etter omtrent 40 sekunder med samme `X-Idempotency-Key`. Antall forsøk, tidsavbrudd og rekkefølge er ikke dokumentert, og API-et har ingen avspilling | Arbeidskø og avstemming (§3.7) |
+| Status, MLR og IMR | Delvis. **Kildekoden:** innkommende MLR gir `document.received`, men bare for et selskap med `isSmpRecipient: true` som er registrert for MLR, og den endrer ikke leveringsstatusen. Et rent avsenderselskap får ingen MLR gjennom Recommand. **Invoice Response (IMR) har ingen tolker** | Fase 1 bygger ikke på MLR. Fakturasvar utgår inntil videre (§4, fase 2) |
+| Webhook | **Prøvd:** `document.sent` og `document.received` kom signert med HMAC-SHA256. Etter et 500-svar kom samme levering igjen etter omtrent 40 sekunder med samme `X-Idempotency-Key`. **Kildekoden:** 2xx godtas, tidsavbrudd og 5xx prøves på nytt, alt annet er endelig. Antall forsøk, ventetid og rekkefølge står ikke i repoet, og API-et har ingen avspilling | Regner med minst én levering i vilkårlig rekkefølge, aldri 4xx ved forbigående feil (§3.7) |
 | Mottak med ELMA | Oppgitt støttet: norske mottakere publiseres i ELMA | Fase 3, fortsatt et uttrykkelig valg |
 | Testmiljø | Oppfylt med en grense. **Prøvd:** en playground på Peppol-testnettet registrerer aldri egne selskaper som mottakere, så sending til seg selv gir `recipient_not_found`. En vanlig playground simulerer leveransen mellom egne selskaper | Integrasjonstesten bruker vanlig playground. Testnettet krever en ekte testmotpart |
 | EØS og databehandleravtale | Plattform og sikkerhetskopier i EU. Databehandleravtalen og listen over underdatabehandlere er **ikke lest** | Leses før signering (fase 0) |
 | Pris | €0 for 25 dokumenter, €29 for 200, €99 for 1 000, €199 for 2 500, €349 for 5 000 per måned, eks. mva. Sendte og mottatte dokumenter teller begge | §6, beslutning 2 |
 
-Spørsmål som må besvares av Recommand:
+Kildekoden er lest ved commit `31110814`. Webhook-motoren (`@core`) og
+det private aksesspunktet ligger utenfor repoet, og den driftede tjenesten
+kan avvike. Designet er derfor laget slik at de åpne detaljene ikke
+avgjør noe.
 
-1. Kan `POST /send` få en idempotensnøkkel, og hva utløser `duplicate`,
-   når identisk XML ikke gjør det?
-2. Leser `verify-document-support` ELMA for `0192`, og hvordan meldes
-   brudd i SML/SMP?
-3. Kommer innkommende MLR gjennom `document.received`, og står IMR på
-   veikartet?
-4. Hvor mange webhook-forsøk gjøres, med hvilken ventetid og
-   tidsavbrudd, og hvilke statuskoder regnes som vellykket?
-5. Kan regnmed verifisere kunder gjennom avtale (`verify-by-contract`),
-   eller må en representant for hver kunde gjennom identitetssjekken?
-   Vårt team har `canVerifyCompaniesByContract: false`.
+**Bare ett spørsmål må besvares av Recommand, og bare hvis vi vil unngå
+identitetssjekk per kunde:** Kan teamet få `canVerifyCompaniesByContract`
+for norske kunder, på hvilke vilkår, og hvem bærer da den norske plikten
+til å kontrollere signaturrett? Kontraktsveien krever én PDF per selskap
+og hopper over signaturkontrollen i koden, men det betyr ikke at plikten
+forsvinner. Den kan gå over på oss.
 
 ## 3. Integrasjonen i regnmed
 
@@ -263,7 +261,12 @@ Tre ting følger av at kanalen først avgjøres i arbeideren:
   `(company_id, kind, dedup_key)` mens status er `queued` eller
   `running`. Arbeideren sjekker dessuten under lås på fakturaen at den
   ikke har en Peppol-utsendelse som kan ha gått. Omsending er en egen,
-  uttrykkelig bestilling (§3.3).
+  uttrykkelig bestilling (§3.3). Et brudd på indeksen er ingen feil:
+  endepunktet svarer `202` med den åpne jobbens id.
+- **Lokale feil svarer fortsatt med én gang.** API-et sjekker det som
+  ikke krever leverandøren før jobben lages, som en ugyldig
+  e-postoverstyring, og svarer `400`. Feil som først oppdages i
+  arbeideren, står i jobbens `result`, og portal og MCP må vise dem.
 - **Et `uavklart` utfall er en ferdig jobb.** Jobben ender som `done`
   med utfallet i `result`, slik at jobbmaskineriets tre forsøk aldri kan
   bli en ny POST. En arbeider som overtar en jobb følger regelen i §3.3.
@@ -337,7 +340,21 @@ create table dispatch_provider_document (
     linked_at   timestamptz not null default now(),
     unique (dispatch_id, attempt)
 );  -- innsettings-bar
+
+alter table job add column dedup_key text;
+create unique index job_open_dedup on job (company_id, kind, dedup_key)
+    where dedup_key is not null and status in ('queued', 'running');
+alter table job drop constraint job_kind_check;
+alter table job add constraint job_kind_check check (kind in (
+    'saft_import', 'audit_report', 'bank_sync',
+    'peppol_lookup', 'invoice_dispatch', 'peppol_sender_setup'));
 ```
+
+`right_for` i `regnmed-api::jobs` får de nye typene: `peppol_lookup` og
+`invoice_dispatch` krever `Right::InvoiceSend`, både for å starte og for å
+lese resultatet, og `peppol_sender_setup` krever `Right::CompanyAdmin`.
+`utsendelse.subject` er fortsatt påkrevd; en Peppol-rad lagrer dokumentets
+navn, for eksempel «Faktura 123».
 
 `event_key` er deterministisk: `regnmed:<dispatch_id>:<attempt>:<kind>`
 for våre egne hendelser og `recommand:<documentId>:<kind>` for
@@ -376,8 +393,9 @@ derfor: **et ukjent utfall sendes aldri automatisk på nytt.**
 3. **En arbeider som overtar jobben (docs/jobs.md) og finner et
    `sendeforsok` uten utfall, sender ikke.** Den forrige kan ha dødd
    etter POST-en, så den skriver `uavklart`.
-4. Avstemmingen i arbeideren lister utgående dokumenter for selskapet
-   fra `GET /api/v1/documents` i tidsvinduet, henter hvert dokument som
+4. Avstemmingen i arbeideren lister **alle sider** med utgående dokumenter
+   for selskapet fra `GET /api/v1/documents`, fra det første forsøket på
+   utsendelsen og fram til nå, og henter hvert dokument som
    ikke alt er koblet, og sammenligner **SHA-256 av XML-en** med
    vedleggets hash. Fakturanummer kan ikke brukes: sendt rå-XML ble ikke
    funnet av søket (§2.3). Ett treff kobler dokumentet til utsendelsen.
@@ -414,7 +432,9 @@ Hendelsene dedupliseres på `event_key` (unik kolonne, som
 `payment_intent_id` på kortbetaling, migrasjon 0043). Flere arbeidere
 kan behandle hendelser i ulik rekkefølge, så statusen per forsøk regnes
 etter **rang, ikke ankomst**: `avvist` og `levert` slår `akseptert`, som
-slår `uavklart`, som slår `sendeforsok`. `GET …/invoices/{iid}/utsendelser`
+slår `uavklart`, som slår `ikke_sendt`, som slår `sendeforsok`. Bare
+`ikke_sendt` og `avvist` gir lov til et nytt forsøk uten
+duplikatkontroll. `GET …/invoices/{iid}/utsendelser`
 viser den beregnede statusen per rad. En `avvist` er **ikke** en feil som
 svelges: den vises i fakturalisten og purre-/oppfølgingsvisningen, med
 regel-id og leverandørens tekst, oversatt der vi kjenner regelen.
@@ -471,7 +491,10 @@ stedet for en rekonstruksjon.
 
 En faktura utstedt før #222 har ikke noe lagret dokument. Skal den
 sendes som EHF, rendrer arbeideren den og lagrer XML-en som vedlegg før
-første forsøk, slik at også den har faste byte å avstemme og sende om.
+første forsøk. `invoice_ehf` godtar bare vedlegget utstedelsen selv
+skrev, så dette vedlegget må leses gjennom `utsendelse.attachment_id`:
+arbeideren og visningen av «hva sendte vi?» bruker den pekeren, aldri en
+ny rendring.
 
 ### 3.6 Avsenderen som Peppol-deltaker
 
@@ -483,18 +506,22 @@ adresseres til **avsenderens** Peppol-id.
 
 **Opprettelsen er maskinell, verifiseringen er det ikke.** En representant
 for hver kunde må fullføre Recommands identitetssjekk før selskapet kan
-sende (prøvd, §2.3). Portalen må derfor be administratoren om dette i god
-tid før første EHF. Arbeideren tar imot `company.verification` gjennom
+sende (prøvd, §2.3). For Norge sammenligner sjekken personen med
+signaturdata i Enhetsregisteret: alene-signatur, prokura eller en rolle
+med full rett godtas, felles signatur går til manuell behandling, og en
+person som ikke står oppført, avvises. Portalen må derfor be riktig person
+om dette i god tid før første EHF. Arbeideren tar imot `company.verification` gjennom
 webhook-køen (§3.7). Er kjøperen i ELMA og avsenderen ikke verifisert,
 stopper jobben med den grunnen. Den faller ikke tilbake til PDF, fordi
 det kan bryte plikten.
 
 Fase 1 oppretter avsenderen **alltid med `isSmpRecipient: false`**, satt
 uttrykkelig: standardverdien er `true` (prøvd), og da kan selskapet bli
-publisert som mottaker i ELMA. Playground gjør aldri SMP-registreringer,
-så dette kan ikke bevises der. Det kontrolleres med BogenTech i
-produksjon ved å lese SMP-en før noen kunde kobles på. Om innkommende MLR
-når et selskap som bare er registrert for sending, må prøves samme sted.
+publisert som mottaker i ELMA. Kildekoden stopper publisering med `false`
+på alle veier for Norge, og å endre fra `true` til `false` avregistrerer
+selskapet. Playground gjør aldri SMP-registreringer, så dette kontrolleres
+også med BogenTech i produksjon ved å lese SMP-en før noen kunde kobles
+på. Et slikt selskap får ingen innkommende MLR gjennom Recommand (§2.3).
 
 **Mottak er en egen beslutning.** Å registrere et selskap som mottaker av
 faktura i ELMA betyr at leverandørene deres **må** sende EHF dit — fra
@@ -516,7 +543,7 @@ ingenting annet:
 3. Publiserer de rå bytene til JetStream-strømmen
    `REGNMED_PEPPOL_EVENTS` (emne `regnmed.peppol.events`, work queue,
    fillagring, duplikatvindu 120 s), med `X-Idempotency-Key` som
-   `Nats-Msg-Id`.
+   `Nats-Msg-Id`, eller SHA-256 av kroppen hvis headeren mangler.
 4. Svarer `200` **først når JetStream har bekreftet publiseringen**.
    Feiler den, svarer endepunktet `503`, slik at Recommand prøver igjen.
 
@@ -528,14 +555,17 @@ hendelsestype og leveringsstatus, ikke fakturadata.
 Alle replikaer av `regnmed work` deler den varige konsumenten
 `peppolworkers`, så JetStream gir hver melding til én av dem:
 
-- Arbeideren kontrollerer `teamId`, slår opp utsendelsen, skriver
-  hendelsen i `dispatch_event` med `on conflict (event_key) do nothing`,
-  committer og **ack-er først etterpå**.
+- Arbeideren kontrollerer `teamId` og **ruter på hendelsestype**.
+  `document.sent` og leveringsstatus slår opp utsendelsen og skriver
+  hendelsen i `dispatch_event` med `on conflict (event_key) do nothing`.
+  Arbeideren committer og **ack-er først etterpå**.
+- Ukjente hendelsestyper ack-es som no-op. Ugyldig JSON med gyldig
+  signatur logges og avsluttes med `term`, slik at den ikke går i ring.
 - Duplikatvinduet alene er ikke nok, fordi en senere levering kan komme
   etter 120 sekunder. Den varige dedupen er `event_key`.
 - En databasefeil gir `nak` med forsinkelse, så meldingen forblir i køen.
-- En webhook kan komme før sendesvaret har skrevet koblingen. Arbeideren
-  gjør da `nak` med 5 sekunders forsinkelse, inntil fem leveringer, og
+- En utgående dokumenthendelse kan komme før sendesvaret har skrevet
+  koblingen. Arbeideren gjør da `nak` med 5 sekunders forsinkelse, inntil fem leveringer, og
   ack-er deretter med en logglinje. Avstemmingen (§3.3) henter statusen.
 - `company.verification` oppdaterer avsenderens status, og fra fase 3
   henter `document.received` XML-en og legger den i bilagsinnboksen.
@@ -551,7 +581,8 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
 ### Fase 0 — nå (operatøren, uke 47–48)
 
 - Leverandør valgt: Recommand. Kontrollere oppføringen i OpenPeppols
-  liste, få svar på spørsmålene i §2.3, lese og signere avtale +
+  liste, avgjøre om kontraktsverifisering er verdt å spørre om (§2.3), lese
+  og signere avtale +
   databehandleravtale. Playground er opprettet og prøvd (§2.3). Ekte
   levering, ELMA-oppslaget for `0192` og at en avsender med
   `isSmpRecipient: false` ikke blir mottaker, må bekreftes med BogenTech
@@ -572,7 +603,8 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
    Klienten brukes bare av arbeideren; API-et bruker bare
    signaturverifiseringen.
 2. Jobbene `peppol_lookup`, `invoice_dispatch` og avsenderoppsett i
-   `regnmed work`, med `job.dedup_key`. `POST …/delivery-check` og
+   `regnmed work`, med migrasjonen og rettighetene i §3.3.
+   `POST …/delivery-check` og
    `POST …/send` legger bare jobben i køen (§3.1). Oppslag som feiler
    stopper sendingen. Portal, MCP og docs/api.md følger `202`-svaret.
 3. Migrasjonen i §3.3 (kanal, Peppol-mottaker, vedleggsreferanse,
@@ -602,7 +634,9 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
    ikke raden nok: `sendt` i `subscription_follow_up.rs` må kreve
    hendelsen `levert`. En faktura som er `uavklart` eller `avvist`, purres
    ikke, sendes ikke automatisk på nytt, og rapporteres av jobben til
-   operatøren, som avgjør den etter reglene i §3.3.
+   operatøren, som avgjør den etter reglene i §3.3. `unsent_invoices` må
+   også lese den beregnede statusen: en Peppol-rad der siste forsøk er
+   `ikke_sendt`, er usendt og får en ny jobb.
 9. Integrasjonstest mot en vanlig Recommand-playground (skipper uten
    nøkkel, som nats-testene), med payload **fanget fra ekte leveranser** —
    Stripe-lærdommen (CLAUDE.md punkt 56): payloader skrevet ut fra hva
@@ -613,8 +647,9 @@ hos Recommand, og mottak er av.
 
 ### Fase 2 — Q1 2027
 
-- MLR tolket og vist som forståelig status, hvis innkommende MLR når oss
-  (§2.3).
+- MLR tolket og vist som forståelig status. Det krever at selskapet
+  registreres som mottaker av MLR hos Recommand, at ELMA godtar det, og at
+  vi selv kobler MLR-en til fakturaen (§2.3).
 - Fakturasvar (IMR) **bare hvis** Recommand får støtte for det eller vi
   bytter leverandør; «betalt»-svar er informasjon, aldri bokføring
   (bankavstemmingen bokfører).
