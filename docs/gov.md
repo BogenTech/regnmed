@@ -606,9 +606,16 @@ slettes hos Altinn før en ny sendes, fordi Altinn ellers svarer med den gamle
 og `externalRef` må forbli standardverdien for at Maskinporten skal finne
 systembrukeren. En forespørsel Altinn ikke lenger har, regnes som utløpt.
 Svarer Altinn `AUTH-00004` eller `AUTH-00006`, har selskapet alt godkjent
-systemet. «Sjekk status» spør Altinn også etter en godkjenning, så en
-systembruker kunden har fjernet, gir en ny forespørsel. Bare lenker til
-`altinn.no` vises.
+systemet. `POST …/altinn/system-user/check` spør Altinn om en åpen
+forespørsel eller en godkjenning og lager aldri en ny, så portalen kan kjøre
+den hver gang kortet åpnes. Har Altinn ikke lenger en godkjent forespørsel,
+har kunden fjernet systembrukeren: status blir `Revoked`, og en ny
+forespørsel sendes først når noen velger «Koble til Altinn». `Revoked`
+sjekkes også på nytt, så en tilfeldig 404 fra Altinn ikke blir stående.
+En godkjenning
+Altinn meldte uten forespørsel (`AUTH-00004`/`AUTH-00006`) har ingenting å
+slå opp, så for den spør «Sjekk status» Altinn ved å be om tilgang på nytt.
+Bare lenker til `altinn.no` vises.
 Klient-systembrukere for regnskapsførere er ikke bygget ennå.
 
 ### Første a-melding, 2026-11-11: mottatt uten avvik

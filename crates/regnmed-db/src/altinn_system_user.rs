@@ -52,3 +52,26 @@ pub async fn save(
     .await?;
     Ok(())
 }
+
+/// Records what Altinn said about this request. A check that raced a newer
+/// request changes nothing, and who asked for the approval stays recorded.
+pub async fn update_status(
+    pool: &PgPool,
+    company_id: Uuid,
+    altinn_request_id: &str,
+    status: &str,
+    confirm_url: Option<&str>,
+) -> Result<()> {
+    sqlx::query(
+        "update altinn_system_user
+         set status = $3, confirm_url = $4, updated_at = now()
+         where company_id = $1 and altinn_request_id = $2",
+    )
+    .bind(company_id)
+    .bind(altinn_request_id)
+    .bind(status)
+    .bind(confirm_url)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
