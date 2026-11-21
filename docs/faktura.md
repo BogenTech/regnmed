@@ -188,7 +188,9 @@ issued before #221 carry no reference and keep that content.
   stay configured in exactly one place, the worker.
 - **Sending is an explicit human action** (portal Send buttons, or
   `POST …/invoices/{iid}/send` / `POST …/reminders/{rid}/send`, both
-  bokforing+). Recipient defaults to the party's stored e-mail,
+  bokforing+). An invoice send answers `202` with a `job_id`: `regnmed
+  work` chooses EHF or e-mail and sends it (docs/efaktura.md §3.1), and
+  the outcome is in `GET …/jobs/{job_id}`. Recipient defaults to the party's stored e-mail,
   overridable per send; **reply-to is the company's own address**
   (settings), never regnmed's.
 - **Insert-only utsendelseslogg** (migration 0020): who sent what to

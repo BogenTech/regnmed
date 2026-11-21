@@ -68,6 +68,8 @@ A recurring checklist, done as one reviewed commit in December:
 7. Maskinporten-nøklene: hvor lenge til de utløper? En utløpt nøkkel
    feiler ved neste tokenforespørsel — altså ved en frist. Datoene står
    per nøkkel i Samarbeidsportalen (docs/secrets.md).
+8. Peppol BIS Billing 3.0: ny regelversjon? → oppdater commit og SHA-256 i
+   `scripts/ehf-schematron.sh`. Peppol slipper nye regler to ganger i året.
 
 Sources to watch: Skatteetatens API-dokumentasjon og SAF-T-sider,
 statsbudsjettet (regjeringen.no), lovdata endringslover for bokførings-

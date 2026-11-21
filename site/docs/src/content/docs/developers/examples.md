@@ -106,7 +106,7 @@ curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/credit-note -H "$AU
 
 PDF og EHF hentes med `GET …/invoices/{id}/pdf` og `GET …/invoices/{id}/ehf`.
 
-## 5. Send fakturaen på e-post
+## 5. Send fakturaen
 
 ```sh
 curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/send -H "$AUTH" \
@@ -114,8 +114,10 @@ curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/send -H "$AUTH" \
 ```
 
 ```json
-{ "utsendelse_id": "…", "to": "annen@kunde.example", "subject": "…" }
+{ "job_id": "…", "status": "queued" }
 ```
+
+Svaret er `202`: en arbeider velger EHF eller e-post og sender. Hent utfallet med `GET $API/companies/$COMPANY/jobs/$JOB_ID`. Når `status` er `done`, sier `result` hvilken `kanal` som ble brukt.
 
 Kroppen er valgfri. Uten `email` brukes kundens lagrede adresse. Kravet er `FAKTURA_SEND`. Uten konfigurert e-postskinne (`NATS_URL`) får du `400` med en tydelig melding i stedet for at utsendelsen late som om den gikk.
 

@@ -167,6 +167,11 @@ async fn main() -> Result<()> {
         println!("bank connection is on: {}", p.ids().join(", "));
     }
 
+    let peppol_webhook_secret = std::env::var("RECOMMAND_WEBHOOK_SECRET").ok();
+    if let (Some(_), Some(js)) = (&peppol_webhook_secret, &mailq) {
+        regnmed_mail::peppol_events::ensure_stream(js).await?;
+    }
+
     let app = router(AppState {
         pool,
         verifier,
@@ -181,6 +186,7 @@ async fn main() -> Result<()> {
         shareholder_return,
         tax_card,
         bank_feed,
+        peppol_webhook_secret,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

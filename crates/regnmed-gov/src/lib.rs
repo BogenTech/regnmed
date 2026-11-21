@@ -12,6 +12,8 @@
 //!   feedback arrives as an event instead of being asked for.
 //! - [`tax_card`]: skattekort til arbeidsgiver -- ordering the cards and
 //!   reading what each one means for the employee's withholding.
+//! - [`recommand`] and [`peppol_directory`]: the Peppol access point and
+//!   the public SML/SMP lookup (docs/efaktura.md).
 //! - [`tsa`]: RFC 3161 timestamping — the external witness for anchor
 //!   roots (docs/anchoring.md).
 //!
@@ -37,6 +39,8 @@ pub mod enablebanking;
 pub mod finanstilsynet;
 pub mod maskinporten;
 pub mod norgesbank;
+pub mod peppol_directory;
+pub mod recommand;
 pub mod regnid;
 pub mod routing;
 pub mod shareholder_return;

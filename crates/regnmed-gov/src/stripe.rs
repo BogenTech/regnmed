@@ -318,7 +318,7 @@ impl Stripe {
 
 /// HMAC-SHA256, hand-rolled over sha2 (RFC 2104; blokkstørrelse 64).
 /// Testet mot RFC 4231-vektor under.
-fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+pub(crate) fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     let mut k = [0u8; 64];
     if key.len() > 64 {
         k[..32].copy_from_slice(&Sha256::digest(key));
@@ -335,7 +335,7 @@ fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     outer.finalize().into()
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

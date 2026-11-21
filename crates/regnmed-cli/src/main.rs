@@ -547,17 +547,25 @@ async fn main() -> Result<()> {
             // doubles as Nats-Msg-Id, so a retried send cannot
             // double-deliver.
             if let Some(js) = &mailq {
-                for (f, sent) in
-                    regnmed_mail::follow_up::send_unsent_invoices(&pool, js, drift).await?
+                for (f, queued) in
+                    regnmed_mail::follow_up::queue_unsent_invoices(&pool, js, drift).await?
                 {
                     let kind = if f.is_credit_note {
                         "credit note"
                     } else {
                         "invoice"
                     };
-                    match sent {
-                        Ok(email) => println!(
-                            "{}: {kind} {} sent to {email}",
+                    // The earlier job failed; the new one tries again.
+                    if let Some(reason) = &f.last_error {
+                        println!(
+                            "{}: {kind} {} not sent last time: {reason}",
+                            f.company_name, f.invoice_no
+                        );
+                        error += 1;
+                    }
+                    match queued {
+                        Ok(_) => println!(
+                            "{}: {kind} {} queued for sending",
                             f.company_name, f.invoice_no
                         ),
                         // An open invoice without an address was already
@@ -571,6 +579,13 @@ async fn main() -> Result<()> {
                             error += 1;
                         }
                     }
+                }
+                for d in opf::dispatches_needing_attention(&pool, drift).await? {
+                    println!(
+                        "{}: faktura {} needs a human, EHF status {}",
+                        d.company_name, d.invoice_no, d.status
+                    );
+                    error += 1;
                 }
                 for p in opf::unsent_reminders(&pool, drift).await? {
                     let Some(email) = &p.email else {

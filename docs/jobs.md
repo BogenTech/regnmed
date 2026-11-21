@@ -18,6 +18,9 @@ men ble det bokført?» — uten å gjøre noe raskere.
 |---|---|---|---|
 | SAF-T-import | `POST /companies/{id}/jobs/saft-import` | `MIGRERING_ADMIN` | 10 429 bilag (10 MB) på 48 s |
 | Revisjonsrapporten | `POST /companies/{id}/jobs/audit-report` | `RAPPORT_LES` | 20 000 bilag + 2 000 vedlegg på 1,1 s |
+| Kanaloppslag for en faktura | `POST /companies/{id}/invoices/{iid}/delivery-check` | `FAKTURA_SEND` | ikke målt mot leverandøren |
+| Utsendelse av en faktura | `POST /companies/{id}/invoices/{iid}/send` | `FAKTURA_SEND` | ikke målt mot leverandøren |
+| EHF-avsender | `POST /companies/{id}/peppol/sender` | `SELSKAP_ADMIN` | ikke målt mot leverandøren |
 
 `GET /companies/{id}/jobs/{job_id}` gir status (`queued`, `running`,
 `done`, `failed`) og deretter `result` eller `error`. Lesing krever samme

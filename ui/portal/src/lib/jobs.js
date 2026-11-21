@@ -11,11 +11,15 @@ export async function runJob(companyId, kind, options = {}, onStatus = () => {})
     ...options,
   });
   onStatus(started.status);
+  return waitForJob(companyId, started.job_id, onStatus);
+}
+
+export async function waitForJob(companyId, jobId, onStatus = () => {}) {
   let wait = 300;
   for (;;) {
     await new Promise((r) => setTimeout(r, wait));
     wait = Math.min(wait * 1.5, 3000);
-    const job = await api("/companies/" + companyId + "/jobs/" + started.job_id);
+    const job = await api("/companies/" + companyId + "/jobs/" + jobId);
     onStatus(job.status);
     if (job.status === "done") return job.result;
     if (job.status === "failed") throw new Error(job.error || "jobben feilet");

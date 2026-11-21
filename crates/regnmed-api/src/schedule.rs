@@ -21,7 +21,11 @@ use crate::platform::PlatformContext;
 fn right_to_change(kind: Kind) -> Option<Right> {
     match kind {
         Kind::BankSync => Some(Right::BankReconcile),
-        Kind::SaftImport | Kind::AuditReport => None,
+        Kind::SaftImport
+        | Kind::AuditReport
+        | Kind::PeppolLookup
+        | Kind::InvoiceDispatch
+        | Kind::PeppolSenderSetup => None,
     }
 }
 

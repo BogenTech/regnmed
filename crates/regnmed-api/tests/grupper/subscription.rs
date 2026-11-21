@@ -575,15 +575,30 @@ async fn the_follow_up_walks_the_ladder_and_restores_on_payment() {
         .and_then(|u| u.gross_ore)
         .expect("faktura utstedt");
 
-    let mine = |open: Vec<opf::SubscriptionInvoice>| {
+    let find = |open: Vec<opf::SubscriptionInvoice>| {
         open.into_iter()
             .find(|f| f.company_id == customer)
             .expect("abonnementsfakturaen i listen")
     };
-    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
+    let f = find(opf::open_invoices(&state.pool, drift).await.unwrap());
     assert!(!f.sent, "ingenting er sendt ennå");
     assert_eq!(f.remaining_ore, gross);
     let due_date = f.due_date;
+
+    // No reminder or fee for an invoice that never reached the buyer.
+    assert!(
+        opf::purr(&state.pool, drift, &f, due_date + chrono::Days::new(30))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // The ladder below tests the cadence, for an invoice the buyer got. The
+    // row stays unsent because the end of this test needs a never-mailed one.
+    let mine = |open: Vec<opf::SubscriptionInvoice>| opf::SubscriptionInvoice {
+        sent: true,
+        ..find(open)
+    };
+    let f = mine(opf::open_invoices(&state.pool, drift).await.unwrap());
 
     // Too early: the transfer may be in flight.
     assert!(

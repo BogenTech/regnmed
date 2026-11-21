@@ -33,6 +33,8 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | PUT | `/companies/{company_id}/dimensions/{kind}/{code}` | `DIMENSJON_SKRIV` |
 | POST | `/companies/{company_id}/kassaoppgjor` | `BILAG_BOKFOR` |
 | POST | `/companies/{company_id}/kassaoppgjor/rapport` | `BILAG_BOKFOR` |
+| GET | `/companies/{company_id}/peppol/sender` | `SELSKAP_ADMIN` |
+| POST | `/companies/{company_id}/peppol/sender` | `SELSKAP_ADMIN` |
 | GET | `/companies/{company_id}/period-lock` | `BILAG_LES` |
 | PUT | `/companies/{company_id}/period-lock` | `PERIODE_LAAS` |
 | GET | `/companies/{company_id}/periodiseringer` | `BILAG_LES` |

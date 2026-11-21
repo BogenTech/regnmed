@@ -68,6 +68,7 @@ dukker opp med hver sak i ROADMAP.md.
 | `/companies/{company_id}/invitations` | GET POST |
 | `/companies/{company_id}/invitations/{invitation_id}` | DELETE |
 | `/companies/{company_id}/invitations/{invitation_id}/resend` | POST |
+| `/companies/{company_id}/peppol/sender` | GET POST |
 | `/companies/{company_id}/roles` | GET POST |
 | `/companies/{company_id}/roles/history` | GET |
 | `/companies/{company_id}/roles/{role_id}` | PUT |
@@ -234,6 +235,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/invoices/overdue` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/credit-note` | POST |
+| `/companies/{company_id}/invoices/{invoice_id}/delivery-check` | POST |
 | `/companies/{company_id}/invoices/{invoice_id}/ehf` | GET |
 | `/companies/{company_id}/invoices/{invoice_id}/payments` | POST |
 | `/companies/{company_id}/invoices/{invoice_id}/pdf` | GET |

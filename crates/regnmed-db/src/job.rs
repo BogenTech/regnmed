@@ -32,6 +32,12 @@ pub enum Kind {
     AuditReport,
     /// The scheduled bank fetch (docs/bank.md): every live connection of the company.
     BankSync,
+    /// Which channel an invoice would go out on (docs/efaktura.md §3.2).
+    PeppolLookup,
+    /// Sends one invoice on the channel the worker chooses.
+    InvoiceDispatch,
+    /// Registers the company as a send-only Peppol participant.
+    PeppolSenderSetup,
 }
 
 impl Kind {
@@ -40,6 +46,9 @@ impl Kind {
             Kind::SaftImport => "saft_import",
             Kind::AuditReport => "audit_report",
             Kind::BankSync => "bank_sync",
+            Kind::PeppolLookup => "peppol_lookup",
+            Kind::InvoiceDispatch => "invoice_dispatch",
+            Kind::PeppolSenderSetup => "peppol_sender_setup",
         }
     }
     pub fn parse(s: &str) -> Option<Kind> {
@@ -47,6 +56,9 @@ impl Kind {
             "saft_import" => Some(Kind::SaftImport),
             "audit_report" => Some(Kind::AuditReport),
             "bank_sync" => Some(Kind::BankSync),
+            "peppol_lookup" => Some(Kind::PeppolLookup),
+            "invoice_dispatch" => Some(Kind::InvoiceDispatch),
+            "peppol_sender_setup" => Some(Kind::PeppolSenderSetup),
             _ => None,
         }
     }
@@ -112,6 +124,61 @@ pub async fn create(
     .execute(pool)
     .await?;
     Ok(id)
+}
+
+/// Records a job unless the same work is already open, and answers the
+/// open job's id then: two clicks on Send are one send.
+pub async fn create_deduped(
+    pool: &PgPool,
+    company_id: Uuid,
+    kind: Kind,
+    dedup_key: &str,
+    input: &Value,
+    created_by: &str,
+    created_by_person: Option<Uuid>,
+) -> Result<Uuid> {
+    let bytes = serde_json::to_vec(input)?;
+    let sha = regnmed_core::hash::sha256(&bytes).to_vec();
+    let stored = blobs().store(&bytes).await?.map(<[u8]>::to_vec);
+    // The open job can finish between the two statements, so look again.
+    for _ in 0..3 {
+        let id = Uuid::now_v7();
+        let inserted: Option<Uuid> = sqlx::query_scalar(
+            "insert into job (id, company_id, kind, input_sha256, input, input_content_type,
+                              created_by, created_by_person, dedup_key)
+             values ($1, $2, $3, $4, $5, 'application/json', $6, $7, $8)
+             on conflict (company_id, kind, dedup_key)
+                 where dedup_key is not null and status in ('queued', 'running')
+             do nothing returning id",
+        )
+        .bind(id)
+        .bind(company_id)
+        .bind(kind.as_str())
+        .bind(&sha)
+        .bind(&stored)
+        .bind(created_by)
+        .bind(created_by_person)
+        .bind(dedup_key)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(id) = inserted {
+            return Ok(id);
+        }
+        let open: Option<Uuid> = sqlx::query_scalar(
+            "select id from job
+             where company_id = $1 and kind = $2 and dedup_key = $3
+               and status in ('queued', 'running')",
+        )
+        .bind(company_id)
+        .bind(kind.as_str())
+        .bind(dedup_key)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(id) = open {
+            return Ok(id);
+        }
+    }
+    bail!("could not create the job")
 }
 
 /// One company's job. Another company's id answers `None`, like every
@@ -277,6 +344,12 @@ pub async fn process(pool: &PgPool, job: &Claimed, worker: &str, runtime: &Runti
 pub struct Runtime {
     /// The bank providers (docs/bank.md); None when none is configured.
     pub bank: Option<std::sync::Arc<regnmed_gov::bankfeed::Providers>>,
+    /// The Peppol access point; None until EHF is configured.
+    pub peppol: Option<std::sync::Arc<regnmed_gov::recommand::Recommand>>,
+    /// The mail rail, for invoices that go out as PDF.
+    pub mail: Option<crate::peppol_worker::SendMail>,
+    /// A fixed directory answer, so tests do not depend on public DNS.
+    pub directory_answer: Option<regnmed_core::peppol::DirectoryAnswer>,
 }
 
 async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Value> {
@@ -320,8 +393,21 @@ async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Valu
         Some(Kind::BankSync) => {
             crate::bank_feed::sync_company(pool, runtime.bank.as_deref(), job.company_id).await
         }
+        Some(Kind::PeppolLookup) => crate::peppol_worker::run_lookup(pool, job, runtime).await,
+        Some(Kind::InvoiceDispatch) => crate::peppol_worker::run_dispatch(pool, job, runtime).await,
+        Some(Kind::PeppolSenderSetup) => {
+            crate::peppol_worker::run_sender_setup(pool, job, runtime).await
+        }
         None => bail!("unknown job kind {}", job.kind),
     }
+}
+
+pub(crate) async fn json_input<T: serde::de::DeserializeOwned>(
+    pool: &PgPool,
+    job_id: Uuid,
+) -> Result<T> {
+    let (bytes, _) = input(pool, job_id).await?;
+    serde_json::from_slice(&bytes).context("invalid job input")
 }
 
 async fn input(pool: &PgPool, job_id: Uuid) -> Result<(Vec<u8>, String)> {

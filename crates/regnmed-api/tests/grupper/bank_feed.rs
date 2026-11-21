@@ -886,6 +886,7 @@ async fn the_bank_feed_connects_one_account_and_imports_each_transaction_once() 
     };
     let runtime = regnmed_db::job::Runtime {
         bank: state.bank_feed.clone(),
+        ..Default::default()
     };
     regnmed_db::job::process(&state.pool, &claimed, "test-worker", &runtime)
         .await

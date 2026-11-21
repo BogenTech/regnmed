@@ -29,6 +29,10 @@ fn right_for(kind: Kind) -> Right {
         Kind::AuditReport => Right::ReportRead,
         // A scheduled fetch's outcome is read by whoever may see the bank.
         Kind::BankSync => Right::BankRead,
+        // The result names the recipient and whether the invoice went out.
+        Kind::PeppolLookup | Kind::InvoiceDispatch => Right::InvoiceSend,
+        // The result can hold the company's one-time verification link.
+        Kind::PeppolSenderSetup => Right::CompanyAdmin,
     }
 }
 
@@ -131,7 +135,7 @@ pub async fn get(
 /// the integration tests) the API runs the job itself, in the background
 /// -- the same code the worker runs. In a cluster the queue is always
 /// configured, and a failed nudge only costs latency: every worker sweeps.
-async fn enqueue(state: &AppState, job_id: Uuid) {
+pub(crate) async fn enqueue(state: &AppState, job_id: Uuid) {
     if let Some(js) = state.mailq.as_ref() {
         if let Err(e) = regnmed_mail::jobqueue::nudge(js, job_id).await {
             eprintln!("the job queue rejected the nudge for {job_id}: {e:#}");
@@ -141,6 +145,7 @@ async fn enqueue(state: &AppState, job_id: Uuid) {
     let pool = state.pool.clone();
     let runtime = job::Runtime {
         bank: state.bank_feed.clone(),
+        ..Default::default()
     };
     tokio::spawn(async move {
         let worker = "regnmed-api";

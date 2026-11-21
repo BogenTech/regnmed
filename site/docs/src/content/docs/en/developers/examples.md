@@ -112,7 +112,7 @@ curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/credit-note -H "$AU
 
 PDF and EHF are fetched with `GET …/invoices/{id}/pdf` and `GET …/invoices/{id}/ehf`.
 
-## 5. Send the invoice by email
+## 5. Send the invoice
 
 ```sh
 curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/send -H "$AUTH" \
@@ -120,10 +120,10 @@ curl -s -X POST $API/companies/$COMPANY/invoices/$INVOICE_ID/send -H "$AUTH" \
 ```
 
 ```json
-{ "utsendelse_id": "…", "to": "annen@kunde.example", "subject": "…" }
+{ "job_id": "…", "status": "queued" }
 ```
 
-(`utsendelse_id` is the id of the dispatch log row.)
+The response is `202`: a worker chooses EHF or email and sends it. Fetch the outcome with `GET $API/companies/$COMPANY/jobs/$JOB_ID`. When `status` is `done`, `result` says which `kanal` (channel) was used.
 
 The body is optional. Without `email`, the customer's stored address is used. The required right is `FAKTURA_SEND`. Without a configured mail rail (`NATS_URL`) you get `400` with a clear message instead of the dispatch pretending it went out.
 

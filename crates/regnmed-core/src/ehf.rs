@@ -68,6 +68,9 @@ pub struct EhfPart {
     pub land: String,
     /// Registered in Merverdiavgiftsregisteret (yields PartyTaxScheme).
     pub vat_registered: bool,
+    /// Registered in Foretaksregisteret, which the seller must state on the
+    /// document (Peppol rule NO-R-002).
+    pub business_registered: bool,
     pub email: Option<String>,
 }
 
@@ -151,10 +154,18 @@ fn quantity(milli: i64) -> String {
     )
 }
 
-/// EN 16931 tax category (UNCL5305). Standard rate → S, zero rate → Z.
-/// Exemption (E) and reverse charge (AE) require a reason and are not
-/// derived automatically — see docs/ehf.md.
-fn tax_category(vat_rate_bp: Option<i64>) -> (&'static str, i64) {
+/// BT-120 for a seller outside the VAT register (category O).
+const NOT_VAT_REGISTERED: &str = "Selger er ikke merverdiavgiftsregistrert";
+
+/// EN 16931 tax category (UNCL5305). A seller outside the VAT register → O,
+/// standard rate → S, zero rate → Z. Z requires a seller VAT identifier
+/// (BR-Z-02), so it can never be used for an unregistered seller. Exemption
+/// (E) and reverse charge (AE) require a reason and are not derived
+/// automatically — see docs/ehf.md.
+fn tax_category(seller_vat_registered: bool, vat_rate_bp: Option<i64>) -> (&'static str, i64) {
+    if !seller_vat_registered {
+        return ("O", 0);
+    }
     match vat_rate_bp {
         Some(bp) if bp > 0 => ("S", bp),
         _ => ("Z", 0),
@@ -253,6 +264,14 @@ fn write_party(w: &mut Writer, wrapper: &str, part: &EhfPart) {
         w.close("cac:TaxScheme");
         w.close("cac:PartyTaxScheme");
     }
+    if part.business_registered {
+        w.open("cac:PartyTaxScheme");
+        w.leaf("cbc:CompanyID", "Foretaksregisteret");
+        w.open("cac:TaxScheme");
+        w.leaf("cbc:ID", "TAX");
+        w.close("cac:TaxScheme");
+        w.close("cac:PartyTaxScheme");
+    }
     w.open("cac:PartyLegalEntity");
     w.leaf("cbc:RegistrationName", &part.name);
     w.leaf_attr(
@@ -318,7 +337,16 @@ pub fn render(doc: &EhfDocument) -> String {
     }
 
     write_party(&mut w, "cac:AccountingSupplierParty", &doc.seller);
-    write_party(&mut w, "cac:AccountingCustomerParty", &doc.buyer);
+    // BR-O-02: a document in category O may not carry the buyer's VAT id.
+    if doc.seller.vat_registered {
+        write_party(&mut w, "cac:AccountingCustomerParty", &doc.buyer);
+    } else {
+        let buyer = EhfPart {
+            vat_registered: false,
+            ..doc.buyer.clone()
+        };
+        write_party(&mut w, "cac:AccountingCustomerParty", &buyer);
+    }
 
     // cac:Delivery sits between the customer party and PaymentMeans in
     // the UBL 2.1 sequence — the XSD run in tests and CI enforces that,
@@ -332,6 +360,11 @@ pub fn render(doc: &EhfDocument) -> String {
             w.open("cac:DeliveryLocation");
             w.open("cac:Address");
             w.leaf("cbc:StreetName", sted);
+            // BR-57 requires a country. The place is free text, and we
+            // have no separate delivery country, so it is the buyer's.
+            w.open("cac:Country");
+            w.leaf("cbc:IdentificationCode", &doc.buyer.land);
+            w.close("cac:Country");
             w.close("cac:Address");
             w.close("cac:DeliveryLocation");
         }
@@ -356,7 +389,7 @@ pub fn render(doc: &EhfDocument) -> String {
     // One TaxSubtotal per rate — the recipient reconciles per rate.
     let mut rates: Vec<(&'static str, i64)> = Vec::new();
     for linje in &doc.linjer {
-        let key = tax_category(linje.vat_rate_bp);
+        let key = tax_category(doc.seller.vat_registered, linje.vat_rate_bp);
         if !rates.contains(&key) {
             rates.push(key);
         }
@@ -367,13 +400,13 @@ pub fn render(doc: &EhfDocument) -> String {
         let basis: i64 = doc
             .linjer
             .iter()
-            .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
+            .filter(|l| tax_category(doc.seller.vat_registered, l.vat_rate_bp) == (*kategori, *bp))
             .map(|l| l.net_ore)
             .sum();
         let avgift: i64 = doc
             .linjer
             .iter()
-            .filter(|l| tax_category(l.vat_rate_bp) == (*kategori, *bp))
+            .filter(|l| tax_category(doc.seller.vat_registered, l.vat_rate_bp) == (*kategori, *bp))
             .map(|l| l.vat_ore)
             .sum();
         w.open("cac:TaxSubtotal");
@@ -381,7 +414,12 @@ pub fn render(doc: &EhfDocument) -> String {
         w.leaf_attr("cbc:TaxAmount", &attr, &money(avgift));
         w.open("cac:TaxCategory");
         w.leaf("cbc:ID", kategori);
-        w.leaf("cbc:Percent", &percent(*bp));
+        // Category O carries no rate (BR-O-05) but must state why (BR-O-10).
+        if *kategori == "O" {
+            w.leaf("cbc:TaxExemptionReason", NOT_VAT_REGISTERED);
+        } else {
+            w.leaf("cbc:Percent", &percent(*bp));
+        }
         w.open("cac:TaxScheme");
         w.leaf("cbc:ID", "VAT");
         w.close("cac:TaxScheme");
@@ -406,7 +444,7 @@ pub fn render(doc: &EhfDocument) -> String {
         DocumentType::CreditNote => "cbc:CreditedQuantity",
     };
     for (i, linje) in doc.linjer.iter().enumerate() {
-        let (kategori, bp) = tax_category(linje.vat_rate_bp);
+        let (kategori, bp) = tax_category(doc.seller.vat_registered, linje.vat_rate_bp);
         w.open(line_tag);
         w.leaf("cbc:ID", &(i + 1).to_string());
         w.leaf_attr(
@@ -419,7 +457,9 @@ pub fn render(doc: &EhfDocument) -> String {
         w.leaf("cbc:Name", &linje.description);
         w.open("cac:ClassifiedTaxCategory");
         w.leaf("cbc:ID", kategori);
-        w.leaf("cbc:Percent", &percent(bp));
+        if kategori != "O" {
+            w.leaf("cbc:Percent", &percent(bp));
+        }
         w.open("cac:TaxScheme");
         w.leaf("cbc:ID", "VAT");
         w.close("cac:TaxScheme");
@@ -448,6 +488,7 @@ mod tests {
             postal_city: Some("Oslo".into()),
             land: "NO".into(),
             vat_registered: vat,
+            business_registered: false,
             email: Some("post@example.no".into()),
         }
     }
@@ -461,7 +502,10 @@ mod tests {
             due_date: NaiveDate::from_ymd_opt(2026, 7, 15),
             currency: "NOK".into(),
             buyer_reference: Some("Bestilling 42".into()),
-            seller: part("Selger AS", "915933149", true),
+            seller: EhfPart {
+                business_registered: true,
+                ..part("Selger AS", "915933149", true)
+            },
             buyer: part("Kjøper & Sønn AS", "923609016", true),
             delivery_date: NaiveDate::from_ymd_opt(2026, 6, 28),
             delivery_place: Some("Lagerveien 3, 0666 Oslo".into()),
@@ -488,6 +532,87 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// Writes one document per shape for scripts/ehf-schematron.sh, which
+    /// checks them against the official Peppol rules. No-op without the
+    /// variable, because the rules and Java are CI tools.
+    #[test]
+    fn writes_the_schematron_matrix() {
+        let Ok(dir) = std::env::var("EHF_MATRIX_DIR") else {
+            return;
+        };
+        let line = |net_ore: i64, vat_rate_bp: Option<i64>| EhfLinje {
+            description: "Vare".into(),
+            quantity_milli: 1_000,
+            unit: "EA".into(),
+            unit_price_ore: net_ore,
+            net_ore,
+            vat_rate_bp,
+            vat_ore: vat_rate_bp.map_or(0, |bp| net_ore * bp / 10_000),
+        };
+        let mut matrix = vec![
+            ("invoice", document(DocumentType::Invoice)),
+            ("credit-note", document(DocumentType::CreditNote)),
+        ];
+        let mut currency = document(DocumentType::Invoice);
+        currency.currency = "EUR".into();
+        matrix.push(("currency", currency));
+        let mut zero = document(DocumentType::Invoice);
+        zero.linjer = vec![line(100_000, Some(0))];
+        matrix.push(("zero-rate", zero));
+        let mut rates = document(DocumentType::Invoice);
+        rates.linjer = vec![
+            line(100_000, Some(2500)),
+            line(100_000, Some(1500)),
+            line(100_000, Some(1200)),
+        ];
+        matrix.push(("several-rates", rates));
+        let mut no_kid = document(DocumentType::Invoice);
+        no_kid.kid = None;
+        matrix.push(("no-kid", no_kid));
+        let mut no_vat = document(DocumentType::Invoice);
+        no_vat.seller.vat_registered = false;
+        no_vat.linjer = vec![line(100_000, None)];
+        matrix.push(("seller-without-vat", no_vat));
+        for (name, doc) in matrix {
+            std::fs::write(format!("{dir}/{name}.xml"), render(&doc)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_seller_outside_the_vat_register_uses_category_o() {
+        let mut doc = document(DocumentType::Invoice);
+        doc.seller.vat_registered = false;
+        for line in &mut doc.linjer {
+            line.vat_rate_bp = None;
+            line.vat_ore = 0;
+        }
+        let xml = render(&doc);
+        assert!(xml.contains("<cbc:ID>O</cbc:ID>"));
+        assert!(xml.contains(NOT_VAT_REGISTERED));
+        assert!(!xml.contains("<cbc:ID>Z</cbc:ID>"));
+        assert!(!xml.contains("<cbc:Percent>"));
+        assert!(!xml.contains("NO915933149MVA"));
+        assert!(!xml.contains("NO923609016MVA"), "BR-O-02: no buyer VAT id");
+    }
+
+    #[test]
+    fn the_seller_states_foretaksregisteret() {
+        let xml = render(&document(DocumentType::Invoice));
+        assert!(xml.contains("<cbc:CompanyID>Foretaksregisteret</cbc:CompanyID>"));
+        assert!(xml.contains("<cbc:ID>TAX</cbc:ID>"));
+        let mut doc = document(DocumentType::Invoice);
+        doc.seller.business_registered = false;
+        assert!(!render(&doc).contains("Foretaksregisteret"));
+    }
+
+    #[test]
+    fn a_delivery_place_carries_a_country() {
+        let xml = render(&document(DocumentType::Invoice));
+        let location = &xml[xml.find("<cac:DeliveryLocation>").unwrap()
+            ..xml.find("</cac:DeliveryLocation>").unwrap()];
+        assert!(location.contains("<cbc:IdentificationCode>NO</cbc:IdentificationCode>"));
     }
 
     #[test]

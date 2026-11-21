@@ -1,10 +1,13 @@
 //! E-postutsendelse (docs/faktura.md, #32):
 //!
-//! - POST /companies/{id}/invoices/{iid}/send                      send invoice PDF
+//! - POST /companies/{id}/invoices/{iid}/send                      queue the invoice (202)
+//! - POST /companies/{id}/invoices/{iid}/delivery-check            queue a channel lookup (202)
 //! - POST /companies/{id}/invoices/{iid}/reminders/{rid}/send      send purring PDF
 //! - POST /companies/{id}/invitations/{iid}/resend                 send the invitation again
 //! - GET  /companies/{id}/invoices/{iid}/utsendelser               insert-only log
 //!
+//! An invoice goes out from `regnmed work`, on the channel the worker
+//! chooses (docs/efaktura.md §3.1): this API never calls the provider.
 //! Sending is always an explicit human action. Recipient defaults to
 //! the party's stored e-mail (overridable per send); replies go to the
 //! company's own address. Requires the mail rail (NATS_URL) — without
@@ -12,6 +15,8 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use regnmed_db::job::{self, Kind};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -25,6 +30,9 @@ use crate::mailq::{OutboundMail, publish};
 pub struct SendRequest {
     /// Overrides the party's stored e-mail for this send.
     email: Option<String>,
+    /// A human's explicit resend of an unresolved Peppol attempt.
+    #[serde(default)]
+    resend_unresolved: bool,
 }
 
 async fn send_payload(
@@ -68,10 +76,15 @@ pub async fn send_invoice(
     person: AuthPerson,
     Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<SendRequest>>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
     require(&state, person.person_id, company_id, Right::InvoiceSend).await?;
+    if state.mailq.is_none() {
+        return Err(ApiError::BadRequest(
+            "e-postutsendelse er ikke konfigurert (NATS_URL)".into(),
+        ));
+    }
     let request = body.map(|Json(r)| r).unwrap_or_default();
-    let payload = regnmed_db::invoice_email_payload(
+    regnmed_db::peppol_worker::check_sendable(
         &state.pool,
         company_id,
         invoice_id,
@@ -79,7 +92,59 @@ pub async fn send_invoice(
     )
     .await
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    send_payload(&state, &person, company_id, payload).await
+    let job_id = job::create_deduped(
+        &state.pool,
+        company_id,
+        Kind::InvoiceDispatch,
+        &invoice_id.to_string(),
+        &json!({
+            "invoice_id": invoice_id,
+            "email": request.email,
+            "resend_unresolved": request.resend_unresolved,
+        }),
+        person.name.as_deref().unwrap_or(&person.sub),
+        Some(person.person_id),
+    )
+    .await?;
+    crate::jobs::enqueue(&state, job_id).await;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "job_id": job_id, "status": "queued" })),
+    ))
+}
+
+/// Which channel the invoice would go out on. The answer is the job's
+/// result, because finding out takes a call to the provider.
+pub async fn delivery_check(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, invoice_id)): Path<(Uuid, Uuid)>,
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    require(&state, person.person_id, company_id, Right::InvoiceSend).await?;
+    // Without a queue the job would run here, and the API makes no lookups.
+    if state.mailq.is_none() {
+        return Err(ApiError::BadRequest(
+            "utsendelse er ikke konfigurert (NATS_URL)".into(),
+        ));
+    }
+    regnmed_db::peppol_worker::check_invoice(&state.pool, company_id, invoice_id)
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let job_id = job::create_deduped(
+        &state.pool,
+        company_id,
+        Kind::PeppolLookup,
+        &invoice_id.to_string(),
+        &json!({ "invoice_id": invoice_id }),
+        person.name.as_deref().unwrap_or(&person.sub),
+        Some(person.person_id),
+    )
+    .await?;
+    crate::jobs::enqueue(&state, job_id).await;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "job_id": job_id, "status": "queued" })),
+    ))
 }
 
 pub async fn send_reminder(
@@ -109,16 +174,27 @@ pub async fn list_dispatches(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::InvoiceRead).await?;
     let rows = regnmed_db::list_dispatches(&state.pool, company_id, invoice_id).await?;
-    Ok(Json(json!({
-        "utsendelser": rows.iter().map(|u| json!({
+    let mut dispatches = Vec::with_capacity(rows.len());
+    for u in &rows {
+        let peppol = if u.channel == "peppol" {
+            regnmed_db::peppol::dispatch_summary(&state.pool, u.id).await?
+        } else {
+            None
+        };
+        dispatches.push(json!({
             "utsendelse_id": u.id,
             "reminder_id": u.reminder_id,
-            "to": u.to_email,
+            "kanal": u.channel,
+            "to": u.to,
             "subject": u.subject,
             "sent_by": u.sent_by,
             "sent_at": u.sent_at.to_rfc3339(),
-        })).collect::<Vec<_>>(),
-    })))
+            "status": peppol.as_ref().map(|p| p.status.as_str()),
+            "detalj": peppol.as_ref().map(|p| p.detail.as_str()),
+            "kan_sendes_pa_nytt": peppol.as_ref().is_some_and(|p| p.can_resend),
+        }));
+    }
+    Ok(Json(json!({ "utsendelser": dispatches })))
 }
 
 /// Queues the invitation mail (#66) and logs it, returning why it did not
