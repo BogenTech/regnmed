@@ -156,10 +156,13 @@ sertifikat, Schematron-validering ved innsending og ofte SMP-
 registrering for mottak. regnmed får:
 
 - én REST-klient i `regnmed-gov` (samme form som `stripe`: håndrullet
-  over `reqwest`, som allerede er avhengighet) — **ingen nye crates**,
-  ingen ny tjeneste, ingen JVM;
+  over `reqwest`, som allerede er avhengighet) — ingen ny tjeneste,
+  ingen JVM;
+- et eget SML/SMP-oppslag (§3.2): SMP-en leses med `reqwest`, mens SML
+  krever en DNS NAPTR-spørring som `reqwest` ikke gjør. Den håndrulles
+  over `tokio` i `regnmed-gov`, så heller ikke dette gir **nye crates**;
 - én webhook (samme mønster som Stripe-webhooken: signert, idempotent,
-  logget);
+  logget) og en avstemmingsjobb (§3.3);
 - en avtale, en API-nøkkel og en dokumentpris.
 
 **Valgt som start: Recommand (BRBX BV), operatørbeslutning 2026-11-21.**
@@ -190,7 +193,8 @@ prøvd mot deres testmiljø.
 
 | Krav | Funn | Hva regnmed gjør |
 | --- | --- | --- |
-| Flerkunde-API | Oppfylt: ubegrenset antall selskaper i ett team, felles volum, ingen pris per selskap | Oppretter avsender maskinelt (§3.6) |
+| Sertifisering | Recommand oppgir selv at de er sertifisert aksesspunkt og SMP. Oppføringen i OpenPeppols liste er **ikke kontrollert** | Kontrolleres før signering (fase 0) |
+| Flerkunde-API | Oppfylt: ubegrenset antall selskaper i ett team, felles volum, ingen pris per selskap. Hva `company.verification` krever før første sending, er **ikke lest** | Oppretter avsender maskinelt (§3.6), og prøver verifiseringen i testmiljøet (fase 0) |
 | Oppslag per dokumenttype | Delvis: `POST /api/v1/verify-document-support` skiller faktura og kreditnota, men `isValid: false` skiller ikke «ikke registrert» fra «oppslaget feilet». ELMA-støtten i dette endepunktet er **ikke verifisert** | Eget SML/SMP-oppslag før e-post velges (§3.2) |
 | Idempotensnøkkel ved innsending | **Mangler** i `POST /api/v1/{companyId}/send`. Hva feilkategorien `duplicate` oppdager, er ikke dokumentert | Aldri automatisk omsending etter tapt svar (§3.3) |
 | Tidlig validering | Oppfylt: `errors` per feltsti | Vises som `avvist` |
@@ -210,6 +214,8 @@ Spørsmål som må besvares av Recommand:
    veikartet?
 4. Hvor mange webhook-forsøk gjøres, med hvilken ventetid og
    tidsavbrudd, og hvilke statuskoder regnes som vellykket?
+5. Hva er standardverdien for `isSmpRecipient`, og kan en ny avsender
+   sende før `company.verification` er fullført?
 
 ## 3. Integrasjonen i regnmed
 
@@ -234,9 +240,10 @@ som er raskt og må avgjøres før svaret — oppslaget (kanalvalget),
 rendringen, lagringen av XML-en og utsendelsesraden — i én transaksjon,
 og legger så en jobb i den eksisterende JetStream-arbeidskøen
 (docs/jobs.md) med utsendelses-id-en. `regnmed work` gjør HTTP-kallet
-til leverandøren. Feiler kallet før forespørselen er sendt, kan det
-prøves på nytt; er utfallet ukjent, gjelder §3.3. Da er rekkefølgen entydig (raden finnes før noe er
-sendt, akkurat som e-postraden finnes før meldingen er levert), en treg
+til leverandøren, etter å ha skrevet sendeforsøket (§3.3). Bare en feil
+som beviser at forespørselen aldri nådde fram, kan prøves på nytt; er
+utfallet ukjent, gjelder §3.3. Da er rekkefølgen entydig (raden finnes
+før noe er sendt, akkurat som e-postraden finnes før meldingen er levert), en treg
 leverandør holder ikke en forespørsel åpen, og «ble den sendt?» besvares
 av hendelsene i §3.3, ikke av om forespørselen rakk å svare.
 
@@ -251,11 +258,18 @@ en konsekvens av mottakeren, ikke et valg som krever egen tillatelse.
   2028: advarsel, §1.4).
 - Fase 1 bruker **to oppslag**. Recommands `verify-document-support`
   svarer på om de kan levere *denne* dokumenttypen, men `isValid: false`
-  sier ikke om mottakeren mangler eller om oppslaget feilet (§2.3). Før
-  et slikt svar kan føre til e-post, gjør regnmed derfor et eget offentlig
-  SML/SMP-oppslag: bekreftet fravær (NXDOMAIN i SML, eller SMP uten
-  dokumenttypen) gir e-post. Tidsavbrudd, SERVFAIL og alt annet er
-  **ukjent**.
+  sier ikke om mottakeren mangler eller om oppslaget feilet (§2.3). Etter
+  et slikt svar gjør regnmed derfor et eget offentlig SML/SMP-oppslag:
+
+  | Recommand | Eget oppslag | Utfall |
+  | --- | --- | --- |
+  | `isValid: true` | gjøres ikke | Peppol |
+  | `isValid: false` | NXDOMAIN i SML | e-post |
+  | `isValid: false` | SMP svarer, deltakeren mangler dokumenttypen | e-post; for kreditnota PDF med logget grunn (§1.5) |
+  | `isValid: false` | SMP oppgir dokumenttypen | **ingen sending**: de to kildene er uenige |
+  | `isValid: false` eller ikke svar | tidsavbrudd, SERVFAIL eller annet | **ingen sending**: ukjent |
+  | ikke svar | hva som helst | **ingen sending**: ukjent |
+
 - Recommands e-postreserve (`when: "on_peppol_failure"`) brukes **ikke**:
   kanalvalget skal være vårt, og en transportfeil beviser ikke at
   mottakeren er utenfor ELMA.
@@ -286,14 +300,34 @@ alter table utsendelse add check (
     (channel = 'peppol' and peppol_receiver is not null and attachment_id is not null));
 
 create table dispatch_event (
-    id             uuid primary key,
-    dispatch_id    uuid not null references utsendelse (id),
-    provider_event text not null unique,   -- webhookens dedup-nøkkel
-    kind           text not null,
-    detail         text not null default '',
-    received_at    timestamptz not null default now()
+    id          uuid primary key,
+    dispatch_id uuid not null references utsendelse (id),
+    event_key   text not null unique,   -- dedup-nøkkel, se under
+    attempt     int  not null check (attempt > 0),
+    kind        text not null,
+    detail      text not null default '',
+    received_at timestamptz not null default now()
 );  -- innsettings-bar, samme triggere som utsendelse
+
+create table dispatch_provider_document (
+    provider_document_id text primary key,  -- Recommands documentId
+    dispatch_id uuid not null references utsendelse (id),
+    attempt     int  not null check (attempt > 0),
+    linked_at   timestamptz not null default now(),
+    unique (dispatch_id, attempt)
+);  -- innsettings-bar
 ```
+
+`event_key` er deterministisk, fordi Recommands webhook ikke har noen
+hendelses-id: `regnmed:<dispatch_id>:<attempt>:<kind>` for våre egne
+hendelser og `recommand:<documentId>:<kind>` for leverandørens. Webhook
+og avstemmingsjobb som ser samme status, gir dermed samme nøkkel. En MLR
+bruker MLR-dokumentets egen id.
+
+`dispatch_provider_document` er koblingen fra Recommands `documentId`
+til utsendelsen. Den skrives fra sendesvaret eller fra et treff i
+avstemmingen. En webhook kan komme før koblingen finnes; da logges den
+og besvares med 200, og avstemmingsjobben henter statusen etterpå.
 
 XML-en refereres gjennom vedleggsraden (§3.5), som alt bærer SHA-256 og
 hash-sjekkes ved lesing — utsendelsesraden lagrer ingen egen kopi av
@@ -309,30 +343,48 @@ begge. Integrasjonstesten må ha en Peppol-rad i lista.
 
 **Recommand har ingen idempotensnøkkel ved innsending** (§2.3), så en
 omsending etter tapt svar kan bli to fakturaer hos kjøperen. Regelen er
-derfor: **et ukjent utfall sendes aldri automatisk på nytt.** Tidsavbrudd
-eller brutt forbindelse etter at forespørselen er skrevet gir hendelsen
-`uavklart`. Avstemmingsjobben leser utgående dokumenter fra
-`GET /api/v1/documents` i tidsvinduet og sammenligner fakturanummer og
-mottaker. Treff kobler dokumentet til utsendelsen. Uten treff blir raden
-stående som `uavklart`, synlig i portalen, til et menneske ber om
-omsending av de lagrede bytene (§3.5). Får Recommand en idempotensnøkkel,
-skal den være utsendelses-id-en, og denne regelen kan da forenkles.
+derfor: **et ukjent utfall sendes aldri automatisk på nytt.**
+
+1. Arbeideren skriver og committer `sendeforsok` for forsøket **før**
+   POST-en.
+2. Beviser feilen at forespørselen aldri nådde fram (DNS-feil eller
+   nektet tilkobling), skrives `ikke_sendt`, og neste forsøk kan starte.
+   Tidsavbrudd eller brutt forbindelse etter at forespørselen er skrevet
+   gir `uavklart`.
+3. **En arbeider som overtar jobben (docs/jobs.md) og finner et
+   `sendeforsok` uten utfall, sender ikke.** Den forrige kan ha dødd
+   etter POST-en, så den skriver `uavklart`.
+4. Avstemmingsjobben leser utgående dokumenter for selskapet fra
+   `GET /api/v1/documents` i tidsvinduet og sammenligner fakturanummer og
+   mottaker. Treff kobler dokumentet til utsendelsen.
+5. Uten treff blir raden stående som `uavklart`, synlig i portalen.
+   Omsending er et menneskelig valg og åpnes tidligst **30 minutter**
+   etter forsøket, slik at en forespørsel som fortsatt er underveis
+   rekker å dukke opp. Rett før omsendingen gjøres et nytt oppslag for
+   selskapet; et treff stopper den. Portalen sier at en liten risiko for
+   duplikat gjenstår. Omsendingen sender de lagrede bytene (§3.5) som et
+   nytt forsøk på samme utsendelse.
+
+Får Recommand en idempotensnøkkel, skal den være utsendelses-id-en pluss
+forsøksnummeret, og denne regelen kan da forenkles.
 
 **Status er beregnet, aldri lagret** — samme lære som abonnement og
 agentoppgaver. Den innsettings-bare hendelsestabellen over
-(dispatch_event) skrives av webhooken:
+(dispatch_event) skrives av arbeideren, webhooken og avstemmingsjobben:
 
 | `kind` | Kilde | Betyr |
 | --- | --- | --- |
-| `uavklart` | regnmed | svaret ble borte, ingen vet om C2 tok imot dokumentet |
+| `sendeforsok` | regnmed | arbeideren er i ferd med å kalle leverandøren |
+| `ikke_sendt` | regnmed | forespørselen nådde beviselig aldri fram |
+| `uavklart` | regnmed | utfallet er ukjent, ingen vet om C2 tok imot dokumentet |
 | `akseptert` | leverandøren | validert og tatt imot av C2 |
 | `avvist` | leverandøren | Schematron-/valideringsfeil — **detail** bærer regelen og teksten |
 | `levert` | AS4-kvittering via leverandøren | fremme hos kjøperens aksesspunkt |
 | `mlr` | Peppol MLR | kjøperens system avviste/godtok meldingen |
 | `svar` | Peppol Invoice Response (IMR) — **ikke tilgjengelig hos Recommand** | kjøperen har akseptert, bestridt, betalt … |
 
-Webhooken dedupliserer på leverandørens hendelses-id (unik kolonne,
-som `payment_intent_id` på kortbetaling, migrasjon 0043). `GET …/invoices/{iid}/utsendelser`
+Hendelsene dedupliseres på `event_key` (unik kolonne, som
+`payment_intent_id` på kortbetaling, migrasjon 0043). `GET …/invoices/{iid}/utsendelser`
 viser siste hendelse per rad. En `avvist` er **ikke** en feil som
 svelges: den vises i fakturalisten og purre-/oppfølgingsvisningen, med
 regel-id og leverandørens tekst, oversatt der vi kjenner regelen.
@@ -403,9 +455,13 @@ Peppol-reglene krever at aksesspunktet kjenner avsenderen sin.
 Hver regnmed-kunde som skal sende EHF, opprettes derfor som avsender hos
 leverandøren — maskinelt, første gang selskapet sender, med orgnr og
 navn fra Enhetsregisteret (vi onboarder allerede derfra). MLR og
-fakturasvar adresseres til **avsenderens** Peppol-id. Recommand kan
-registrere et selskap bare for sending (`isSmpRecipient: false`); om
-innkommende MLR da når oss, må prøves i testmiljøet.
+fakturasvar adresseres til **avsenderens** Peppol-id.
+
+Fase 1 oppretter avsenderen **alltid med `isSmpRecipient: false`**, satt
+uttrykkelig og aldri overlatt til en standardverdi: ellers kan første
+sending publisere selskapet som mottaker i ELMA. Integrasjonstesten skal
+vise at ingen mottakeroppføring oppstår. Om innkommende MLR når et
+selskap som bare er registrert for sending, må prøves i testmiljøet.
 
 **Mottak er en egen beslutning.** Å registrere et selskap som mottaker av
 faktura i ELMA betyr at leverandørene deres **må** sende EHF dit — fra
@@ -423,9 +479,11 @@ leverandøravtalen, ikke koden.
 
 ### Fase 0 — nå (operatøren, uke 47–48)
 
-- Leverandør valgt: Recommand. Få svar på spørsmålene i §2.3, lese og
-  signere avtale + databehandleravtale. Testkonto mot Peppol-testnettet,
-  og bekreft ELMA-oppslaget for `0192` der.
+- Leverandør valgt: Recommand. Kontrollere oppføringen i OpenPeppols
+  liste, få svar på spørsmålene i §2.3, lese og signere avtale +
+  databehandleravtale. Testkonto mot Peppol-testnettet, og bekreft der
+  ELMA-oppslaget for `0192`, `company.verification` og at en avsender med
+  `isSmpRecipient: false` ikke blir mottaker.
 - Bekrefte datalagring i EØS og legge leverandøren til som
   underdatabehandler i docs/kundevilkar.md §8 — **30 dagers varsel** til
   eksisterende kunder står i vilkårene. Varselet må ut i god tid før
@@ -435,15 +493,17 @@ leverandøravtalen, ikke koden.
 
 ### Fase 1 — minimum for 1.1.2027 (kode)
 
-1. `regnmed-gov`-klient: opprett avsender, slå opp mottaker per
-   dokumenttype, send dokument, les dokumentstatus, verifiser webhook.
-   Eget SML/SMP-oppslag for å skille fravær fra feil (§3.2).
+1. `regnmed-gov`-klient: opprett avsender med `isSmpRecipient: false`,
+   slå opp mottaker per dokumenttype, send dokument, les dokumentstatus,
+   verifiser webhook. Eget SML/SMP-oppslag for å skille fravær fra feil
+   (§3.2).
 2. `GET …/invoices/{iid}/delivery` + kanalvalg i `POST …/send`;
    oppslag som feiler stopper sendingen; leverandørkallet i
    arbeidskøen (§3.1).
 3. Migrasjonen i §3.3 (kanal, Peppol-mottaker, vedleggsreferanse,
-   hendelsestabell), leserne av `to_email` oppdatert; webhook-endepunkt
-   og avstemmingsjobb, med `uavklart` og manuell omsending.
+   hendelsestabell, kobling til leverandørens dokument-id), leserne av
+   `to_email` oppdatert; webhook-endepunkt og avstemmingsjobb, med
+   `sendeforsok` før POST, `uavklart` og manuell omsending.
 4. Sendt XML lagret som vedlegg; omsending sender lagrede byte.
 5. «Deres referanse» på faktura (BT-10) og standard på kunden.
 6. Schematron i CI (§3.4 lag 2), og de dataavhengige reglene sjekket før
@@ -459,7 +519,11 @@ leverandøravtalen, ikke koden.
    rapporterer den slik den i dag rapporterer et selskap uten
    e-postadresse, og neste kjøring prøver igjen. **Purretrappen starter
    ikke** for en faktura uten utsendelsesrad — ellers regnes påminnelse og
-   gebyr fra et forfall på en faktura kunden aldri fikk.
+   gebyr fra et forfall på en faktura kunden aldri fikk. For Peppol er
+   ikke raden nok: `sendt` i `subscription_follow_up.rs` må kreve
+   hendelsen `levert`. En faktura som er `uavklart` eller `avvist`, purres
+   ikke, sendes ikke automatisk på nytt, og rapporteres av jobben til
+   operatøren, som avgjør den etter reglene i §3.3.
 9. Integrasjonstest mot leverandørens testmiljø (skipper uten nøkkel,
    som nats-testene), med payload **fanget fra ekte leveranser** —
    Stripe-lærdommen (CLAUDE.md punkt 56): payloader skrevet ut fra hva
@@ -513,10 +577,14 @@ hos Recommand, og mottak er av.
    vurderer valget senere (§2.3). Avtalen er ikke signert.
 2. **Hvem bærer dokumentprisen — fortsatt åpen.** Prisvedtaket
    (docs/abonnement.md) sier at alt er inkludert i 49/99 kr/mnd. Med
-   Recommand koster et dokument omtrent 0,80–1,70 kr på betalte planer
-   (11,70 NOK/EUR), og både sendte og mottatte teller. **Forslag:** 10
-   EHF-dokumenter per selskap per måned inkludert, deretter 2 kr per
-   dokument. Til sammenligning (offisielle prissider, 2026-11-21):
+   Recommand koster et dokument omtrent 0,82–1,70 kr når en betalt plan
+   er fullt utnyttet (11,70 NOK/EUR), og både sendte og mottatte teller.
+   Dokumenter over planen koster omtrent 3,51 kr på gratisplanen, 2,34 kr
+   på €29, 1,17 kr på €99, 0,94 kr på €199 og 0,82 kr på €349. **Forslag:**
+   10 EHF-dokumenter per selskap per måned inkludert, deretter 2 kr per
+   dokument. **2 kr taper penger på overforbruk på gratisplanen og €29**,
+   så vi må over på €99 før overforbruk faktureres til 2 kr. Til
+   sammenligning (offisielle prissider, 2026-11-21):
    Tripletex tar 4 kr i 2026 og 5 kr per sendt faktura i 2027, Conta
    Standard «fra 3,38 kr», mens Fiken inkluderer sending og Conta Smart
    har ubegrenset EHF. Avgjør også når eget aksesspunkt eventuelt blir
