@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resultMessage, safeLink, dispatchStatus } from "./ehf.js";
+import { createRouteCache, resultMessage, safeLink, dispatchStatus } from "./ehf.js";
 
 test("only sent documents are reported as a success", () => {
   assert.equal(resultMessage({ kanal: "epost", to: "a@b.no" }).ok, true);
@@ -34,4 +34,42 @@ test("only https becomes a link", () => {
   assert.equal(safeLink("javascript:alert(1)"), null);
   assert.equal(safeLink("http://x.example"), null);
   assert.equal(safeLink(null), null);
+});
+
+test("a started channel check is shared until it expires", async () => {
+  let time = 0;
+  let loads = 0;
+  const cache = createRouteCache({ ttlMs: 100, now: () => time });
+  const load = async () => ++loads;
+  assert.equal(await cache.get("a", load), 1);
+  assert.equal(await cache.get("a", load), 1);
+  time = 100;
+  assert.equal(await cache.get("a", load), 2);
+  cache.clear("a");
+  assert.equal(await cache.get("a", load), 3);
+});
+
+test("storing a route removes expired ones", async () => {
+  let time = 0;
+  let loads = 0;
+  const cache = createRouteCache({ ttlMs: 100, now: () => time });
+  const load = async () => ++loads;
+  await cache.get("old", load);
+  time = 150;
+  await cache.get("new", load);
+  time = 160;
+  assert.equal(await cache.get("new", load), 2);
+  assert.equal(await cache.get("old", load), 3);
+});
+
+test("a failed channel check is not kept", async () => {
+  let loads = 0;
+  const cache = createRouteCache();
+  const fail = async () => {
+    loads++;
+    throw new Error("down");
+  };
+  await assert.rejects(cache.get("a", fail));
+  await assert.rejects(cache.get("a", fail));
+  assert.equal(loads, 2);
 });
