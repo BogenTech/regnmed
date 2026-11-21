@@ -14,11 +14,23 @@ export async function runJob(companyId, kind, options = {}, onStatus = () => {})
   return waitForJob(companyId, started.job_id, onStatus);
 }
 
-export async function waitForJob(companyId, jobId, onStatus = () => {}) {
-  let wait = 300;
+// For a job someone is actively waiting on, which usually takes a second or two.
+export const FAST_POLL = { first: 75, growth: 1.25, max: 400 };
+
+export async function waitForJob(
+  companyId,
+  jobId,
+  onStatus = () => {},
+  { first = 300, growth = 1.5, max = 3000, timeoutMs = null, timeoutMessage } = {},
+) {
+  const started = Date.now();
+  let wait = first;
   for (;;) {
+    if (timeoutMs !== null && Date.now() - started >= timeoutMs) {
+      throw new Error(timeoutMessage || "Jobben tar lengre tid enn ventet.");
+    }
     await new Promise((r) => setTimeout(r, wait));
-    wait = Math.min(wait * 1.5, 3000);
+    wait = Math.min(wait * growth, max);
     const job = await api("/companies/" + companyId + "/jobs/" + jobId);
     onStatus(job.status);
     if (job.status === "done") return job.result;

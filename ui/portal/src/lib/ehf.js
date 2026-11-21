@@ -50,3 +50,28 @@ export function safeLink(url) {
     return null;
   }
 }
+
+// Keeps a channel check that started before the click, so the dialog can open
+// at once. It is display only: the worker looks the buyer up again at send.
+export function createRouteCache({ ttlMs = 30_000, now = Date.now } = {}) {
+  const entries = new Map();
+  return {
+    get(key, load) {
+      const hit = entries.get(key);
+      if (hit && now() - hit.at < ttlMs) return hit.route;
+      const entry = { at: now(), route: null };
+      entry.route = load().catch((error) => {
+        if (entries.get(key) === entry) entries.delete(key);
+        throw error;
+      });
+      for (const [k, old] of entries) {
+        if (now() - old.at >= ttlMs) entries.delete(k);
+      }
+      entries.set(key, entry);
+      return entry.route;
+    },
+    clear(key) {
+      entries.delete(key);
+    },
+  };
+}

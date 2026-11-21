@@ -8,7 +8,7 @@
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, skjema } from "../../lib/dialog.svelte.js";
   import { download } from "../../lib/download.js";
-  import { sendInvoice } from "../../lib/utsendelse.js";
+  import { forgetInvoiceRoute, prepareInvoiceSend, sendInvoice } from "../../lib/utsendelse.js";
   import { dispatchStatus } from "../../lib/ehf.js";
   import Card from "../../components/Card.svelte";
   import InvoiceStatus, { daysOverdue } from "./InvoiceStatus.svelte";
@@ -126,12 +126,27 @@
     }
   }
 
-  async function send() {
-    if (await sendInvoice(companyId, base)) load();
+  let sending = $state(false);
+
+  $effect(() => {
+    forgetInvoiceRoute(base);
+  });
+
+  async function startSend(options) {
+    if (sending) return;
+    sending = true;
+    try {
+      if (await sendInvoice(companyId, base, options)) load();
+    } finally {
+      sending = false;
+    }
   }
 
-  async function resend() {
-    if (await sendInvoice(companyId, base, { resend: true })) load();
+  const send = () => startSend();
+  const resend = () => startSend({ resend: true });
+
+  function prepareSend() {
+    if (harRett(companyId, "FAKTURA_SEND")) prepareInvoiceSend(companyId, base);
   }
 
   function pdf() {
@@ -209,7 +224,17 @@
       <p>{next.text}</p>
       <div class="flex flex-wrap gap-2">
         {#if next.action === "send"}
-          <button class="btn btn-primary" onclick={send}>Send til kunde</button>
+          <button
+            class="btn btn-primary"
+            onclick={send}
+            onpointerenter={prepareSend}
+            onfocus={prepareSend}
+            disabled={sending}
+            aria-busy={sending}
+          >
+            {#if sending}<span class="loading loading-spinner loading-xs" aria-hidden="true"></span>{/if}
+            Send til kunde
+          </button>
         {:else if next.action === "reminder"}
           <button class="btn btn-primary" onclick={() => (showReminder = !showReminder)} aria-expanded={showReminder}>
             Purring
@@ -222,7 +247,17 @@
         {/if}
         <button class="btn" onclick={pdf}>Last ned PDF</button>
         {#if next.action !== "send"}
-          <button class="btn" onclick={send}>{neverSent ? "Send til kunde" : "Send på nytt"}</button>
+          <button
+            class="btn"
+            onclick={send}
+            onpointerenter={prepareSend}
+            onfocus={prepareSend}
+            disabled={sending}
+            aria-busy={sending}
+          >
+            {#if sending}<span class="loading loading-spinner loading-xs" aria-hidden="true"></span>{/if}
+            {neverSent ? "Send til kunde" : "Send på nytt"}
+          </button>
         {/if}
         <button
           class="btn btn-ghost"
@@ -361,7 +396,15 @@
                   <span class="badge badge-soft badge-sm badge-{status.tone}">EHF: {status.text}</span>
                   {#if s.detalj}<span class="block text-sm opacity-70">{s.detalj}</span>{/if}
                   {#if s.kan_sendes_pa_nytt}
-                    <button class="btn btn-xs mt-1" onclick={resend}>Send EHF på nytt</button>
+                    <button
+                      class="btn btn-xs mt-1"
+                      onclick={resend}
+                      onpointerenter={prepareSend}
+                      onfocus={prepareSend}
+                      disabled={sending}
+                    >
+                      Send EHF på nytt
+                    </button>
                   {/if}
                 {/if}
               </span>
