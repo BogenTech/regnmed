@@ -224,18 +224,28 @@ vanlige innlogging, og godkjenningen gjelder én innsending.
    på nytt om innsendingen kan godkjennes, siden den kan ha blitt erstattet
    mens personen var hos ID-porten. Godkjenningen, det forseglede tokenet og
    jobben `vat_filing_submit` lagres i samme transaksjon.
-5. **Arbeideren** gjør alle utgående kall: veksler til Altinn-token, kaller
-   Skatteetatens validering (avvik stopper innsendingen og vises), oppretter
-   instansen, laster opp konvolutt og melding, og tar `process/next` to
-   ganger. Regnskapet sjekkes på nytt rett før instansen opprettes og rett
-   før det bekreftende steget.
+5. **Arbeideren** gjør alle utgående kall: veksler til Altinn-token, spør
+   Altinn hvem personen er, kaller Skatteetatens validering (avvik stopper
+   innsendingen og vises), oppretter instansen, laster opp konvolutt og
+   melding, og tar `process/next` to ganger. Regnskapet sjekkes på nytt rett
+   før instansen opprettes og rett før det bekreftende steget.
 6. Betalingsinformasjon, kvittering og valideringsresultat hentes uten at
-   personen er til stede. Arbeideren spør hvert minutt så lenge
-   Altinn-tokenet lever.
+   personen er til stede. Arbeideren spør hvert tiende sekund så lenge
+   Altinn-tokenet lever. I TT02 levde tokenet to minutter. Kommer svaret
+   senere, står innsendingen som `sendt`, og portalen tilbyr «Logg inn og
+   hent svar».
 
 **Hva som lagres om personen:** regnmed-personen, ID-portens `sub`
-(parvis, ikke fødselsnummer), `acr` og `auth_time`. **Fødselsnummeret
-(`pid`) leses aldri ut av tokenet.** Tokenet ligger forseglet med
+(parvis, ikke fødselsnummer), `acr`, `auth_time` og navnet Altinn har på
+personen. **Fødselsnummeret tas aldri vare på.** `pid` leses ikke ut av
+tokenet. Altinn-profilen inneholder `ssn`, men parseren henter bare navnet, og
+en feil fra profilen logges bare med statuskoden. Navnet hentes fra Altinn
+fordi ID-porten bare oppgir navn for noen eID-er. Det er dette navnet som står
+i konvolutten og i `godkjent_av`, ikke navnet på regnmed-kontoen. Kan ikke
+Altinn oppgi navnet, stopper innsendingen før noe er sendt inn. En gjenopptatt
+innsending kan da ha et utkast i Altinn. Bekrefter en annen person enn den
+konvolutten navngir, slettes utkastet og ingenting sendes. Tokenet ligger
+forseglet med
 `IDPORTEN_SEALING_KEY` i `vat_filing_grant`, og raden slettes når arbeidet
 er ferdig eller tokenet er utløpt.
 
@@ -336,30 +346,37 @@ stemme to steder, og de kontrolleres hver for seg:
 Mangler Altinn-retten, stopper innsendingen med `feilet` og en forklaring
 på nettopp dette.
 
-**Ikke prøvd mot TT02 ennå:** hele flyten er testet mot en mock av
-ID-porten og Altinn, med formatene fra Skatteetatens dokumentasjon og
-eksempler. Den krever en ID-porten-klient i Samarbeidsportalen. Disse
-antakelsene må bekreftes av en ekte kjøring:
+**Prøvd mot TT02 2026-11-22:** en ren melding for september–oktober 2026 gikk
+fra regnmed gjennom ID-porten med TestID, Skatteetatens validering og Altinn.
+Skatteetaten svarte med kvittering og `ingen avvik` etter om lag 55 sekunder.
+Dette er dermed bekreftet:
 
 - scopene `openid skatteetaten:mvameldingvalidering altinn:instances.read
-  altinn:instances.write` er nok. Skatteetatens eldre guide nevner også
-  `skatteetaten:mvameldinginnsending`.
-- TestID gir `acr=idporten-loa-high`.
-- `Task_1` er utfylling, `Task_2` bekreftelse, og `process.currentTask.name`
-  er `Tilbakemelding` etter innsending i testappen.
-- `prompt=login` virker sammen med TestID, og `auth_time` og `sub` er med
-  i id_token. `sub` er stabil per klient.
-- `DELETE` på en instans i bekreftelse er tillatt for personen som godkjente.
-- valideringstjenesten svarer `valideringsresultat` med
-  `avvikVedMeldingslevering` = `ingen avvik` for en ren melding, slik XSD-en og
-  Skatteetatens publiserte eksempel viser. Repoet har ikke et fanget svar fra
-  tjenesten. Svarer den annerledes, stopper innsendingen trygt til parseren er
-  rettet.
-- konvolutten godtas uten navnerom, slik eksemplene viser, og med én
-  `vedlegg`-rad for meldingen.
-- Altinn-tokenet varer lenge nok til at svaret rekker å komme.
-- meldingskategorien er alltid `alminnelig`, også for primærnæring. Det
-  er slik `regnmed-core::vat_return` skriver den i dag.
+  altinn:instances.write` er nok.
+- TestID gir `acr=idporten-loa-high`, og `prompt=login`, `auth_time` og `sub`
+  virker som antatt.
+- `Task_1` er utfylling, `Task_2` bekreftelse, og
+  `process.currentTask.name` er `Tilbakemelding` etter innsending.
+- valideringen svarer `valideringsresultat` med `avvikVedMeldingslevering` =
+  `ingen avvik` for en ren melding.
+- konvolutten godtas uten navnerom og med én `vedlegg`-rad.
+
+Ikke bekreftet ennå:
+
+- at Altinn-profilen gir navnet slik appens OpenAPI-beskrivelse viser.
+  Kjøringen over brukte fortsatt regnmed-kontoens navn i konvolutten.
+- at `DELETE` på en instans i bekreftelse er tillatt for personen som
+  godkjente.
+- at svaret normalt kommer innen tokenets levetid.
+- at meldingskategorien alltid skal være `alminnelig`, også for primærnæring.
+  Det er slik `regnmed-core::vat_return` skriver den i dag.
+
+**Et testselskap må ha egen mva-plikt hos Skatteetaten.** Flagget i BRREG og
+Tenor er ikke nok: valideringen svarer da at virksomheten ikke er registrert.
+Daglig leder fra Tenor logger inn med TestID i `tt02.altinn.no` og søker i
+`skatt-test.sits.no/web/mva/`. **Startdatoen skal være første dag i terminen
+som testes.** Skatteetatens veiledning foreslår 01.01.2022, men da svarer
+valideringen at det mangler meldinger for alle terminene siden.
 
 ## Web API (the product surface)
 

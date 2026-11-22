@@ -27,7 +27,7 @@
 //! Skatteetaten's own code list, quoted in `mva::direction`.
 
 use crate::vat::{Direction, Period, PeriodScheme, SpecLine, direction};
-use crate::xml::{Xml, rate};
+use crate::xml::{Xml, escape, rate};
 
 pub const NAMESPACE: &str =
     "no:skatteetaten:fastsetting:avgift:mva:skattemeldingformerverdiavgift:v1.0";
@@ -168,6 +168,26 @@ fn write_period(x: &mut Xml, period: Period, scheme: PeriodScheme) {
     x.close("skattleggingsperiode");
 }
 
+/// Puts the person Altinn says signed in into every `opprettetAv`. The API
+/// renders the envelope before anyone has asked Altinn, with the account name.
+pub fn name_envelope_signer(envelope: &str, signer: &str) -> String {
+    const OPEN: &str = "<opprettetAv>";
+    const CLOSE: &str = "</opprettetAv>";
+    let mut out = String::with_capacity(envelope.len());
+    let mut rest = envelope;
+    while let Some(start) = rest.find(OPEN) {
+        let value = start + OPEN.len();
+        let Some(len) = rest[value..].find(CLOSE) else {
+            break;
+        };
+        out.push_str(&rest[..value]);
+        out.push_str(&escape(signer));
+        rest = &rest[value + len..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The `mvaMeldingInnsending` envelope Altinn wants beside the melding.
 /// Without a namespace, as in every example Skatteetaten publishes. The
 /// app demands `instansstatus` although the XSD calls it optional.
@@ -293,8 +313,14 @@ mod tests {
     #[test]
     fn the_envelope_validates_against_the_official_xsd() {
         let m = message();
-        let xml = render_envelope(&m.orgnumber, m.period, m.scheme, "Kari <Nordmann>");
-        assert!(xml.contains("<opprettetAv>Kari &lt;Nordmann&gt;</opprettetAv>"));
+        let rendered = render_envelope(&m.orgnumber, m.period, m.scheme, "Konto <Navn>");
+        let xml = name_envelope_signer(&rendered, "Kari <Nordmann>");
+        assert_eq!(
+            xml.matches("<opprettetAv>Kari &lt;Nordmann&gt;</opprettetAv>")
+                .count(),
+            2
+        );
+        assert!(!xml.contains("Konto"));
         let qualified = xml.replace(
             "<mvaMeldingInnsending>",
             r#"<mvaMeldingInnsending xmlns="no:skatteetaten:fastsetting:avgift:mva:mvameldinginnsending:v1.0">"#,

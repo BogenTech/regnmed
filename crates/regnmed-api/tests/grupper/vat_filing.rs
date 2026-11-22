@@ -61,6 +61,10 @@ struct Mock {
     delete_fails: bool,
     read_fails_once: Option<u16>,
     gates: HashMap<&'static str, Gate>,
+    /// Who Altinn says signed in. `None` is the default test person.
+    signer: Option<&'static str>,
+    profile_fails: bool,
+    envelope: Option<String>,
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -219,6 +223,20 @@ async fn mock_server(idp: &TestIdp) -> Shared {
             }),
         )
         .route(
+            "/api/v1/profile/user",
+            get(|State(m): State<Shared>| async move {
+                let m = m.lock().unwrap();
+                if m.profile_fails {
+                    return (StatusCode::BAD_GATEWAY, Json(json!({})));
+                }
+                let name = m.signer.unwrap_or("Kari Nordmann");
+                (
+                    StatusCode::OK,
+                    Json(json!({ "party": { "name": name, "ssn": PID } })),
+                )
+            }),
+        )
+        .route(
             "/instances",
             post(|State(m): State<Shared>| async move {
                 let answer = {
@@ -263,7 +281,11 @@ async fn mock_server(idp: &TestIdp) -> Shared {
         )
         .route(
             "/instances/{party}/{guid}/data/{id}",
-            put(|| async { StatusCode::OK }).get(
+            put(|State(m): State<Shared>, body: String| async move {
+                m.lock().unwrap().envelope = Some(body);
+                StatusCode::OK
+            })
+            .get(
                 |State(m): State<Shared>, Path((_, _, id)): Path<(String, String, String)>| async move {
                     match id.as_str() {
                         "payment" => PAYMENT.to_string(),
@@ -1590,6 +1612,83 @@ async fn a_term_found_delivered_stays_closed() {
     assert_eq!(s.mock.lock().unwrap().creates, 1);
 }
 
+/// The return names who signed in with ID-porten, not the regnmed account.
+#[tokio::test]
+async fn the_envelope_and_the_portal_name_the_person_who_signed_in() {
+    let Some(s) = setup().await else { return };
+    s.mock.lock().unwrap().signer = Some("VERD DIODE");
+    let (id, filing) = approved_and_settled(&s).await;
+    assert_eq!(filing["status"], "sendt", "{filing}");
+    assert_eq!(filing["godkjent_av"], "VERD DIODE");
+    let envelope = s.mock.lock().unwrap().envelope.clone().unwrap();
+    assert_eq!(
+        envelope
+            .matches("<opprettetAv>VERD DIODE</opprettetAv>")
+            .count(),
+        2
+    );
+    assert!(!envelope.contains("Kari Nordmann"), "{envelope}");
+
+    let stored: String = sqlx::query_scalar(
+        "select string_agg(detail::text, ' ') from vat_filing_event where filing_id = $1",
+    )
+    .bind(id.parse::<Uuid>().unwrap())
+    .fetch_one(&s.state.pool)
+    .await
+    .unwrap();
+    assert!(!stored.contains(PID), "the profile's national ID is stored");
+}
+
+/// A refusal in validation names the same person, and a profile that cannot
+/// be read stops the filing before anything exists in Altinn.
+#[tokio::test]
+async fn the_signer_is_known_before_anything_is_created() {
+    let Some(s) = setup().await else { return };
+    {
+        let mut m = s.mock.lock().unwrap();
+        m.signer = Some("VERD DIODE");
+        m.validation = Some(REFUSED);
+    }
+    let (_, refused) = approved_and_settled(&s).await;
+    assert_eq!(refused["status"], "avvik", "{refused}");
+    assert_eq!(refused["godkjent_av"], "VERD DIODE");
+
+    let Some(s) = setup().await else { return };
+    s.mock.lock().unwrap().profile_fails = true;
+    let (_, failed) = approved_and_settled(&s).await;
+    assert_eq!(failed["status"], "feilet", "{failed}");
+    assert_eq!(s.mock.lock().unwrap().creates, 0);
+    assert!(s.mock.lock().unwrap().envelope.is_none());
+}
+
+/// An account rebound to another ID-porten person keeps the same regnmed id,
+/// so only Altinn's answer shows the envelope names someone else.
+#[tokio::test]
+async fn another_signer_never_confirms_the_first_persons_envelope() {
+    let Some(s) = setup().await else { return };
+    {
+        let mut m = s.mock.lock().unwrap();
+        m.signer = Some("VERD DIODE");
+        m.next_fails_once = Some((2, 403, false));
+    }
+    let (id, filing) = approved_and_settled(&s).await;
+    assert_eq!(filing["status"], "feilet", "{filing}");
+    assert_eq!(s.mock.lock().unwrap().task, 1, "waiting at confirmation");
+
+    s.mock.lock().unwrap().signer = Some("Bo Leser");
+    let aborted = again(&s, &id).await;
+    assert_eq!(aborted["status"], "avbrutt", "{aborted}");
+    assert!(
+        aborted["melding"]
+            .as_str()
+            .unwrap()
+            .contains("annen person")
+    );
+    let m = s.mock.lock().unwrap();
+    assert_eq!(m.nexts, 2, "the second person did not confirm it");
+    assert_eq!(m.deletes, 1);
+}
+
 /// Blocker 2: a colleague who later only reads the instance did not file it.
 #[tokio::test]
 async fn the_person_who_confirmed_stays_the_approver_after_a_later_sign_in() {
@@ -1600,6 +1699,7 @@ async fn the_person_who_confirmed_stays_the_approver_after_a_later_sign_in() {
     assert_eq!(filing["status"], "uavklart", "{filing}");
     assert_eq!(filing["godkjent_av"], "Kari Nordmann");
 
+    s.mock.lock().unwrap().signer = Some("Bo Leser");
     let colleague = named_member(&s.state, &s.idp, s.company, "admin", "Bo Leser").await;
     let login = sign_in_again(&s, &colleague, &id).await;
     let (status, body) = approve(&s, &colleague, &id, &login).await;

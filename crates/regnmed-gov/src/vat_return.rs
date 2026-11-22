@@ -197,6 +197,26 @@ impl Instance {
     }
 }
 
+/// Only the name: the profile also carries the national ID, which the parser
+/// drops. A parse error is not echoed, since it can quote the body.
+fn profile_name(body: &str) -> Result<String, FilingError> {
+    #[derive(Deserialize)]
+    struct Profile {
+        party: Party,
+    }
+    #[derive(Deserialize)]
+    struct Party {
+        name: String,
+    }
+    let unreadable = || FilingError::Unresolved("unreadable Altinn user profile".into());
+    let profile: Profile = serde_json::from_str(body).map_err(|_| unreadable())?;
+    let name = profile.party.name.trim();
+    if name.is_empty() {
+        return Err(unreadable());
+    }
+    Ok(name.to_string())
+}
+
 pub const ENVELOPE_DATA_TYPE: &str =
     "no.skatteetaten.fastsetting.avgift.mva.mvameldinginnsending.v1.0";
 pub const MELDING_DATA_TYPE: &str = "mvamelding";
@@ -242,6 +262,31 @@ impl VatFilingClient {
             .map_err(unresolved)?;
         // The token comes back as a bare JWT, sometimes JSON-quoted.
         Ok(read(response).await?.trim().trim_matches('"').to_string())
+    }
+
+    /// The name Altinn holds for the person the token belongs to. ID-porten
+    /// gives a name only for some eIDs, so this is the source for all of them.
+    pub async fn signer_name(&self, token: &str) -> Result<String, FilingError> {
+        let app = self
+            .instances_url
+            .strip_suffix("/instances")
+            .unwrap_or(&self.instances_url);
+        let response = self
+            .http
+            .get(format!("{app}/api/v1/profile/user"))
+            .bearer_auth(token)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(unresolved)?;
+        let status = response.status();
+        // Status only: this endpoint's body is about a person.
+        if !status.is_success() {
+            return Err(FilingError::Unresolved(format!(
+                "Altinn user profile answered {status}"
+            )));
+        }
+        profile_name(&response.text().await.map_err(unresolved)?)
     }
 
     pub async fn create_instance(
@@ -510,6 +555,22 @@ pub fn extract_findings(xml: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_yields_the_name_and_never_the_national_id() {
+        let name = profile_name(
+            r#"{"userId": 1, "party": {"name": " VERD DIODE ", "ssn": "01010112345"}}"#,
+        )
+        .unwrap();
+        assert_eq!(name, "VERD DIODE");
+        for body in [
+            r#"{"party": {"name": " "}}"#,
+            r#"{"party": {"ssn": "01010112345"}}"#,
+        ] {
+            let error = profile_name(body).unwrap_err().to_string();
+            assert!(!error.contains("01010112345"), "{error}");
+        }
+    }
 
     #[test]
     fn extracts_deviation_descriptions() {
