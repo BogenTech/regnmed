@@ -424,6 +424,17 @@ gjelder #11 (docs/skattemelding.md). Valideringsklienten er ikke
 bortkastet: formen på kallet er bekreftet riktig, og den venter bare på
 en token-kilde vi skal bygge uansett.
 
+**Bygget 2026-11-22: «Godkjenn og send»** (docs/mva.md). En person
+godkjenner én mva-melding med ID-porten, og arbeideren validerer og sender
+gjennom Altinn. Det er en egen godkjenning, ikke innlogging i regnmed, så
+#8 trenger ikke lenger vente på føderering gjennom regnid (#26). Hver
+godkjenning krever ny innlogging (`prompt=login`), og en regnmed-bruker er
+bundet til én ID-porten-identitet per klient. Det som kan ha nådd Altinn
+forblir `uavklart` til det er lest der eller en person har sjekket Altinn og
+lukket det med notat. Flyten er testet mot mock og
+er **ikke kjørt mot TT02 ennå**: den krever en ID-porten-klient i
+Samarbeidsportalen. Hva som må bekreftes der, står i docs/mva.md.
+
 **Altså: ÉN ting låser opp tre av fire — Altinn systembruker.** Det er
 Digdirs nyere mekanisme, den samme docs/aksjonaer.md alt hadde notert
 for RF-1086, og den gjelder hele den reetablerte Altinn-generasjonen av

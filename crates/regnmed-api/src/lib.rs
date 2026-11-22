@@ -55,6 +55,7 @@ pub mod subscription;
 pub mod tax_card;
 pub mod terms;
 pub mod timesheet;
+pub mod vat_filing;
 pub mod web;
 pub mod year_end;
 
@@ -119,6 +120,17 @@ pub struct AppState {
     pub peppol_webhook_secret: Option<String>,
     /// Requests for Altinn system users. None when MASKINPORTEN_* is unset.
     pub system_user: Option<Arc<SystemUserRail>>,
+    /// The person's sign-in for filing an mva-melding (docs/mva.md). The
+    /// API only signs them in; workers make every call to Altinn.
+    pub idporten: Option<Arc<IdportenRail>>,
+}
+
+pub struct IdportenRail {
+    pub client: regnmed_gov::idporten::IdportenClient,
+    /// Seals the person's token before it is stored (IDPORTEN_SEALING_KEY).
+    pub key: regnmed_core::secret::SealingKey,
+    /// Set only without a job queue, when the API runs jobs itself.
+    pub local_worker: Option<Arc<regnmed_db::vat_filing::Rail>>,
 }
 
 pub struct SystemUserRail {
@@ -169,6 +181,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(portal::index))
         .route("/callback", get(portal::index))
+        .route("/mva-godkjenning", get(portal::index))
         .route("/assets/{*path}", get(portal::asset))
         .route("/manifest.webmanifest", get(portal::manifest))
         .route("/sw.js", get(portal::service_worker))
@@ -395,6 +408,34 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/reports/mva/postings",
             get(reports::vat_postings),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings",
+            get(vat_filing::list).post(vat_filing::create),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}",
+            get(vat_filing::detail),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}/authorize",
+            axum::routing::post(vat_filing::authorize),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}/approve",
+            axum::routing::post(vat_filing::approve),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}/abandon",
+            axum::routing::post(vat_filing::abandon),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}/close-unresolved",
+            axum::routing::post(vat_filing::close_unresolved),
+        )
+        .route(
+            "/companies/{company_id}/vat-filings/{filing_id}/documents/{data_type}",
+            get(vat_filing::document),
         )
         .route(
             "/companies/{company_id}/reports/mva-melding",

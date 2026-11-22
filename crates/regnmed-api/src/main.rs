@@ -185,6 +185,35 @@ async fn main() -> Result<()> {
         regnmed_mail::peppol_events::ensure_stream(js).await?;
     }
 
+    // Filing an mva-melding (docs/mva.md): all of it or none of it.
+    let idporten = match (
+        std::env::var("IDPORTEN_ISSUER").ok(),
+        std::env::var("IDPORTEN_CLIENT_ID").ok(),
+        std::env::var("IDPORTEN_CLIENT_SECRET").ok(),
+        std::env::var("IDPORTEN_REDIRECT_URI").ok(),
+        std::env::var("IDPORTEN_SEALING_KEY").ok(),
+    ) {
+        (Some(issuer), Some(client_id), Some(secret), Some(redirect), Some(key)) => {
+            println!("mva-melding can be filed (ID-porten set)");
+            Some(Arc::new(regnmed_api::IdportenRail {
+                client: regnmed_gov::idporten::IdportenClient::new(
+                    issuer, client_id, secret, redirect,
+                )?,
+                key: regnmed_core::secret::SealingKey::from_hex(&key)?,
+                local_worker: if mailq.is_none() {
+                    regnmed_db::vat_filing::Rail::from_env()?.map(Arc::new)
+                } else {
+                    None
+                },
+            }))
+        }
+        (None, None, None, None, None) => None,
+        _ => anyhow::bail!(
+            "IDPORTEN_ISSUER, IDPORTEN_CLIENT_ID, IDPORTEN_CLIENT_SECRET, \
+             IDPORTEN_REDIRECT_URI and IDPORTEN_SEALING_KEY must be set together (docs/mva.md)"
+        ),
+    };
+
     let app = router(AppState {
         pool,
         verifier,
@@ -201,6 +230,7 @@ async fn main() -> Result<()> {
         bank_feed,
         peppol_webhook_secret,
         system_user,
+        idporten,
     });
 
     // BIND_ADDR is authoritative (deploy/ sets it explicitly). PORT is the

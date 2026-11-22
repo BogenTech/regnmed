@@ -63,6 +63,7 @@ pub enum Right {
     // Rapporter
     ReportRead,
     VatSchemeAdmin,
+    VatReturnSubmit,
 
     // Faktura and sales
     InvoiceRead,
@@ -168,7 +169,7 @@ pub enum Right {
     MigrationAdmin,
 }
 
-static ALL_RIGHTS: [Right; 73] = [
+static ALL_RIGHTS: [Right; 74] = [
     Right::VoucherRead,
     Right::AttachmentWrite,
     Right::VoucherUpload,
@@ -176,6 +177,7 @@ static ALL_RIGHTS: [Right; 73] = [
     Right::PeriodLock,
     Right::ReportRead,
     Right::VatSchemeAdmin,
+    Right::VatReturnSubmit,
     Right::InvoiceRead,
     Right::InvoiceWrite,
     Right::InvoiceSend,
@@ -257,6 +259,7 @@ impl Right {
             PeriodLock => "PERIODE_LAAS",
             ReportRead => "RAPPORT_LES",
             VatSchemeAdmin => "MVA_ORDNING_ADMIN",
+            VatReturnSubmit => "MVA_SEND",
             InvoiceRead => "FAKTURA_LES",
             InvoiceWrite => "FAKTURA_SKRIV",
             InvoiceSend => "FAKTURA_SEND",
@@ -376,14 +379,14 @@ impl Right {
             AttachmentWrite => false,
 
             // Everything that carries the accounts forward — blocked.
-            VoucherUpload | VoucherPost | PeriodLock | VatSchemeAdmin | InvoiceWrite
-            | InvoiceSend | InvoiceTemplateWrite | QuoteWrite | ReminderWrite | SubledgerWrite
-            | ContactWrite | BankReconcile | OcrImport | PaymentCreate | PaymentApprove
-            | PaymentSettle | CurrencyWrite | ProductWrite | InventoryWrite | AssetWrite
-            | TimesheetWriteOwn | TimesheetWriteAll | TimesheetBill | TimesheetRateWrite
-            | TimesheetLock | ExpenseWriteOwn | ExpenseApprove | ExpensePay | PayrollWrite
-            | PayrollRun | BudgetWrite | DimensionWrite | ShareRegisterWrite | ApprovalPerform
-            | ApprovalAdmin | MigrationAdmin => true,
+            VoucherUpload | VoucherPost | PeriodLock | VatSchemeAdmin | VatReturnSubmit
+            | InvoiceWrite | InvoiceSend | InvoiceTemplateWrite | QuoteWrite | ReminderWrite
+            | SubledgerWrite | ContactWrite | BankReconcile | OcrImport | PaymentCreate
+            | PaymentApprove | PaymentSettle | CurrencyWrite | ProductWrite | InventoryWrite
+            | AssetWrite | TimesheetWriteOwn | TimesheetWriteAll | TimesheetBill
+            | TimesheetRateWrite | TimesheetLock | ExpenseWriteOwn | ExpenseApprove
+            | ExpensePay | PayrollWrite | PayrollRun | BudgetWrite | DimensionWrite
+            | ShareRegisterWrite | ApprovalPerform | ApprovalAdmin | MigrationAdmin => true,
         }
     }
 
@@ -411,6 +414,8 @@ impl Right {
                 | Right::EngagementAdmin
                 | Right::IntegrationAdmin
                 | Right::CompanyAdmin
+                // A filing must name a person, so no machine may hold this.
+                | Right::VatReturnSubmit
         )
     }
 
@@ -427,6 +432,7 @@ impl Right {
             PeriodLock => "Bilag",
             ReportRead => "Rapporter",
             VatSchemeAdmin => "Rapporter",
+            VatReturnSubmit => "Rapporter",
             InvoiceRead => "Faktura",
             InvoiceWrite => "Faktura",
             InvoiceSend => "Faktura",
@@ -512,6 +518,7 @@ impl Right {
             PeriodLock => "Låse en periode",
             ReportRead => "Se regnskapsrapportene",
             VatSchemeAdmin => "Endre mva-terminordning",
+            VatReturnSubmit => "Godkjenne og sende inn mva-melding",
             InvoiceRead => "Se fakturaer",
             InvoiceWrite => "Utstede faktura og kreditnota",
             InvoiceSend => "Sende faktura på e-post",
@@ -734,6 +741,7 @@ const BOOKKEEPING_BUNDLE: &[Right] = &[
     Right::PayslipReadAll,
     Right::PayrollWrite,
     Right::PayrollRun,
+    Right::VatReturnSubmit,
     Right::BudgetWrite,
     Right::DimensionWrite,
     Right::ShareRegisterWrite,
@@ -1041,6 +1049,21 @@ fn manglende(right: Right) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_machine_can_file_an_mva_melding() {
+        let machine = Access {
+            roles: vec![Role::Admin],
+            egendefinerte: vec![Right::VatReturnSubmit],
+            machine: true,
+        };
+        assert!(!machine.has(Right::VatReturnSubmit));
+        assert!(!machine.right_slugs().contains(&"MVA_SEND"));
+        assert!(Role::Bookkeeping.has(Right::VatReturnSubmit));
+        assert!(Role::Admin.has(Right::VatReturnSubmit));
+        assert!(!Role::Auditor.has(Right::VatReturnSubmit));
+        assert!(!Role::Read.has(Right::VatReturnSubmit));
+    }
 
     /// The whole vocabulary, as the expected set for the other tests.
     ///

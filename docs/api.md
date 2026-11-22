@@ -311,6 +311,13 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/timesheet/summary` | GET |
 | `/companies/{company_id}/timesheet/unbilled` | GET |
 | `/companies/{company_id}/timesheet/{entry_id}` | PUT |
+| `/companies/{company_id}/vat-filings` | GET POST |
+| `/companies/{company_id}/vat-filings/{filing_id}` | GET |
+| `/companies/{company_id}/vat-filings/{filing_id}/abandon` | POST |
+| `/companies/{company_id}/vat-filings/{filing_id}/approve` | POST |
+| `/companies/{company_id}/vat-filings/{filing_id}/authorize` | POST |
+| `/companies/{company_id}/vat-filings/{filing_id}/close-unresolved` | POST |
+| `/companies/{company_id}/vat-filings/{filing_id}/documents/{data_type}` | GET |
 | `/companies/{company_id}/vouchers` | GET POST |
 | `/companies/{company_id}/vouchers/{voucher_id}` | GET |
 | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | GET POST |

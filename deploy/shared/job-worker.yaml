@@ -50,6 +50,12 @@ spec:
             - secretRef:
                 name: peppol-provider
                 optional: true
+            # Filing the mva-melding through Altinn (docs/mva.md):
+            # IDPORTEN_SEALING_KEY and MVA_INSTANCES_URL, and in test
+            # ALTINN_PLATFORM_URL and MVA_VALIDATION_URL.
+            - secretRef:
+                name: vat-filing-worker
+                optional: true
           env:
             - name: JOB_CONCURRENCY
               value: "2"

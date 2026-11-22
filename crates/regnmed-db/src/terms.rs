@@ -147,6 +147,13 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
                       from tax_card c where c.order_id = r.id having count(*) > 0
                 ) x), '[]'::jsonb)
            from tax_card_request r where r.company_id = $1
+         union all
+         select 'mva-melding', f.id, f.year::text || '-' || f.period, f.requested_by, f.created_at,
+                coalesce((select jsonb_agg(jsonb_build_object(
+                    'hendelse', e.kind, 'tidspunkt', e.created_at, 'av', e.detail->>'name',
+                    'forsendelse_id', null) order by e.created_at, e.id)
+                  from vat_filing_event e where e.filing_id = f.id), '[]'::jsonb)
+           from vat_filing f where f.company_id = $1
          order by created_at desc",
         EVENTS.replace("{table}", "amelding_submission_event"),
         EVENTS.replace("{table}", "shareholder_return_submission_event"),

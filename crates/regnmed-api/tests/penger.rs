@@ -20,3 +20,5 @@ mod payments;
 mod period_scheme;
 #[path = "grupper/reskontro.rs"]
 mod subledger;
+#[path = "grupper/vat_filing.rs"]
+mod vat_filing;

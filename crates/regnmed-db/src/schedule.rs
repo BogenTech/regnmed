@@ -52,7 +52,8 @@ pub fn rules(kind: Kind) -> Option<Rules> {
         | Kind::AuditReport
         | Kind::PeppolLookup
         | Kind::InvoiceDispatch
-        | Kind::PeppolSenderSetup => None,
+        | Kind::PeppolSenderSetup
+        | Kind::VatFilingSubmit => None,
     }
 }
 

@@ -211,6 +211,7 @@ sitert i en revisjon, og ingen leser koden for å kontrollere den.
 | **Rapporter** | | | | | | |
 | `RAPPORT_LES` | Se regnskapsrapportene | — | ✅ | ✅ | ✅ | ✅ |
 | `MVA_ORDNING_ADMIN` | Endre mva-terminordning | — | — | — | — | ✅ |
+| `MVA_SEND` | Godkjenne og sende inn mva-melding | — | — | — | ✅ | ✅ |
 | `BUDSJETT_LES` | Se budsjett og avviksrapport | — | ✅ | ✅ | ✅ | ✅ |
 | `BUDSJETT_SKRIV` | Lage og fastsette budsjett | — | — | — | ✅ | ✅ |
 | `FORANKRING_LES` | Se forankringen av hovedboken | — | ✅ | ✅ | ✅ | ✅ |
@@ -318,7 +319,9 @@ ekte.
 er utenfor rekkevidde for en egendefinert rolle
 ([`Right::can_be_delegated`]) — en rolle som kan endre tilganger kan gi seg
 selv alt annet, og da er resten av avgrensningen bare pynt. Avvist når
-rollen lages, ikke bare ignorert ved oppslag.
+rollen lages, ikke bare ignorert ved oppslag. `MVA_SEND` står på samme
+liste av en annen grunn: en mva-melding må kunne tilskrives en person, så
+ingen maskin kan ha den (docs/mva.md).
 
 **Ukjente rettighetsnavn oppfører seg forskjellig i de to retningene**,
 og det er med vilje: når et *menneske* skriver en rolle, avvises et
@@ -687,10 +690,9 @@ knapper som kommer til å feile.
 `company_access_for_person` — samme spørring, ingen ekstra kostnad på
 forespørselsveien).
 
-De fire rettighetene `kan_delegeres` nekter er uendret: `MEDLEM_ADMIN`,
-`OPPDRAG_ADMIN`, `INTEGRASJON_ADMIN`, `SELSKAP_ADMIN`. Matrisen under §5
-er derfor også uendret — dette er ingen ny rettighet, det er et tak oppå
-de som finnes.
+`kan_delegeres` nekter `MEDLEM_ADMIN`, `OPPDRAG_ADMIN`,
+`INTEGRASJON_ADMIN`, `SELSKAP_ADMIN` og `MVA_SEND`. Taket er ingen egen
+rettighet, det ligger oppå dem som finnes.
 
 Festet i `tests/grupper/integrasjon.rs`
 (`an_agent_with_admin_may_migrate_but_never_widen_access`), **sett

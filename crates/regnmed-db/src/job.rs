@@ -38,6 +38,8 @@ pub enum Kind {
     InvoiceDispatch,
     /// Registers the company as a send-only Peppol participant.
     PeppolSenderSetup,
+    /// Files one approved mva-melding through Altinn (docs/mva.md).
+    VatFilingSubmit,
 }
 
 impl Kind {
@@ -49,6 +51,7 @@ impl Kind {
             Kind::PeppolLookup => "peppol_lookup",
             Kind::InvoiceDispatch => "invoice_dispatch",
             Kind::PeppolSenderSetup => "peppol_sender_setup",
+            Kind::VatFilingSubmit => "vat_filing_submit",
         }
     }
     pub fn parse(s: &str) -> Option<Kind> {
@@ -59,10 +62,24 @@ impl Kind {
             "peppol_lookup" => Some(Kind::PeppolLookup),
             "invoice_dispatch" => Some(Kind::InvoiceDispatch),
             "peppol_sender_setup" => Some(Kind::PeppolSenderSetup),
+            "vat_filing_submit" => Some(Kind::VatFilingSubmit),
             _ => None,
         }
     }
 }
+
+/// The job cannot run yet because of something that will pass. It goes back
+/// to the queue without using up an attempt, and stays open meanwhile.
+#[derive(Debug)]
+pub struct RetryLater;
+
+impl std::fmt::Display for RetryLater {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the job must be retried later")
+    }
+}
+
+impl std::error::Error for RetryLater {}
 
 /// A job as its owner sees it -- never the input.
 #[derive(Debug, Clone)]
@@ -122,6 +139,37 @@ pub async fn create(
     .bind(created_by)
     .bind(created_by_person)
     .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// Records a job as part of the caller's transaction, so what approved it
+/// and the job itself commit together. The open-job index refuses a twin.
+pub(crate) async fn insert_open(
+    conn: &mut sqlx::PgConnection,
+    company_id: Uuid,
+    kind: Kind,
+    dedup_key: &str,
+    input: &Value,
+    created_by: &str,
+    created_by_person: Option<Uuid>,
+) -> Result<Uuid> {
+    let bytes = serde_json::to_vec(input)?;
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "insert into job (id, company_id, kind, input_sha256, input, input_content_type,
+                          created_by, created_by_person, dedup_key)
+         values ($1, $2, $3, $4, $5, 'application/json', $6, $7, $8)",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(kind.as_str())
+    .bind(regnmed_core::hash::sha256(&bytes).to_vec())
+    .bind(blobs().store(&bytes).await?.map(<[u8]>::to_vec))
+    .bind(created_by)
+    .bind(created_by_person)
+    .bind(dedup_key)
+    .execute(conn)
     .await?;
     Ok(id)
 }
@@ -294,6 +342,19 @@ async fn heartbeat(pool: &PgPool, job_id: Uuid, worker: &str) -> Result<()> {
     Ok(())
 }
 
+async fn requeue(pool: &PgPool, job_id: Uuid, worker: &str) -> Result<()> {
+    sqlx::query(
+        "update job set status = 'queued', claimed_by = null, heartbeat_at = null,
+                        attempts = greatest(attempts - 1, 0)
+         where id = $1 and claimed_by = $2 and status = 'running'",
+    )
+    .bind(job_id)
+    .bind(worker)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Records the outcome -- only while this worker still holds the job, so
 /// a worker that was presumed dead cannot overwrite its successor.
 async fn finish(pool: &PgPool, job_id: Uuid, worker: &str, outcome: Result<Value>) -> Result<()> {
@@ -335,6 +396,9 @@ pub async fn process(pool: &PgPool, job: &Claimed, worker: &str, runtime: &Runti
     };
     let outcome = execute(pool, job, runtime).await;
     beat.abort();
+    if matches!(&outcome, Err(e) if e.is::<RetryLater>()) {
+        return requeue(pool, job.id, worker).await;
+    }
     finish(pool, job.id, worker, outcome).await
 }
 
@@ -350,6 +414,8 @@ pub struct Runtime {
     pub mail: Option<crate::peppol_worker::SendMail>,
     /// A fixed directory answer, so tests do not depend on public DNS.
     pub directory_answer: Option<regnmed_core::peppol::DirectoryAnswer>,
+    /// Altinn's mva-melding app; None until ID-porten filing is configured.
+    pub vat_filing: Option<std::sync::Arc<crate::vat_filing::Rail>>,
 }
 
 async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Value> {
@@ -398,6 +464,7 @@ async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Valu
         Some(Kind::PeppolSenderSetup) => {
             crate::peppol_worker::run_sender_setup(pool, job, runtime).await
         }
+        Some(Kind::VatFilingSubmit) => crate::vat_filing::run_submit(pool, job, runtime).await,
         None => bail!("unknown job kind {}", job.kind),
     }
 }

@@ -6,6 +6,7 @@
   import { toast } from "./lib/toast.svelte.js";
   import { setIkonstil } from "./lib/prefs.svelte.js";
   import { koSend } from "./lib/ko.js";
+  import { husk, lesRetur, returAdresse, tattTermin } from "./lib/mvaretur.js";
   import { connect, disconnect, refreshUnread } from "./lib/chat.svelte.js";
   import Login from "./components/Login.svelte";
   import Companies from "./components/Companies.svelte";
@@ -69,6 +70,13 @@
         boot.done = true;
         return;
       }
+    }
+    // Back from approving an mva-melding: the Mva page finishes it.
+    if (location.pathname === "/mva-godkjenning") {
+      const retur = lesRetur(location.search);
+      if (retur) husk(retur);
+      history.replaceState(null, "", "/");
+      if (retur) location.hash = returAdresse(retur, tattTermin());
     }
     // Ingenting ligger lagret: etter en omlasting avgjør refresh-cookien
     // om økten lever, så oppstarten veksler den én gang før

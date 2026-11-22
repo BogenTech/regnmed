@@ -14,6 +14,7 @@
   import { download } from "../../lib/download.js";
   import { harRett } from "../../lib/me.svelte.js";
   import Terminordning from "./Terminordning.svelte";
+  import MvaInnsending from "./MvaInnsending.svelte";
   import { termName, defaultTerm, deadlineText } from "./mvaTerms.js";
 
   let { companyId, query = "" } = $props();
@@ -295,13 +296,15 @@
     <section class="card border border-base-300 bg-base-100 mb-6" aria-labelledby="melding-tittel">
       <div class="card-body gap-2">
         <h2 id="melding-tittel" class="card-title">Mva-meldingen</h2>
-        <p>
-          Meldingen lages fra spesifikasjonen over og kontrolleres mot Skatteetatens skjema. Direkte innsending fra regnmed kommer
-          når tilgangen til Skatteetaten er på plass. Til da kan du laste den ned for å kontrollere den, eller levere den gjennom
-          et system som kan sende den.
-        </p>
+        <p>Meldingen lages fra spesifikasjonen over og kontrolleres av Skatteetaten før den sendes.</p>
+        <MvaInnsending
+          {companyId}
+          year={report.year}
+          termin={report.termin}
+          title={termName(report.antall_perioder, report.termin) + " " + report.year}
+        />
         <button
-          class="btn w-fit"
+          class="btn btn-sm w-fit"
           onclick={() =>
             download(
               base + "/reports/mva-melding?year=" + report.year + "&termin=" + report.termin,

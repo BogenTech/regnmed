@@ -12,6 +12,7 @@
 // cookien fortsatt er der. Begrunnelsen står i docs/portal.md.
 
 import { erBankretur } from "./bankkobling.js";
+import { harRetur } from "./mvaretur.js";
 
 export const session = $state({
   config: null, // {issuer, client_id} fra /portal-config
@@ -119,7 +120,9 @@ export async function login() {
   sessionStorage.setItem("regnmed-pkce", JSON.stringify({ verifier, state }));
   // Back from the bank but logged out: the callback lands on "/" and would
   // drop the bank's code, so that one address rides along through login.
-  if (erBankretur(location.hash)) sessionStorage.setItem("regnmed-bankretur", location.hash);
+  if (erBankretur(location.hash) || harRetur()) {
+    sessionStorage.setItem("regnmed-bankretur", location.hash);
+  }
   const url =
     session.config.issuer.replace(/\/$/, "") +
     "/authorize" +

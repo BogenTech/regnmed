@@ -98,6 +98,7 @@ uansett hvilken rolle den bærer:
 | `OPPDRAG_ADMIN` | Oppdrag til byråer |
 | `INTEGRASJON_ADMIN` | Andre integrasjoners tilgang — og sin egen |
 | `SELSKAP_ADMIN` | Firmaopplysninger, registreringsstatus |
+| `MVA_SEND` | Godkjenne og sende inn mva-melding: den må kunne tilskrives en person (docs/mva.md) |
 
 Filtreringen ligger **i tilgangsoppslaget** (`access::lookup`), ikke
 ved tildelingen. Det er en avgjørelse: da gjelder den også for roller
