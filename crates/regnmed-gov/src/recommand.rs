@@ -224,7 +224,8 @@ impl Recommand {
             .basic_auth(&self.key, Some(&self.secret))
             .json(&json!({
                 "peppolAddress": receiver,
-                "documentType": doctype,
+                // Recommand adds the scheme itself, so a prefixed ID never matches.
+                "documentType": doctype.strip_prefix("busdox-docid-qns::").unwrap_or(doctype),
                 "processId": BILLING_PROCESS,
             }))
             .send()
@@ -540,6 +541,25 @@ mod tests {
                 .await,
             SendOutcome::Unresolved(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn document_support_asks_without_the_scheme() {
+        let base = serve(Router::new().route(
+            "/api/v1/verify-document-support",
+            post(|Json(body): Json<Value>| async move {
+                let bare = !body["documentType"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("busdox-docid-qns::");
+                Json(json!({ "success": true, "isValid": bare }))
+            }),
+        ))
+        .await;
+        let client = Recommand::new("k", "s", Some(&base)).unwrap();
+        for doctype in [INVOICE_DOCTYPE, CREDIT_NOTE_DOCTYPE] {
+            assert!(client.supports_document("0192:1", doctype).await.unwrap());
+        }
     }
 
     #[tokio::test]

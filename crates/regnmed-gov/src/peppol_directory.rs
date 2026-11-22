@@ -36,7 +36,7 @@ pub async fn lookup(receiver: &str, doctype: &str) -> DirectoryAnswer {
         Ok(resolvers) => resolvers,
         Err(_) => return DirectoryAnswer::Unknown,
     };
-    match query_sml(&naptr_name(receiver), &resolvers).await {
+    match query_sml(&naptr_name(receiver, &sml_zone()), &resolvers).await {
         Ok(Sml::Absent) => DirectoryAnswer::Absent,
         Ok(Sml::Found(smp)) if is_public_smp_url(&smp) => {
             document_support(&smp, receiver, doctype).await
@@ -45,9 +45,17 @@ pub async fn lookup(receiver: &str, doctype: &str) -> DirectoryAnswer {
     }
 }
 
-fn naptr_name(receiver: &str) -> String {
+/// A test-network provider key must be checked against the test network's SML.
+fn sml_zone() -> String {
+    std::env::var("PEPPOL_SML_ZONE")
+        .ok()
+        .filter(|zone| !zone.is_empty())
+        .unwrap_or_else(|| SML_ZONE.into())
+}
+
+fn naptr_name(receiver: &str, zone: &str) -> String {
     let hash = Sha256::digest(receiver.to_lowercase().as_bytes());
-    format!("{}.{PARTICIPANT_SCHEME}.{SML_ZONE}", base32(&hash)).to_lowercase()
+    format!("{}.{PARTICIPANT_SCHEME}.{zone}", base32(&hash)).to_lowercase()
 }
 
 fn base32(bytes: &[u8]) -> String {
@@ -300,10 +308,14 @@ mod tests {
 
     #[test]
     fn the_sml_name_hashes_the_lowercased_participant() {
-        let name = naptr_name("0192:ABC");
-        assert_eq!(name, naptr_name("0192:abc"));
+        let name = naptr_name("0192:ABC", SML_ZONE);
+        assert_eq!(name, naptr_name("0192:abc", SML_ZONE));
         assert!(name.ends_with(".iso6523-actorid-upis.participant.sml.prod.tech.peppol.org"));
         assert_eq!(name.split('.').next().unwrap().len(), 52);
+        assert!(
+            naptr_name("0192:abc", "participant.sml.test.tech.peppol.org")
+                .ends_with(".iso6523-actorid-upis.participant.sml.test.tech.peppol.org")
+        );
     }
 
     fn answer(rcode: u8, records: &[(u16, u16, &str, &str)]) -> (Vec<u8>, Vec<u8>) {

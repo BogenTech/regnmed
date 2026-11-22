@@ -45,7 +45,8 @@ spec:
                 optional: true
             # Peppol access point (docs/efaktura.md): RECOMMAND_API_KEY,
             # RECOMMAND_API_SECRET and RECOMMAND_TEAM_ID. Only workers hold
-            # these. Without the secret, EHF sending is off.
+            # these. Without the secret, EHF sending is off. A test-network
+            # key also carries PEPPOL_SML_ZONE, so key and directory match.
             - secretRef:
                 name: peppol-provider
                 optional: true
