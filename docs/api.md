@@ -342,6 +342,7 @@ endepunktene når noe selskaps hovedbok.
 | Endepunkt | Metoder |
 | --- | --- |
 | `/health` | GET |
+| `/job-health` | GET |
 
 ### Portalen selv
 

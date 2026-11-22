@@ -63,6 +63,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/firms/{firm_id}/requests` | — |
 | POST | `/firms/{firm_id}/requests/{request_id}/decision` | — |
 | GET | `/health` | public |
+| GET | `/job-health` | public |
 | GET | `/me` | — |
 | GET | `/pricing` | public |
 | GET | `/registry/enheter/{orgnumber}` | — |

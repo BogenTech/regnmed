@@ -1,3 +1,4 @@
+mod job_watch;
 mod work;
 
 use anyhow::{Context, Result};
@@ -44,6 +45,9 @@ enum Command {
     /// ANCHOR_TSA_URL is set, witness the root with an RFC 3161 timestamp
     /// (docs/anchoring.md). Run periodically (cron/CronJob).
     Anchor,
+    /// Judge every CronJob in this namespace and record one healthy bit for
+    /// the external monitor (docs/deploy.md). Runs inside the cluster.
+    JobWatch,
     /// Generate every due repeterende faktura across all companies
     /// (docs/faktura.md, #30). Run daily (cron/CronJob).
     GenerateInvoices,
@@ -328,6 +332,7 @@ async fn main() -> Result<()> {
         }
         Command::Demo => demo(&pool).await?,
         Command::Anchor => anchor(&pool).await?,
+        Command::JobWatch => job_watch::run(&pool).await?,
         Command::PlatformGrant {
             email,
             role,
@@ -1425,6 +1430,7 @@ mod tests {
         ("offload-documents", &[]),
         ("work", &["concurrency", "once"]),
         ("anchor", &[]),
+        ("job-watch", &[]),
         ("generate-invoices", &[]),
         ("depreciate", &[]),
         ("periodiser", &[]),

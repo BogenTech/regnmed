@@ -822,6 +822,61 @@ svarer igjen — så en natt med nedetid ikke blir tolv like varsler.
 **Den dekker ikke test.** Det er et valg: et varsel som går av for
 testmiljøet blir et varsel ingen leser.
 
+## Jobbvarsel: en feilet CronJob skal ikke kreve at noen ser etter
+
+`backup-verify` feilet 2026-11-15 og 2026-11-22 uten at noen fikk vite
+det. Gjenopprettingsøvelsen er det som beviser at hovedboken kan
+gjenopprettes, så en øvelse som stille slutter å virke er verre enn
+ingen øvelse: den ser ut som en garanti.
+
+Signalet går i tre ledd, og **ingen av sidene holder den andres
+legitimasjon**:
+
+1. **`regnmed job-watch`** (`deploy/shared/job-watch.yaml`, hvert tiende
+   minutt) leser alle CronJobs i navnerommet med en egen ServiceAccount
+   som bare kan liste `cronjobs` og `jobs`. Navn og årsak skrives til
+   poddens logg, aldri ut av clusteret.
+2. **`GET /job-health`** svarer `{"ok":true}` eller `{"ok":false}`. Ett
+   bit, med vilje offentlig: repoet er offentlig, så varselet er det
+   også, og et hemmelig endepunkt ville skjult nøyaktig det samme bitet
+   som issuen viser.
+3. **`.github/workflows/oppetid.yml`** leser bitet, åpner **én** issue
+   med merkelappen `job-health` og lukker den selv ved friskmelding. Den
+   kommenterer ikke mens feilen varer: en feil som står i to uker skal
+   ikke bli to tusen varsler. Er prod nede, hopper jobben over, for da
+   finnes varselet allerede.
+
+**Regn med timer, ikke minutter, før varselet kommer.** Workflowen ber om
+en kjøring hvert tiende minutt, men GitHub holder ikke planen: i uka før
+2026-11-22 var det 24 kjøringer, median 7,4 timer mellom dem og lengste
+opphold 10,4 timer. Det samme gjelder oppetidssjekken over. For jobber
+som går daglig eller sjeldnere er det godt nok; en feil som retter seg
+selv mellom to kjøringer gir ikke noe varsel.
+
+| tilstand | oppdages ved |
+| --- | --- |
+| siste kjøring feilet | en feilet Job er nyere enn `lastSuccessfulTime` |
+| jobben sluttet å kjøre | ingen suksess innen perioden + 6 timer (time, døgn, uke, 31 dager) |
+| uforståelig tidsplan | rapporteres som feil, hoppes aldri over |
+| `job-watch` selv står | dommen er eldre enn 30 minutter og leses som usunn |
+| `job-watch` ser ingen CronJobs | kjøringen feiler og skriver ingenting |
+
+**Alle CronJobs i navnerommet er med**, så en ny jobb er dekket uten at
+noen husker å melde den på. En jobb som aldri har lykkes måles fra da
+den ble opprettet. Feilen står til jobben faktisk lykkes: kjør den på
+nytt med `kubectl create job --from=cronjob/<navn> <navn>-retry`.
+
+Hva som feiler:
+
+```sh
+kubectl -n regnmed logs -l app=job-watch --tail=30
+kubectl -n regnmed get cronjobs
+```
+
+Test sjekkes bare ved manuell kjøring av workflowen med
+`environment: test`, og har egen merkelapp (`job-health-test`), så en
+øvelse i test aldri kan åpne eller lukke prods varsel.
+
 ## Images: flytende tagger må hentes
 
 `postgres:18-alpine` og `nats:alpine` flyter, og uten `imagePullPolicy`
@@ -848,9 +903,9 @@ on the product. What production runs on:
 - **Probes**: `/health` readiness on the API; pg_isready on Postgres.
 - **Integrity monitoring is the observability that matters here**: the
   nightly anchor CronJob (every root witnessed via `ANCHOR_TSA_URL`)
-  and the weekly backup-verification are both *checks that fail loudly
-  in `kubectl get jobs` / alerting on failed Jobs* — they watch the one
-  thing this system promises, the ledger.
+  and the weekly backup-verification are both *checks that fail loudly*,
+  through the job alert above — they watch the one thing this system
+  promises, the ledger.
 - **Logs**: `kubectl logs`; ship them with the cluster's collector if
   one exists. A `/metrics` endpoint is a conscious later addition, and
   the frugality gate will price it.

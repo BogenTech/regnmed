@@ -203,6 +203,8 @@ pub fn router(state: AppState) -> Router {
             axum::routing::post(portal::device_poll),
         )
         .route("/health", get(health))
+        // Public by design: one bit, no job names (docs/deploy.md).
+        .route("/job-health", get(job_health))
         .route("/me", get(me))
         .route("/notifications", get(chat::notifications))
         // An agent reads a page on the platform's domain list (docs/agent.md).
@@ -1364,6 +1366,11 @@ fn panikk_til_500(panikk: Box<dyn std::any::Any + Send + 'static>) -> Response {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn job_health(State(state): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
+    let ok = regnmed_db::job_health_ok(&state.pool).await?;
+    Ok(Json(json!({ "ok": ok })))
 }
 
 /// Who am I, and which companies may I act for — the resolution every
