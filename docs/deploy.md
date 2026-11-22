@@ -630,6 +630,11 @@ beviser dermed også at hvert dokument fortsatt finnes og er uendret.
   hope, not a backup. Øvelsen hopper over nøyaktig én post i dumpen:
   kommentaren på `pg_stat_statements`. Utvidelsen eies av superbrukeren,
   så restore-rollen får ikke sette den. Alle andre feil stopper øvelsen.
+  Øvelsen nekter en dump som er eldre enn 25 timer, så en stoppet
+  nattbackup ikke kan se grønn ut. Etter kontrollen, bestått eller ikke,
+  sletter `verify-ledger --drop-restore-copy` den gjenopprettede kopien.
+  Flagget nekter alle andre databaser enn `regnmed_restore_check`. Blir
+  podden drept midt i kontrollen, står kopien til neste kjøring.
 
 The same drill runs anywhere via `scripts/backup-verify.sh`
 (`DATABASE_URL=… scripts/backup-verify.sh`). It has been exercised both
