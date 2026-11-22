@@ -127,9 +127,15 @@ spec:
                     psql -h postgres -U regnmed -d regnmed -qtAXc 'select 1' >/dev/null 2>&1 && break
                     sleep 2
                   done
-                  latest=$(ls -t /backup/regnmed-*.dump | head -1)
-                  echo "restoring $latest into regnmed_restore_check"
+                  # First, so a copy left by a killed pod never outlives a failed check.
                   dropdb   -h postgres -U regnmed --if-exists regnmed_restore_check
+                  latest=$(ls -t /backup/regnmed-*.dump | head -1)
+                  # 25 hours: Sunday's 04:00 run catches one missed 01:30 dump.
+                  if [ -z "$(find "$latest" -mmin -1500)" ]; then
+                    echo "the newest dump is too old to verify: ${latest:-none}" >&2
+                    exit 1
+                  fi
+                  echo "restoring $latest into regnmed_restore_check"
                   createdb -h postgres -U regnmed regnmed_restore_check
                   # The superuser owns this extension, so the restore role
                   # cannot set its comment. Any other error still fails.
@@ -171,7 +177,7 @@ spec:
                   drop: [ALL]
                 seccompProfile:
                   type: RuntimeDefault
-              command: ["/app/regnmed", "verify-ledger"]
+              command: ["/app/regnmed", "verify-ledger", "--drop-restore-copy"]
               env:
                 - name: DATABASE_URL
                   valueFrom:

@@ -24,6 +24,10 @@ enum Command {
         /// Company id; verifies every company when omitted
         #[arg(long)]
         company: Option<Uuid>,
+        /// Afterwards, pass or fail, drop the restored copy being verified.
+        /// Refused for any database other than `regnmed_restore_check`.
+        #[arg(long)]
+        drop_restore_copy: bool,
     },
     /// Create a demo company, post vouchers, attempt tampering, verify (dev only)
     Demo,
@@ -264,6 +268,65 @@ async fn resolve_company(
     }
 }
 
+async fn verify_ledger(pool: &sqlx::PgPool, company: Option<Uuid>) -> Result<()> {
+    let companies = match company {
+        Some(id) => vec![id],
+        None => regnmed_db::all_company_ids(pool).await?,
+    };
+    if companies.is_empty() {
+        println!("no companies in the database");
+    }
+    for id in companies {
+        let report = regnmed_db::verify_chain(pool, id).await?;
+        let attachments = regnmed_db::verify_attachments(pool, id).await?;
+        let anchors = regnmed_db::verify_company_anchors(pool, id).await?;
+        for problem in &anchors.problems {
+            eprintln!("company {id}: ANCHOR MISMATCH — {problem}");
+        }
+        println!(
+            "company {id}: chain OK ({} vouchers, {} attachments, {} anchors verified)",
+            report.vouchers_checked, attachments, anchors.snapshots_checked
+        );
+        anyhow::ensure!(
+            anchors.problems.is_empty(),
+            "anchored history no longer matches the live chain"
+        );
+        // The reports read the monthly totals (migration 0072); they
+        // must equal the journal they summarize.
+        let totals = regnmed_db::verify_month_totals(pool, id).await?;
+        for problem in &totals {
+            eprintln!("company {id}: MONTH TOTAL MISMATCH — {problem}");
+        }
+        anyhow::ensure!(
+            totals.is_empty(),
+            "the monthly totals the reports read disagree with the entries"
+        );
+    }
+    Ok(())
+}
+
+/// The only database `verify-ledger --drop-restore-copy` may remove.
+const RESTORE_COPY: &str = "regnmed_restore_check";
+
+/// Where to connect to drop the copy, or an error if `url` is anything else.
+fn restore_copy_maintenance(url: &str) -> Result<sqlx::postgres::PgConnectOptions> {
+    let options: sqlx::postgres::PgConnectOptions = url.parse().context("parsing DATABASE_URL")?;
+    anyhow::ensure!(
+        options.get_database() == Some(RESTORE_COPY),
+        "--drop-restore-copy only works on {RESTORE_COPY}"
+    );
+    Ok(options.database("postgres"))
+}
+
+async fn drop_restore_copy_database(maintenance: &sqlx::postgres::PgConnectOptions) -> Result<()> {
+    use sqlx::Connection;
+    let mut connection = sqlx::PgConnection::connect_with(maintenance).await?;
+    sqlx::query("drop database regnmed_restore_check with (force)")
+        .execute(&mut connection)
+        .await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
@@ -295,39 +358,26 @@ async fn main() -> Result<()> {
             regnmed_db::MIGRATOR.run(&pool).await?;
             println!("migrations up to date");
         }
-        Command::VerifyLedger { company } => {
-            let companies = match company {
-                Some(id) => vec![id],
-                None => regnmed_db::all_company_ids(&pool).await?,
-            };
-            if companies.is_empty() {
-                println!("no companies in the database");
-            }
-            for id in companies {
-                let report = regnmed_db::verify_chain(&pool, id).await?;
-                let attachments = regnmed_db::verify_attachments(&pool, id).await?;
-                let anchors = regnmed_db::verify_company_anchors(&pool, id).await?;
-                for problem in &anchors.problems {
-                    eprintln!("company {id}: ANCHOR MISMATCH — {problem}");
+        Command::VerifyLedger {
+            company,
+            drop_restore_copy,
+        } => {
+            // Refused before any work: this flag must never reach a live database.
+            let maintenance = drop_restore_copy
+                .then(|| restore_copy_maintenance(&url))
+                .transpose()?;
+            let verified = verify_ledger(&pool, company).await;
+            if let Some(maintenance) = maintenance {
+                pool.close().await;
+                let dropped = drop_restore_copy_database(&maintenance).await;
+                match &dropped {
+                    Ok(()) => println!("dropped {RESTORE_COPY}"),
+                    Err(e) => eprintln!("could not drop {RESTORE_COPY}: {e:#}"),
                 }
-                println!(
-                    "company {id}: chain OK ({} vouchers, {} attachments, {} anchors verified)",
-                    report.vouchers_checked, attachments, anchors.snapshots_checked
-                );
-                anyhow::ensure!(
-                    anchors.problems.is_empty(),
-                    "anchored history no longer matches the live chain"
-                );
-                // The reports read the monthly totals (migration 0072); they
-                // must equal the journal they summarize.
-                let totals = regnmed_db::verify_month_totals(&pool, id).await?;
-                for problem in &totals {
-                    eprintln!("company {id}: MONTH TOTAL MISMATCH — {problem}");
-                }
-                anyhow::ensure!(
-                    totals.is_empty(),
-                    "the monthly totals the reports read disagree with the entries"
-                );
+                verified?;
+                dropped?;
+            } else {
+                verified?;
             }
         }
         Command::Demo => demo(&pool).await?,
@@ -1399,8 +1449,22 @@ async fn demo(pool: &sqlx::PgPool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    use super::{Cli, restore_copy_maintenance};
     use clap::CommandFactory;
+
+    #[test]
+    fn only_the_restore_copy_can_be_dropped() {
+        let copy =
+            restore_copy_maintenance("postgres://u:p@postgres:5432/regnmed_restore_check").unwrap();
+        assert_eq!(copy.get_database(), Some("postgres"));
+        for url in [
+            "postgres://u:p@postgres:5432/regnmed",
+            "postgres://u:p@postgres:5432/regnmed_restore_check2",
+            "postgres://u:p@postgres:5432/postgres",
+        ] {
+            assert!(restore_copy_maintenance(url).is_err(), "{url}");
+        }
+    }
 
     /// THE OPS INTERFACE IS A CONTRACT, and nothing was checking it.
     ///
@@ -1425,7 +1489,7 @@ mod tests {
     /// whether deploy/ and docs/ need to change too.
     const SURFACE: &[(&str, &[&str])] = &[
         ("migrate", &[]),
-        ("verify-ledger", &["company"]),
+        ("verify-ledger", &["company", "drop-restore-copy"]),
         ("demo", &[]),
         ("offload-documents", &[]),
         ("work", &["concurrency", "once"]),
