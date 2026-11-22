@@ -147,20 +147,8 @@ jobs:
           fi
           # --fail: without it a retried error's body stays in front of the answer.
           RES=$(curl -sf --max-time 10 --retry 2 --retry-all-errors -w ' %{http_code}' "$API/job-health") || true
-          case "$RES" in
-            '{"ok":true} 200') STATE=ok ;;
-            *' 404')
-              # shortcut: prod before the release carrying /job-health has no
-              # such route; delete this branch once prod runs v0.27.0.
-              VERSION=$(curl -s --max-time 10 "$API/portal-config" | jq -r '.versjon // empty') || true
-              case "$VERSION" in
-                v*) [ "$(printf '%s\n' "$VERSION" v0.27.0 | sort -V | head -1)" = v0.27.0 ] && STATE=alert || STATE=skip ;;
-                *) STATE=alert ;;
-              esac ;;
-            *) STATE=alert ;;
-          esac
+          if [ "$RES" = '{"ok":true} 200' ]; then STATE=ok; else STATE=alert; fi
           echo "$TARGET: $STATE"
-          [ "$STATE" != skip ] || exit 0
 
           OPEN=$(gh issue list --label "$LABEL" --state open --json number -q '.[].number')
           if [ "$STATE" = ok ]; then
