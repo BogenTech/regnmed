@@ -882,6 +882,41 @@ Test sjekkes bare ved manuell kjøring av workflowen med
 `environment: test`, og har egen merkelapp (`job-health-test`), så en
 øvelse i test aldri kan åpne eller lukke prods varsel.
 
+### Loggen etter en feilet jobb
+
+Alle CronJobs står på `restartPolicy: Never`. Med `OnFailure` starter
+containeren på nytt i samme pod, og når Jobben når `backoffLimit`, sletter
+Kubernetes podden og loggen med den. Derfor var det ingenting å lese da
+`job-watch` fant den feilede `regnmed-abonnement-faktura` fra 2026-11-01.
+Med `Never` blir hvert forsøk en egen pod som står igjen:
+
+```sh
+kubectl -n regnmed logs -l job-name=<jobb> --prefix --tail=-1
+```
+
+- **Hvor lenge loggen lever:** til nyere feilede Jobber skyver Jobben ut av
+  `failedJobsHistoryLimit` (1–3 per CronJob). Vellykkede kjøringer fjerner
+  den ikke. Loggen ligger på noden, så en node som byttes ut tar den med
+  seg: dette er diagnose, ikke arkiv.
+- **Antall podder er begrenset** til (`successfulJobsHistoryLimit` +
+  `failedJobsHistoryLimit`) × (`backoffLimit` + 1) per CronJob, til sammen
+  høyst 260 for de ti jobbene. Avsluttede podder bruker verken CPU eller
+  minne. `backoffLimit` er uendret, så jobbene prøver like mange ganger
+  som før.
+- **Hvert nytt forsøk møter oppstartsvinduet** der NetworkPolicy ennå ikke
+  slipper podden inn (Hetzner). En ny jobb må derfor tåle at de første
+  sekundene nekter tilkobling. Rust-jobbene gjør det gjennom sqlx, som
+  prøver igjen i 30 sekunder, og backup-jobbene venter på en fullført
+  `select 1`.
+- **`activeDeadlineSeconds` sletter podden som kjører.** Det gjelder
+  `job-watch` og `regnmed-agent-sweep`: loggen fra et forsøk som henger til
+  fristen går tapt, mens tidligere feilede forsøk står igjen.
+
+Verifisert i test 2026-11-22 med engangs-Jobber bygd fra
+`regnmed-anchor`, med en database som ikke svarer: `Never` beholdt begge
+podder med lesbar feilmelding, `OnFailure` beholdt ingen, og en Job som
+nådde fristen beholdt heller ingen.
+
 ## Images: flytende tagger må hentes
 
 `postgres:18-alpine` og `nats:alpine` flyter, og uten `imagePullPolicy`

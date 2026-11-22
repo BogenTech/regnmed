@@ -35,7 +35,7 @@ spec:
     spec:
       template:
         spec:
-          restartPolicy: OnFailure
+          restartPolicy: Never
           securityContext:
             fsGroup: 70
           containers:
