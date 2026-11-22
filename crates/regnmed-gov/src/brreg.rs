@@ -32,6 +32,13 @@ pub struct BrregEntity {
     /// note on documents dated before that.
     #[serde(default, rename = "registreringsdatoMerverdiavgiftsregisteret")]
     pub mva_registration_date: Option<String>,
+    /// The only VAT date BRREG's test register carries. A separate field and
+    /// not a serde alias: live BRREG sends both, and an alias would then fail.
+    #[serde(
+        default,
+        rename = "registreringsdatoMerverdiavgiftsregisteretEnhetsregisteret"
+    )]
+    pub mva_registration_date_in_er: Option<String>,
     #[serde(default, rename = "registreringsdatoForetaksregisteret")]
     pub foretaksregisteret_registration_date: Option<String>,
     #[serde(default)]
@@ -153,7 +160,9 @@ impl BrregEntity {
         }
         let mut events: Vec<(NaiveDate, bool)> = Vec::new();
         if self.registered_in_vat_register {
-            events.push((date(&self.mva_registration_date).unwrap_or(i_dag), true));
+            let registered = date(&self.mva_registration_date)
+                .or_else(|| date(&self.mva_registration_date_in_er));
+            events.push((registered.unwrap_or(i_dag), true));
         }
         if self.registrert_i_foretaksregisteret {
             events.push((
@@ -354,6 +363,31 @@ mod tests {
                 (d("1988-04-28"), false, true),
                 (d("1989-07-01"), true, true),
             ]
+        );
+    }
+
+    /// BRREG's test register has only the second VAT date. Live BRREG has
+    /// both, and there the register's own date wins.
+    #[test]
+    fn the_vat_date_falls_back_to_the_one_the_test_register_has() {
+        let only_er = entity(
+            r#"{"organisasjonsnummer": "1", "navn": "T AS",
+                "registrertIMvaregisteret": true,
+                "registreringsdatoMerverdiavgiftsregisteretEnhetsregisteret": "2021-03-17"}"#,
+        );
+        assert_eq!(
+            only_er.registration_timeline(d("2026-11-22")),
+            vec![(d("2021-03-17"), true, false)]
+        );
+        let both = entity(
+            r#"{"organisasjonsnummer": "2", "navn": "L AS",
+                "registrertIMvaregisteret": true,
+                "registreringsdatoMerverdiavgiftsregisteret": "1989-07-01",
+                "registreringsdatoMerverdiavgiftsregisteretEnhetsregisteret": "2022-09-20"}"#,
+        );
+        assert_eq!(
+            both.registration_timeline(d("2026-11-22")),
+            vec![(d("1989-07-01"), true, false)]
         );
     }
 

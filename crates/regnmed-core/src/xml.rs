@@ -55,18 +55,24 @@ impl Xml {
         self.out.push('<');
         self.out.push_str(tag);
         self.out.push('>');
-        for c in value.chars() {
-            match c {
-                '&' => self.out.push_str("&amp;"),
-                '<' => self.out.push_str("&lt;"),
-                '>' => self.out.push_str("&gt;"),
-                _ => self.out.push(c),
-            }
-        }
+        self.out.push_str(&escape(value));
         self.out.push_str("</");
         self.out.push_str(tag);
         self.out.push_str(">\n");
     }
+}
+
+pub(crate) fn escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Integer øre → "1234.56", sign included. XML decimals always use a dot,

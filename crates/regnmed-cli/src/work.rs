@@ -36,7 +36,8 @@ const DRAIN: Duration = Duration::from_secs(110);
 const RECONCILE_EVERY: Duration = Duration::from_secs(5 * 60);
 const PEPPOL_RETRY: Duration = Duration::from_secs(5);
 /// How often replicas ask Altinn for Skatteetaten's answer to a sent mva-melding.
-const VAT_FEEDBACK_EVERY: Duration = Duration::from_secs(60);
+/// The person's Altinn token lived two minutes in TT02, so a minute is too coarse.
+const VAT_FEEDBACK_EVERY: Duration = Duration::from_secs(10);
 
 pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-work".into());
@@ -106,6 +107,8 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
         let pool = pool.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(VAT_FEEDBACK_EVERY);
+            // A slow Altinn must not be answered with a burst of catch-up sweeps.
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tick.tick().await;
                 if let Err(e) = regnmed_db::vat_filing::reconcile(&pool, &rail).await {

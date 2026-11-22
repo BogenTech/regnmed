@@ -75,7 +75,7 @@ async fn view(state: &AppState, filing: &Filing, events: &[Event]) -> Result<Val
         "assessed_kr": filing.assessed_kr,
         "requested_by": filing.requested_by,
         "created_at": filing.created_at.to_rfc3339(),
-        "godkjent_av": approved.and_then(|e| e.detail["name"].as_str()),
+        "godkjent_av": vat_filing::approver_name(events),
         "godkjent_at": approved.map(|e| e.created_at.to_rfc3339()),
         "melding": problem.and_then(|e| e.detail["melding"].as_str()),
         "avvik": problem.and_then(|e| e.detail.get("avvik")).cloned().unwrap_or(json!([])),

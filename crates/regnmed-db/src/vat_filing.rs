@@ -140,6 +140,22 @@ pub fn approved_by(events: &[Event]) -> Option<&Event> {
     events.iter().rev().find(|e| e.kind == kind)
 }
 
+/// The name to show for that approval: the person Altinn says signed in,
+/// once the worker has asked, and until then the regnmed user.
+pub fn approver_name(events: &[Event]) -> Option<&str> {
+    let approved = approved_by(events)?;
+    // A confirm speaks for itself: later events may be another person's attempt.
+    let signer = if approved.kind == "bekrefter" {
+        approved.detail["signer"].as_str()
+    } else {
+        let at = events.iter().position(|e| e.id == approved.id)?;
+        events[at..]
+            .iter()
+            .find_map(|e| e.detail["signer"].as_str())
+    };
+    signer.or_else(|| approved.detail["name"].as_str())
+}
+
 /// What a person found in Altinn when they closed an unresolved filing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Finding {
@@ -1129,6 +1145,7 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
         run.hold_for_feedback(&altinn).await?;
         return collect_feedback(run, &past, &altinn).await;
     }
+    let mut signer = None;
 
     let (url, mut instance) = match instance_url(&past) {
         Some(url) => {
@@ -1160,6 +1177,11 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
                     .close("uavklart", json!({ "melding": CREATE_UNKNOWN }))
                     .await;
             }
+            // Asked before anything exists in Altinn, so a failure leaves no draft.
+            signer = match signer_name(run, &altinn).await {
+                Ok(name) => Some(name),
+                Err(e) => return stop(run, e, false).await,
+            };
             let outcome = match rail
                 .client
                 .validation
@@ -1180,7 +1202,10 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
             };
             if !outcome.valid {
                 return run
-                    .close("avvik", json!({ "avvik": outcome.findings }))
+                    .close(
+                        "avvik",
+                        json!({ "avvik": outcome.findings, "signer": signer }),
+                    )
                     .await;
             }
             if !unchanged(pool, filing).await? {
@@ -1220,11 +1245,26 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
         .rev()
         .find(|e| e.kind == "konvolutt")
         .and_then(|e| e.detail["person_id"].as_str().map(str::to_string));
+    let mut envelope_signer = past
+        .iter()
+        .rev()
+        .find(|e| e.kind == "konvolutt")
+        .and_then(|e| e.detail["signer"].as_str().map(str::to_string));
 
     if instance.task() == Some(FILLING_TASK) {
-        let envelope = approval.detail["envelope_xml"]
-            .as_str()
-            .context("an approved filing has an envelope")?;
+        let name = match signer.clone() {
+            Some(name) => name,
+            None => match signer_name(run, &altinn).await {
+                Ok(name) => name,
+                Err(e) => return stop(run, e, false).await,
+            },
+        };
+        let envelope = regnmed_core::vat_return::name_envelope_signer(
+            approval.detail["envelope_xml"]
+                .as_str()
+                .context("an approved filing has an envelope")?,
+            &name,
+        );
         let Some(element) = instance.element(ENVELOPE_DATA_TYPE).map(|e| e.id.clone()) else {
             return stop(
                 run,
@@ -1236,13 +1276,18 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
             )
             .await;
         };
-        run.note("konvolutt", json!({ "person_id": approver }))
-            .await?;
+        run.note(
+            "konvolutt",
+            json!({ "person_id": approver, "signer": name }),
+        )
+        .await?;
         envelope_names = approver.clone();
+        signer = Some(name.clone());
+        envelope_signer = Some(name);
         run.ensure_live().await?;
         if let Err(e) = rail
             .client
-            .put_envelope(&altinn, &url, &element, envelope)
+            .put_envelope(&altinn, &url, &element, &envelope)
             .await
         {
             return stop(run, e, false).await;
@@ -1273,13 +1318,29 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
                 if confirm_unsettled(&run.past) {
                     return abort_unsent(run, &altinn, &url, CONFIRM_UNKNOWN).await;
                 }
+                // A resumed run holds a new token, and a regnmed account can
+                // be rebound to another ID-porten person.
+                let confirming_signer = match signer.clone() {
+                    Some(name) => name,
+                    None => match signer_name(run, &altinn).await {
+                        Ok(name) => name,
+                        Err(e) => return stop(run, e, false).await,
+                    },
+                };
+                if envelope_signer.as_deref() != Some(confirming_signer.as_str()) {
+                    return abort_unsent(run, &altinn, &url, OTHER_APPROVER).await;
+                }
                 if !unchanged(pool, filing).await? {
                     return abort_unsent(run, &altinn, &url, LEDGER_CHANGED).await;
                 }
                 // From here the confirmation may land even if its answer is lost.
                 run.note(
                     "bekrefter",
-                    json!({ "person_id": approver, "name": approval.detail["name"] }),
+                    json!({
+                        "person_id": approver,
+                        "name": approval.detail["name"],
+                        "signer": envelope_signer,
+                    }),
                 )
                 .await?;
                 true
@@ -1328,13 +1389,31 @@ async fn advance(run: &mut Run<'_>) -> Result<String> {
     collect_feedback(run, &past, &altinn).await
 }
 
+/// A profile that cannot be read says nothing about the right to file.
+async fn signer_name(run: &Run<'_>, altinn: &str) -> Result<String, FilingError> {
+    run.rail
+        .client
+        .signer_name(altinn)
+        .await
+        .map_err(|e| FilingError::Unresolved(format!("the signer's name: {e}")))
+}
+
 async fn store_files(
     run: &Run<'_>,
     token: &str,
     url: &str,
     instance: &Instance,
 ) -> Result<(), FilingError> {
+    let stored: Vec<String> =
+        sqlx::query_scalar("select data_type from vat_filing_document where filing_id = $1")
+            .bind(run.filing.id)
+            .fetch_all(run.pool)
+            .await
+            .map_err(|e| FilingError::Unresolved(e.to_string()))?;
     for data_type in FEEDBACK_FILES {
+        if stored.iter().any(|s| s == data_type) {
+            continue;
+        }
         let Some(element) = instance.element(data_type) else {
             continue;
         };
@@ -1533,6 +1612,18 @@ mod tests {
             named("godkjent", "Bo"),
         ];
         assert_eq!(approved_by(&refused).unwrap().detail["name"], "Bo");
+    }
+
+    #[test]
+    fn a_confirm_without_a_signer_does_not_borrow_a_later_one() {
+        let events = [
+            event("godkjent", json!({ "name": "Ada" })),
+            event("bekrefter", json!({ "name": "Ada" })),
+            event("uavklart", json!({})),
+            event("godkjent", json!({ "name": "Bo" })),
+            event("konvolutt", json!({ "signer": "BO LESER" })),
+        ];
+        assert_eq!(approver_name(&events), Some("Ada"));
     }
 
     #[test]
