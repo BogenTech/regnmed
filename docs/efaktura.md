@@ -205,7 +205,7 @@ faktura. Der simuleres leveransen, så ekte Peppol-levering er ikke prøvd.
 | Status, MLR og IMR | Delvis. **Kildekoden:** innkommende MLR gir `document.received`, men bare for et selskap med `isSmpRecipient: true` som er registrert for MLR, og den endrer ikke leveringsstatusen. Et rent avsenderselskap får ingen MLR gjennom Recommand. **Invoice Response (IMR) har ingen tolker** | Fase 1 bygger ikke på MLR. Fakturasvar utgår inntil videre (§4, fase 2) |
 | Webhook | **Prøvd:** `document.sent` og `document.received` kom signert med HMAC-SHA256. Etter et 500-svar kom samme levering igjen etter omtrent 40 sekunder med samme `X-Idempotency-Key`. **Kildekoden:** 2xx godtas, tidsavbrudd og 5xx prøves på nytt, alt annet er endelig. Antall forsøk, ventetid og rekkefølge står ikke i repoet, og API-et har ingen avspilling | Regner med minst én levering i vilkårlig rekkefølge, aldri 4xx ved forbigående feil (§3.7) |
 | Mottak med ELMA | Oppgitt støttet: norske mottakere publiseres i ELMA | Fase 3, fortsatt et uttrykkelig valg |
-| Testmiljø | Oppfylt med en grense. **Prøvd:** en playground på Peppol-testnettet registrerer aldri egne selskaper som mottakere, så sending til seg selv gir `recipient_not_found`. En vanlig playground simulerer leveransen mellom egne selskaper | Integrasjonstesten bruker vanlig playground. Testnettet krever en ekte testmotpart |
+| Testmiljø | Oppfylt med en grense. **Prøvd 2026-11-22:** et verifisert selskap med `isSmpRecipient: true` på Peppol-testnettet publiseres i test-SMP-en og kan motta. En vanlig playground simulerer leveransen mellom egne selskaper | Integrasjonstesten bruker vanlig playground. Testklyngen bruker testnettet, med `PEPPOL_SML_ZONE` i samme secret som nøkkelen. Levering til et annet aksesspunkt krever en ekte testmotpart |
 | EØS og databehandleravtale | Plattform og sikkerhetskopier i EU. Databehandleravtalen og listen over underdatabehandlere er **ikke lest** | Leses før signering (fase 0) |
 | Pris | €0 for 25 dokumenter, €29 for 200, €99 for 1 000, €199 for 2 500, €349 for 5 000 per måned, eks. mva. Sendte og mottatte dokumenter teller begge | §6, beslutning 2 |
 
@@ -293,6 +293,9 @@ en konsekvens av mottakeren, ikke et valg som krever egen tillatelse.
   | `isValid: false` eller ikke svar | tidsavbrudd, SERVFAIL eller annet | **ingen sending**: ukjent |
   | ikke svar | hva som helst | **ingen sending**: ukjent |
 
+- `verify-document-support` skal ha dokumenttypen **uten** skjemaprefikset.
+  Recommand legger det til selv, så med prefiks svarer den `isValid: false`
+  for alle mottakere (funnet på testnettet 2026-11-22).
 - Recommands e-postreserve (`when: "on_peppol_failure"`) brukes **ikke**:
   kanalvalget skal være vårt, og en transportfeil beviser ikke at
   mottakeren er utenfor ELMA.
@@ -537,7 +540,7 @@ Fase 1 oppretter avsenderen **alltid med `isSmpRecipient: false`**, satt
 uttrykkelig: standardverdien er `true` (prøvd), og da kan selskapet bli
 publisert som mottaker i ELMA. Kildekoden stopper publisering med `false`
 på alle veier for Norge, og å endre fra `true` til `false` avregistrerer
-selskapet. Playground gjør aldri SMP-registreringer, så dette kontrolleres
+selskapet. En vanlig playground gjør aldri SMP-registreringer, så dette kontrolleres
 også med BogenTech i produksjon ved å lese SMP-en før noen kunde kobles
 på. Et slikt selskap får ingen innkommende MLR gjennom Recommand (§2.3).
 
