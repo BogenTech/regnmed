@@ -25,13 +25,26 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Whose scheduled jobs to check (the schedule is always prod)"
+        type: choice
+        options: [prod, test]
+        default: prod
 
 permissions:
   issues: write
 
+# There is no checkout here, and without this `gh` looks for a git remote and
+# fails: the alert path could not run until this line existed.
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   prod:
     runs-on: ubuntu-latest
+    outputs:
+      nede: ${{ steps.sjekk.outputs.nede }}
     steps:
       - name: Sjekk endepunktene
         id: sjekk
@@ -112,3 +125,56 @@ jobs:
           for n in $(gh issue list --label oppetid --state open --json number -q '.[].number'); do
             gh issue close "$n" --comment "Prod svarer igjen $(date -u +'%Y-%m-%d %H:%M UTC'). Lukket av oppetidssjekken."
           done
+
+  # Scheduled jobs (docs/deploy.md). Skipped while prod is down: that outage
+  # already has its issue, and this one could not read the bit anyway.
+  scheduled-jobs:
+    needs: prod
+    if: needs.prod.outputs.nede == 'false'
+    runs-on: ubuntu-latest
+    concurrency: job-health-${{ inputs.environment || 'prod' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET: ${{ inputs.environment || 'prod' }}
+    steps:
+      - name: Open or close the job-health alert
+        run: |
+          set -eu
+          if [ "$TARGET" = test ]; then
+            API=https://api.test.regnmed.no NS=regnmed-test LABEL=job-health-test
+          else
+            API=https://api.regnmed.no NS=regnmed LABEL=job-health
+          fi
+          RES=$(curl -s --max-time 10 --retry 2 --retry-all-errors -w ' %{http_code}' "$API/job-health") || true
+          case "$RES" in
+            '{"ok":true} 200') STATE=ok ;;
+            *' 404')
+              # shortcut: prod before the release carrying /job-health has no
+              # such route; delete this branch once prod runs v0.27.0.
+              VERSION=$(curl -s --max-time 10 "$API/portal-config" | jq -r '.versjon // empty') || true
+              case "$VERSION" in
+                v*) [ "$(printf '%s\n' "$VERSION" v0.27.0 | sort -V | head -1)" = v0.27.0 ] && STATE=alert || STATE=skip ;;
+                *) STATE=alert ;;
+              esac ;;
+            *) STATE=alert ;;
+          esac
+          echo "$TARGET: $STATE"
+          [ "$STATE" != skip ] || exit 0
+
+          OPEN=$(gh issue list --label "$LABEL" --state open --json number -q '.[].number')
+          if [ "$STATE" = ok ]; then
+            for n in $OPEN; do
+              gh issue close "$n" --comment "Scheduled jobs are healthy again $(date -u +'%Y-%m-%d %H:%M UTC')."
+            done
+          elif [ -z "$OPEN" ]; then
+            # A public issue: the job's name and reason stay in the cluster.
+            gh label create "$LABEL" --description "A scheduled job needs attention" --color B60205 2>/dev/null || true
+            gh issue create --label "$LABEL" --title "Scheduled job needs attention ($TARGET)" --body "A scheduled job in \`$TARGET\` failed or stopped running, or its watcher stopped reporting.
+
+          \`\`\`sh
+          kubectl -n $NS logs -l app=job-watch --tail=30
+          kubectl -n $NS get cronjobs
+          \`\`\`
+
+          This issue closes itself when every job is healthy again (docs/deploy.md)."
+          fi

@@ -35,6 +35,32 @@ async fn get(state: &AppState, uri: &str) -> (StatusCode, String, String) {
 }
 
 #[tokio::test]
+async fn job_health_is_one_bit_and_a_silent_watcher_reads_as_unhealthy() {
+    let idp = TestIdp::new();
+    let Some(state) = test_state(&idp).await else {
+        return;
+    };
+    regnmed_db::record_job_health(&state.pool, true)
+        .await
+        .unwrap();
+    assert_eq!(get(&state, "/job-health").await.2, r#"{"ok":true}"#);
+
+    regnmed_db::record_job_health(&state.pool, false)
+        .await
+        .unwrap();
+    assert_eq!(get(&state, "/job-health").await.2, r#"{"ok":false}"#);
+
+    regnmed_db::record_job_health(&state.pool, true)
+        .await
+        .unwrap();
+    sqlx::query("update job_health set checked_at = now() - interval '31 minutes'")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&state, "/job-health").await.2, r#"{"ok":false}"#);
+}
+
+#[tokio::test]
 async fn the_pwa_shell_is_served_and_never_caches_the_hovedbok() {
     let idp = TestIdp::new();
     let Some(state) = test_state(&idp).await else {

@@ -1,0 +1,80 @@
+# Makes a failed or silent CronJob visible outside the cluster
+# (docs/deploy.md). Reads CronJobs and Jobs, writes one healthy/unhealthy bit
+# to the database; /job-health serves it to .github/workflows/oppetid.yml.
+# GitHub holds no cluster credential and the cluster holds no GitHub token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: job-watch
+  namespace: regnmed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: job-watch
+  namespace: regnmed
+rules:
+  - apiGroups: [batch]
+    resources: [cronjobs, jobs]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: job-watch
+  namespace: regnmed
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: job-watch
+subjects:
+  - kind: ServiceAccount
+    name: job-watch
+    namespace: regnmed
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: job-watch
+  namespace: regnmed
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app: job-watch
+        spec:
+          serviceAccountName: job-watch
+          restartPolicy: OnFailure
+          containers:
+            - name: watch
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+              command: ["/app/regnmed", "job-watch"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi
