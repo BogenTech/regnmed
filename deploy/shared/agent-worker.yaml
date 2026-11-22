@@ -100,7 +100,7 @@ spec:
       backoffLimit: 1
       template:
         spec:
-          restartPolicy: OnFailure
+          restartPolicy: Never
           containers:
             - name: agent
               image: regnmed:dev

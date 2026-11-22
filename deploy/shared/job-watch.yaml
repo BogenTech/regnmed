@@ -51,7 +51,7 @@ spec:
             app: job-watch
         spec:
           serviceAccountName: job-watch
-          restartPolicy: OnFailure
+          restartPolicy: Never
           containers:
             - name: watch
               image: regnmed:dev
