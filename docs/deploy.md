@@ -840,11 +840,18 @@ legitimasjon**:
    bit, med vilje offentlig: repoet er offentlig, så varselet er det
    også, og et hemmelig endepunkt ville skjult nøyaktig det samme bitet
    som issuen viser.
-3. **`.github/workflows/oppetid.yml`** leser bitet hvert tiende minutt,
-   åpner **én** issue med merkelappen `job-health` og lukker den selv
-   ved friskmelding. Den kommenterer ikke mens feilen varer: en feil som
-   står i to uker skal ikke bli to tusen varsler. Er prod nede, hopper
-   jobben over, for da finnes varselet allerede.
+3. **`.github/workflows/oppetid.yml`** leser bitet, åpner **én** issue
+   med merkelappen `job-health` og lukker den selv ved friskmelding. Den
+   kommenterer ikke mens feilen varer: en feil som står i to uker skal
+   ikke bli to tusen varsler. Er prod nede, hopper jobben over, for da
+   finnes varselet allerede.
+
+**Regn med timer, ikke minutter, før varselet kommer.** Workflowen ber om
+en kjøring hvert tiende minutt, men GitHub holder ikke planen: i uka før
+2026-11-22 var det 24 kjøringer, median 7,4 timer mellom dem og lengste
+opphold 10,4 timer. Det samme gjelder oppetidssjekken over. For jobber
+som går daglig eller sjeldnere er det godt nok; en feil som retter seg
+selv mellom to kjøringer gir ikke noe varsel.
 
 | tilstand | oppdages ved |
 | --- | --- |

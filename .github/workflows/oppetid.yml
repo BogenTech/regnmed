@@ -145,7 +145,8 @@ jobs:
           else
             API=https://api.regnmed.no NS=regnmed LABEL=job-health
           fi
-          RES=$(curl -s --max-time 10 --retry 2 --retry-all-errors -w ' %{http_code}' "$API/job-health") || true
+          # --fail: without it a retried error's body stays in front of the answer.
+          RES=$(curl -sf --max-time 10 --retry 2 --retry-all-errors -w ' %{http_code}' "$API/job-health") || true
           case "$RES" in
             '{"ok":true} 200') STATE=ok ;;
             *' 404')
