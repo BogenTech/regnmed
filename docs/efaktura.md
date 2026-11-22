@@ -191,8 +191,15 @@ tjenesteleverandører. Kravene leverandøren må måles mot:
 
 Lest 2026-11-21 i Recommands egen dokumentasjon, vilkår og kildekode
 (`recommand/recommand-peppol`, commit `31110814`). Det som er merket
-**prøvd**, er kjørt mot deres playground 2026-11-21 med en syntetisk
-faktura. Der simuleres leveransen, så ekte Peppol-levering er ikke prøvd.
+**prøvd** uten annen dato, er kjørt mot deres playground 2026-11-21 med en
+syntetisk faktura, der leveransen simuleres.
+
+**Levering på Peppol-testnettet er prøvd 2026-11-22.** Arbeideren i
+testklyngen sendte en faktura fra et eget verifisert selskap til BOGENTECH AS
+gjennom Recommands test-aksesspunkt. XML-en hos Recommand hadde samme SHA-256 som
+vedlegget vårt, og mottakerens kopi hadde de samme 46 feltene. Statusen ble
+`levert`. Begge selskapene ligger hos Recommand, så levering til et **annet**
+aksesspunkt er ikke prøvd.
 
 | Krav | Funn | Hva regnmed gjør |
 | --- | --- | --- |
@@ -604,10 +611,11 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
 - Leverandør valgt: Recommand. Kontrollere oppføringen i OpenPeppols
   liste, avgjøre om kontraktsverifisering er verdt å spørre om (§2.3), lese
   og signere avtale +
-  databehandleravtale. Playground er opprettet og prøvd (§2.3). Ekte
-  levering, ELMA-oppslaget for `0192` og at en avsender med
-  `isSmpRecipient: false` ikke blir mottaker, må bekreftes med BogenTech
-  i produksjon eller mot en ekte testmotpart.
+  databehandleravtale. Playground og Peppol-testnettet er prøvd (§2.3). På
+  testnettet virker oppslaget for `0192`, og en avsender med
+  `isSmpRecipient: false` står ikke i SML-en. Levering til et annet
+  aksesspunkt må bekreftes mot en ekte testmotpart. Oppslaget og
+  avsenderregelen må også bekreftes med BogenTech i produksjon.
 - Bekrefte datalagring i EØS og legge leverandøren til som
   underdatabehandler i docs/kundevilkar.md §8 — **30 dagers varsel** til
   eksisterende kunder står i vilkårene. Varselet må ut i god tid før
