@@ -198,8 +198,16 @@ syntetisk faktura, der leveransen simuleres.
 testklyngen sendte en faktura fra et eget verifisert selskap til BOGENTECH AS
 gjennom Recommands test-aksesspunkt. XML-en hos Recommand hadde samme SHA-256 som
 vedlegget vårt, og mottakerens kopi hadde de samme 46 feltene. Statusen ble
-`levert`. Begge selskapene ligger hos Recommand, så levering til et **annet**
-aksesspunkt er ikke prøvd.
+`levert`. Begge selskapene ligger hos Recommand.
+
+**Levering til et annet aksesspunkt er prøvd samme dag.** En faktura på 1 kr,
+merket som test, gikk fra BOGENTECH AS til en offentlig oppført testmottaker
+hos en annen leverandør. Recommand fikk en AS4-kvittering fra mottakerens
+aksesspunkt med referanse til vår meldings-id, og XML-en hadde samme SHA-256
+som vedlegget vårt. Kvitteringen viser at aksesspunktet tok imot meldingen,
+ikke at mottakerens system har behandlet fakturaen. Avsenderkoblingen for
+BOGENTECH AS ble lagt inn for hånd i testdatabasen, fordi oppsettet nekter et
+selskap som er publisert som mottaker.
 
 | Krav | Funn | Hva regnmed gjør |
 | --- | --- | --- |
@@ -212,7 +220,7 @@ aksesspunkt er ikke prøvd.
 | Status, MLR og IMR | Delvis. **Kildekoden:** innkommende MLR gir `document.received`, men bare for et selskap med `isSmpRecipient: true` som er registrert for MLR, og den endrer ikke leveringsstatusen. Et rent avsenderselskap får ingen MLR gjennom Recommand. **Invoice Response (IMR) har ingen tolker** | Fase 1 bygger ikke på MLR. Fakturasvar utgår inntil videre (§4, fase 2) |
 | Webhook | **Prøvd:** `document.sent` og `document.received` kom signert med HMAC-SHA256. Etter et 500-svar kom samme levering igjen etter omtrent 40 sekunder med samme `X-Idempotency-Key`. **Kildekoden:** 2xx godtas, tidsavbrudd og 5xx prøves på nytt, alt annet er endelig. Antall forsøk, ventetid og rekkefølge står ikke i repoet, og API-et har ingen avspilling | Regner med minst én levering i vilkårlig rekkefølge, aldri 4xx ved forbigående feil (§3.7) |
 | Mottak med ELMA | Oppgitt støttet: norske mottakere publiseres i ELMA | Fase 3, fortsatt et uttrykkelig valg |
-| Testmiljø | Oppfylt med en grense. **Prøvd 2026-11-22:** et verifisert selskap med `isSmpRecipient: true` på Peppol-testnettet publiseres i test-SMP-en og kan motta. En vanlig playground simulerer leveransen mellom egne selskaper | Integrasjonstesten bruker vanlig playground. Testklyngen bruker testnettet, med `PEPPOL_SML_ZONE` i samme secret som nøkkelen. Levering til et annet aksesspunkt krever en ekte testmotpart |
+| Testmiljø | Oppfylt med en grense. **Prøvd 2026-11-22:** et verifisert selskap med `isSmpRecipient: true` på Peppol-testnettet publiseres i test-SMP-en og kan motta. En vanlig playground simulerer leveransen mellom egne selskaper | Integrasjonstesten bruker vanlig playground. Testklyngen bruker testnettet, med `PEPPOL_SML_ZONE` i samme secret som nøkkelen. Levering til et annet aksesspunkt er prøvd mot en offentlig oppført testmottaker |
 | EØS og databehandleravtale | Plattform og sikkerhetskopier i EU. Databehandleravtalen og listen over underdatabehandlere er **ikke lest** | Leses før signering (fase 0) |
 | Pris | €0 for 25 dokumenter, €29 for 200, €99 for 1 000, €199 for 2 500, €349 for 5 000 per måned, eks. mva. Sendte og mottatte dokumenter teller begge | §6, beslutning 2 |
 
@@ -614,8 +622,8 @@ stien er leverandøravtalen og kundenes verifisering, ikke koden.
   databehandleravtale. Playground og Peppol-testnettet er prøvd (§2.3). På
   testnettet virker oppslaget for `0192`, og en avsender med
   `isSmpRecipient: false` står ikke i SML-en. Levering til et annet
-  aksesspunkt må bekreftes mot en ekte testmotpart. Oppslaget og
-  avsenderregelen må også bekreftes med BogenTech i produksjon.
+  aksesspunkt er prøvd (§2.3). Oppslaget og avsenderregelen må også
+  bekreftes med BogenTech i produksjon.
 - Bekrefte datalagring i EØS og legge leverandøren til som
   underdatabehandler i docs/kundevilkar.md §8 — **30 dagers varsel** til
   eksisterende kunder står i vilkårene. Varselet må ut i god tid før
