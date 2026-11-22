@@ -131,8 +131,13 @@ spec:
                   echo "restoring $latest into regnmed_restore_check"
                   dropdb   -h postgres -U regnmed --if-exists regnmed_restore_check
                   createdb -h postgres -U regnmed regnmed_restore_check
+                  # The superuser owns this extension, so the restore role
+                  # cannot set its comment. Any other error still fails.
+                  list=$(mktemp)
+                  pg_restore -l "$latest" > "$list"
+                  sed -i '/COMMENT - EXTENSION pg_stat_statements/d' "$list"
                   pg_restore -h postgres -U regnmed -d regnmed_restore_check \
-                             --no-owner "$latest"
+                             --no-owner -L "$list" "$latest"
               env:
                 - name: PGPASSWORD
                   valueFrom:

@@ -627,7 +627,9 @@ beviser dermed også at hvert dokument fortsatt finnes og er uendret.
   chain **in the restored copy** — including the anchor checks. This
   proves, unattended, that the backup restores *and* that the restored
   ledger is untampered. A backup that has never been restored is a
-  hope, not a backup.
+  hope, not a backup. Øvelsen hopper over nøyaktig én post i dumpen:
+  kommentaren på `pg_stat_statements`. Utvidelsen eies av superbrukeren,
+  så restore-rollen får ikke sette den. Alle andre feil stopper øvelsen.
 
 The same drill runs anywhere via `scripts/backup-verify.sh`
 (`DATABASE_URL=… scripts/backup-verify.sh`). It has been exercised both

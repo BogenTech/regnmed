@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Backup + restore-verification drill (docs/deploy.md) — the same logic
-# the weekly prod CronJob runs (deploy/prod/backup.yaml), runnable
+# the weekly prod CronJob runs (deploy/shared/backup.yaml), runnable
 # against any Postgres: dump the regnmed database, restore it into a
 # scratch database, and re-walk every hash chain in the RESTORED copy
 # with `regnmed verify-ledger`. Proves the backup restores AND that the
@@ -17,7 +17,8 @@ ADMIN_URL=${DATABASE_URL%/*}/postgres
 SCRATCH_URL=${DATABASE_URL%/*}/$SCRATCH_DB
 
 DUMP=$(mktemp -t regnmed-backup-XXXXXX.dump)
-trap 'rm -f "$DUMP"; psql "$ADMIN_URL" -qc "drop database if exists $SCRATCH_DB" 2>/dev/null || true' EXIT
+LIST=$(mktemp -t regnmed-backup-XXXXXX.list)
+trap 'rm -f "$DUMP" "$LIST"; psql "$ADMIN_URL" -qc "drop database if exists $SCRATCH_DB" 2>/dev/null || true' EXIT
 
 echo "==> dumping"
 pg_dump --format=custom --file="$DUMP" "$DATABASE_URL"
@@ -26,7 +27,10 @@ echo "    $(du -h "$DUMP" | cut -f1) dump written"
 echo "==> restoring into $SCRATCH_DB"
 psql "$ADMIN_URL" -qc "drop database if exists $SCRATCH_DB"
 psql "$ADMIN_URL" -qc "create database $SCRATCH_DB"
-pg_restore --no-owner --dbname="$SCRATCH_URL" "$DUMP"
+# The superuser owns this extension, so the restore role cannot set its
+# comment. Any other error still fails.
+pg_restore --list "$DUMP" | grep -v 'COMMENT - EXTENSION pg_stat_statements' > "$LIST"
+pg_restore --no-owner --use-list="$LIST" --dbname="$SCRATCH_URL" "$DUMP"
 
 echo "==> verifying every hash chain in the restored copy"
 DATABASE_URL="$SCRATCH_URL" cargo run -q --release -p regnmed-cli -- verify-ledger | tail -3
