@@ -28,7 +28,7 @@ use crate::herding::{Vis, file_response};
 
 /// Resolves the company's ordning for the year and validates the
 /// periode number against it (docs/mva.md, #51).
-async fn scheme_period(
+pub(crate) async fn scheme_period(
     state: &AppState,
     company_id: Uuid,
     year: i32,
@@ -162,44 +162,42 @@ pub async fn vat_return(
     Query(query): Query<VatPeriodQuery>,
 ) -> Result<Response, ApiError> {
     require(&state, person.person_id, company_id, Right::ReportRead).await?;
-    let (scheme, period) = scheme_period(&state, company_id, query.year, query.period).await?;
-
-    let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
-        .bind(company_id)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(anyhow::Error::from)?;
-    let spes = regnmed_db::vat_specification(
-        &state.pool,
-        company_id,
-        scheme.start(period),
-        scheme.end(period),
-    )
-    .await?;
-    if spes.is_empty() {
-        return Err(ApiError::BadRequest(format!(
-            "no VAT postings in {} — nothing to report",
-            scheme.label(period)
-        )));
-    }
-
-    let reference = format!("regnmed-{}-{}-{}", orgnumber, period.year, period.number);
-    let message = regnmed_core::vat_return::build(
-        &orgnumber,
-        period,
-        scheme,
-        &reference,
-        env!("CARGO_PKG_VERSION"),
-        &spes,
-    );
+    let built = build_vat_return(&state, company_id, query.year, query.period).await?;
+    let (orgnumber, period) = (&built.message.orgnumber, built.message.period);
     let filename = format!(
         "mva-melding_{}_{}-termin{}.xml",
         orgnumber, period.year, period.number
     );
-    Ok(xml_download(
-        regnmed_core::vat_return::render(&message),
-        &filename,
-    ))
+    Ok(xml_download(built.xml, &filename))
+}
+
+pub(crate) struct BuiltVatReturn {
+    pub scheme: regnmed_core::vat::PeriodScheme,
+    pub message: regnmed_core::vat_return::VatReturn,
+    pub xml: String,
+}
+
+/// The melding for a period as the ledger stands now.
+pub(crate) async fn build_vat_return(
+    state: &AppState,
+    company_id: Uuid,
+    year: i32,
+    period: u8,
+) -> Result<BuiltVatReturn, ApiError> {
+    let (scheme, period) = scheme_period(state, company_id, year, period).await?;
+    let built = regnmed_db::vat_filing::build(&state.pool, company_id, scheme, period)
+        .await?
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "no VAT postings in {} — nothing to report",
+                scheme.label(period)
+            ))
+        })?;
+    Ok(BuiltVatReturn {
+        scheme,
+        message: built.message,
+        xml: built.xml,
+    })
 }
 
 #[derive(Deserialize)]

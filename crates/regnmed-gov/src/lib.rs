@@ -38,6 +38,7 @@ pub mod bankfeed;
 pub mod brreg;
 pub mod enablebanking;
 pub mod finanstilsynet;
+pub mod idporten;
 pub mod maskinporten;
 pub mod norgesbank;
 pub mod peppol_directory;

@@ -48,6 +48,7 @@ export async function api(path, options = {}) {
     path.includes("/jobs/") ||
     path.includes("/chat") ||
     path.includes("/agent/oppgaver") ||
+    path.includes("/vat-filings") ||
     path === "/notifications"
   ) {
     return request(path, options);

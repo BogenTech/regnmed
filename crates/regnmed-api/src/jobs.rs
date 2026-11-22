@@ -33,6 +33,7 @@ fn right_for(kind: Kind) -> Right {
         Kind::PeppolLookup | Kind::InvoiceDispatch => Right::InvoiceSend,
         // The result can hold the company's one-time verification link.
         Kind::PeppolSenderSetup => Right::CompanyAdmin,
+        Kind::VatFilingSubmit => Right::VatReturnSubmit,
     }
 }
 
@@ -145,6 +146,7 @@ pub(crate) async fn enqueue(state: &AppState, job_id: Uuid) {
     let pool = state.pool.clone();
     let runtime = job::Runtime {
         bank: state.bank_feed.clone(),
+        vat_filing: state.idporten.as_ref().and_then(|r| r.local_worker.clone()),
         ..Default::default()
     };
     tokio::spawn(async move {

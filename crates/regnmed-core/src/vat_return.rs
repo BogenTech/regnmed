@@ -150,6 +150,60 @@ fn periode_name(period: Period) -> &'static str {
     }
 }
 
+/// `skattleggingsperiode`, the same in the melding and its envelope.
+fn write_period(x: &mut Xml, period: Period, scheme: PeriodScheme) {
+    x.open("skattleggingsperiode");
+    x.open("periode");
+    match scheme {
+        PeriodScheme::ToManeder => x.leaf("skattleggingsperiodeToMaaneder", periode_name(period)),
+        // Both yearly ordninger are skattleggingsperiodeAar in the
+        // schema; primærnæring is a registration matter, not a
+        // structural one (docs/mva.md).
+        PeriodScheme::Yearly | PeriodScheme::PrimaryIndustry => {
+            x.leaf("skattleggingsperiodeAar", "aarlig")
+        }
+    }
+    x.close("periode");
+    x.leaf("aar", &period.year.to_string());
+    x.close("skattleggingsperiode");
+}
+
+/// The `mvaMeldingInnsending` envelope Altinn wants beside the melding.
+/// Without a namespace, as in every example Skatteetaten publishes. The
+/// app demands `instansstatus` although the XSD calls it optional.
+pub fn render_envelope(
+    orgnumber: &str,
+    period: Period,
+    scheme: PeriodScheme,
+    filed_by: &str,
+) -> String {
+    let mut x = Xml::new();
+    x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    x.raw("<mvaMeldingInnsending>");
+    x.depth = 1;
+    x.open("norskIdentifikator");
+    x.leaf("organisasjonsnummer", orgnumber);
+    x.close("norskIdentifikator");
+    write_period(&mut x, period, scheme);
+    x.leaf("meldingskategori", "alminnelig");
+    x.leaf("innsendingstype", "komplett");
+    x.leaf("instansstatus", "ny");
+    x.leaf("opprettetAv", filed_by);
+    x.open("vedlegg");
+    x.leaf("vedleggstype", "mva-melding");
+    x.leaf("kildegruppe", "sluttbrukersystem");
+    x.leaf("opprettetAv", filed_by);
+    x.open("vedleggsfil");
+    x.leaf("filnavn", "mva-melding");
+    x.leaf("filekstensjon", "xml");
+    x.leaf("filinnhold", "Mva-melding");
+    x.close("vedleggsfil");
+    x.close("vedlegg");
+    x.depth = 0;
+    x.raw("</mvaMeldingInnsending>");
+    x.out
+}
+
 pub fn render(message: &VatReturn) -> String {
     let mut x = Xml::new();
     x.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
@@ -165,23 +219,7 @@ pub fn render(message: &VatReturn) -> String {
     x.close("innsending");
 
     x.open("skattegrunnlagOgBeregnetSkatt");
-    x.open("skattleggingsperiode");
-    x.open("periode");
-    match message.scheme {
-        PeriodScheme::ToManeder => x.leaf(
-            "skattleggingsperiodeToMaaneder",
-            periode_name(message.period),
-        ),
-        // Both yearly ordninger are skattleggingsperiodeAar in the
-        // schema; primærnæring is a registration matter, not a
-        // structural one (docs/mva.md).
-        PeriodScheme::Yearly | PeriodScheme::PrimaryIndustry => {
-            x.leaf("skattleggingsperiodeAar", "aarlig")
-        }
-    }
-    x.close("periode");
-    x.leaf("aar", &message.period.year.to_string());
-    x.close("skattleggingsperiode");
+    write_period(&mut x, message.period, message.scheme);
     x.leaf("fastsattMerverdiavgift", &message.assessed_kr.to_string());
     for line in &message.lines {
         x.open("mvaSpesifikasjonslinje");
@@ -248,6 +286,34 @@ mod tests {
             "0.1.0",
             &spes(),
         )
+    }
+
+    /// Valid against Skatteetaten's XSD once the namespace its examples
+    /// leave out is put back. Skips without xmllint.
+    #[test]
+    fn the_envelope_validates_against_the_official_xsd() {
+        let m = message();
+        let xml = render_envelope(&m.orgnumber, m.period, m.scheme, "Kari <Nordmann>");
+        assert!(xml.contains("<opprettetAv>Kari &lt;Nordmann&gt;</opprettetAv>"));
+        let qualified = xml.replace(
+            "<mvaMeldingInnsending>",
+            r#"<mvaMeldingInnsending xmlns="no:skatteetaten:fastsetting:avgift:mva:mvameldinginnsending:v1.0">"#,
+        );
+        let path = std::env::temp_dir().join(format!("envelope-{}.xml", std::process::id()));
+        std::fs::write(&path, qualified).unwrap();
+        let xsd = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/mva-melding/mvameldinginnsending.v1.0.xsd"
+        );
+        let output = std::process::Command::new("xmllint")
+            .args(["--noout", "--schema", xsd])
+            .arg(&path)
+            .output();
+        std::fs::remove_file(&path).ok();
+        match output {
+            Ok(o) => assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr)),
+            Err(_) => eprintln!("xmllint not installed — skipping XSD validation"),
+        }
     }
 
     #[test]

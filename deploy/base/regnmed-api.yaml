@@ -50,6 +50,12 @@ spec:
             - secretRef:
                 name: bank-feed
                 optional: true
+            # Signing in to file an mva-melding (docs/mva.md): IDPORTEN_ISSUER,
+            # _CLIENT_ID, _CLIENT_SECRET, _REDIRECT_URI and _SEALING_KEY.
+            # Without the secret, filing is off.
+            - secretRef:
+                name: idporten-filing
+                optional: true
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532

@@ -35,6 +35,8 @@ const DRAIN: Duration = Duration::from_secs(110);
 /// How often replicas check open Peppol dispatches against the provider.
 const RECONCILE_EVERY: Duration = Duration::from_secs(5 * 60);
 const PEPPOL_RETRY: Duration = Duration::from_secs(5);
+/// How often replicas ask Altinn for Skatteetaten's answer to a sent mva-melding.
+const VAT_FEEDBACK_EVERY: Duration = Duration::from_secs(60);
 
 pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "regnmed-work".into());
@@ -50,6 +52,7 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
             .clone()
             .map(|js| regnmed_mail::follow_up::job_mail(pool.clone(), js)),
         directory_answer: None,
+        vat_filing: regnmed_db::vat_filing::Rail::from_env()?.map(Arc::new),
     };
 
     if once {
@@ -99,6 +102,18 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
             }
         })
     });
+    let vat_feedback = runtime.vat_filing.clone().map(|rail| {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(VAT_FEEDBACK_EVERY);
+            loop {
+                tick.tick().await;
+                if let Err(e) = regnmed_db::vat_filing::reconcile(&pool, &rail).await {
+                    eprintln!("vat filing reconciliation failed: {e:#}");
+                }
+            }
+        })
+    });
     let events = js.clone().map(|js| {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -124,7 +139,7 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
     if let Some(l) = listener {
         l.abort();
     }
-    for task in [reconciler, events].into_iter().flatten() {
+    for task in [reconciler, vat_feedback, events].into_iter().flatten() {
         task.abort();
     }
     match tokio::time::timeout(DRAIN, slots.acquire_many(concurrency.max(1) as u32)).await {

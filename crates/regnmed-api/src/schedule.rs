@@ -25,7 +25,8 @@ fn right_to_change(kind: Kind) -> Option<Right> {
         | Kind::AuditReport
         | Kind::PeppolLookup
         | Kind::InvoiceDispatch
-        | Kind::PeppolSenderSetup => None,
+        | Kind::PeppolSenderSetup
+        | Kind::VatFilingSubmit => None,
     }
 }
 

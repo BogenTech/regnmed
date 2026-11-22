@@ -23,6 +23,7 @@
   const SKJEMA = {
     "a-melding": "A-melding",
     aksjonaerregisteroppgave: "Aksjonærregisteroppgave",
+    "mva-melding": "Mva-melding",
     "altinn-hendelser": "Varsling fra Altinn",
     skattekort: "Skattekort",
   };
@@ -32,6 +33,23 @@
     feedback: "svar",
     outcome: "svar",
     answer: "svar",
+    opprettet: "klargjort",
+    godkjent: "godkjent",
+    fornyet: "ny innlogging",
+    oppretter_instans: "sender",
+    instans_opprettet: "startet i Altinn",
+    sendt: "sendt",
+    kvittert: "kvittering",
+    avvist: "avvist",
+    avvik: "stoppet av kontrollen",
+    uavklart: "uavklart",
+    feilet: "feilet",
+    ma_godkjennes: "må godkjennes på nytt",
+    avbrutt: "avbrutt",
+    konvolutt: "utfylt",
+    bekrefter: "bekrefter",
+    bekreftelse_avvist: "bekreftelse avvist",
+    lukket_etter_kontroll: "lukket etter kontroll",
   };
 
   async function hent() {

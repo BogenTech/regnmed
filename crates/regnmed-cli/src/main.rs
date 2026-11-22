@@ -140,6 +140,26 @@ enum Command {
         #[arg(long = "notat")]
         note: String,
     },
+    /// Release a person's ID-porten binding for mva filing (docs/mva.md), so
+    /// their next sign-in binds anew. Adds a row: the old binding stays.
+    #[command(name = "idporten-rebind")]
+    IdportenRebind {
+        /// The regnmed person id
+        #[arg(long)]
+        person: Uuid,
+        /// The ID-porten issuer the binding is for
+        #[arg(long)]
+        issuer: String,
+        /// The ID-porten client the binding is for
+        #[arg(long = "client-id")]
+        client_id: String,
+        /// Who is doing this
+        #[arg(long)]
+        operator: String,
+        /// Why: the case or written basis
+        #[arg(long)]
+        reason: String,
+    },
     /// List platform role memberships, active and ended
     PlatformList,
     /// End a platform membership with immediate effect
@@ -320,6 +340,19 @@ async fn main() -> Result<()> {
             let id =
                 regnmed_db::grant_platform_role(&pool, person_id, &role, to, &note, None).await?;
             println!("granted {role} to {email} until {to} (membership {id})");
+        }
+        Command::IdportenRebind {
+            person,
+            issuer,
+            client_id,
+            operator,
+            reason,
+        } => {
+            regnmed_db::vat_filing::rebind_identity(
+                &pool, person, &issuer, &client_id, &operator, &reason,
+            )
+            .await?;
+            println!("released the ID-porten binding of {person}; the next sign-in binds it");
         }
         Command::PlatformList => {
             let members = regnmed_db::list_platform_members(&pool).await?;
@@ -1403,6 +1436,10 @@ mod tests {
         ("abonnement-faktura", &["bare-orgnr", "orgnr"]),
         ("abonnement-oppfolging", &["orgnr"]),
         ("platform-grant", &["email", "notat", "role", "til"]),
+        (
+            "idporten-rebind",
+            &["client-id", "issuer", "operator", "person", "reason"],
+        ),
         ("platform-list", &[]),
         ("platform-end", &["id"]),
         ("fetch-rates", &["currencies", "days"]),

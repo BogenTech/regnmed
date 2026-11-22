@@ -48,12 +48,21 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | GET | `/companies/{company_id}/settings` | `SELSKAP_LES` |
 | PUT | `/companies/{company_id}/settings` | `SELSKAP_ADMIN` |
 | POST | `/companies/{company_id}/settings/registrering` | `SELSKAP_ADMIN` |
+| GET | `/companies/{company_id}/vat-filings` | `RAPPORT_LES` |
+| POST | `/companies/{company_id}/vat-filings` | `MVA_SEND` |
+| GET | `/companies/{company_id}/vat-filings/{filing_id}` | `RAPPORT_LES` |
+| POST | `/companies/{company_id}/vat-filings/{filing_id}/abandon` | `MVA_SEND` |
+| POST | `/companies/{company_id}/vat-filings/{filing_id}/approve` | `MVA_SEND` |
+| POST | `/companies/{company_id}/vat-filings/{filing_id}/authorize` | `MVA_SEND` |
+| POST | `/companies/{company_id}/vat-filings/{filing_id}/close-unresolved` | `MVA_SEND` |
+| GET | `/companies/{company_id}/vat-filings/{filing_id}/documents/{data_type}` | `RAPPORT_LES` |
 | GET | `/companies/{company_id}/vouchers` | `BILAG_LES` |
 | POST | `/companies/{company_id}/vouchers` | `BILAG_BOKFOR` |
 | GET | `/companies/{company_id}/vouchers/{voucher_id}` | `BILAG_LES` |
 | GET | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | `BILAG_LES` |
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/attachments` | `VEDLEGG_SKRIV` |
 | POST | `/companies/{company_id}/vouchers/{voucher_id}/reverse` | `BILAG_BOKFOR` |
+| GET | `/mva-godkjenning` | — |
 | GET | `/notifications` | — |
 | GET | `/web` | — |
 

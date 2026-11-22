@@ -71,6 +71,7 @@ pub mod terms;
 pub mod timesheet;
 pub mod travel;
 pub mod vat;
+pub mod vat_filing;
 pub mod year_end;
 
 pub use anchor::*;

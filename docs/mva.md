@@ -194,6 +194,173 @@ av svaret — bare linjeformen.
 Validation and submission against Skatteetaten's APIs: see
 [gov.md](gov.md).
 
+## Godkjenn og send (ID-porten + Altinn)
+
+En mva-melding må kunne tilskrives en **person**: Skatteetaten godtar ikke
+Maskinporten eller systembruker for validering og innsending
+(docs/gov.md, SSV-5760). Alt annet gjør systemet, men sendingen skjer ved
+at en person med rett til det godkjenner akkurat denne meldingen med
+ID-porten. Det er ikke en innlogging i regnmed: brukeren beholder sin
+vanlige innlogging, og godkjenningen gjelder én innsending.
+
+**Flyten:**
+
+1. Portalen sier `POST …/vat-filings {year, period}` (rettigheten
+   `MVA_SEND`, godtatte kundevilkår, terminen må være over). Serveren
+   bygger meldingen fra hovedboken og lagrer den med SHA-256 **før** noe
+   sendes. Raden endres aldri.
+2. Personen ser termin og beløp, og sendes til ID-porten med PKCE (S256),
+   `state`, `nonce`, `acr_values=idporten-loa-high` og `prompt=login`. En
+   gammel ID-porten-økt er ikke en godkjenning av denne meldingen.
+3. ID-porten sender nettleseren til `/mva-godkjenning`. **Den adressen
+   godkjenner ingenting.** Portalen poster `code` og `state` med personens
+   egen bearer-token til `…/approve`, og serveren krever samme person som
+   startet, en `state` som bare virker én gang, og uendret melding. Slik kan
+   ingen lure en kollega til å godkjenne en innsending kollegaen ikke
+   startet.
+4. Serveren veksler koden og verifiserer id_token: utsteder, mottaker,
+   nonce, signatur, sikkerhetsnivå og at `auth_time` ikke er eldre enn dette
+   forsøket (60 sekunders klokkeslingring). Under periodelåsen avgjøres det
+   på nytt om innsendingen kan godkjennes, siden den kan ha blitt erstattet
+   mens personen var hos ID-porten. Godkjenningen, det forseglede tokenet og
+   jobben `vat_filing_submit` lagres i samme transaksjon.
+5. **Arbeideren** gjør alle utgående kall: veksler til Altinn-token, kaller
+   Skatteetatens validering (avvik stopper innsendingen og vises), oppretter
+   instansen, laster opp konvolutt og melding, og tar `process/next` to
+   ganger. Regnskapet sjekkes på nytt rett før instansen opprettes og rett
+   før det bekreftende steget.
+6. Betalingsinformasjon, kvittering og valideringsresultat hentes uten at
+   personen er til stede. Arbeideren spør hvert minutt så lenge
+   Altinn-tokenet lever.
+
+**Hva som lagres om personen:** regnmed-personen, ID-portens `sub`
+(parvis, ikke fødselsnummer), `acr` og `auth_time`. **Fødselsnummeret
+(`pid`) leses aldri ut av tokenet.** Tokenet ligger forseglet med
+`IDPORTEN_SEALING_KEY` i `vat_filing_grant`, og raden slettes når arbeidet
+er ferdig eller tokenet er utløpt.
+
+**En regnmed-bruker er bundet til én ID-porten-identitet.** Første
+godkjenning lagrer `sub` per (person, utsteder, klient) i
+`idporten_identity`. Logger samme bruker senere inn som en annen person,
+nektes godkjenningen med en forklaring. Tabellen er versjonert og
+innsettings-bar, og nyeste rad gjelder. Må en binding løses, gjør en operatør
+det med skriftlig grunnlag:
+
+```sh
+regnmed idporten-rebind --person <id> --issuer <utsteder> --client-id <klient> \
+  --operator "<navn>" --reason "<sak og grunnlag>"
+```
+
+Kommandoen legger til en rad med hvem og hvorfor. Den gamle bindingen består
+som historikk, og neste innlogging binder personen på nytt.
+
+**En usikker innsending gjentas aldri i blinde.** Instansens id lagres før
+første opplasting, og en ny kjøring leser hvor instansen faktisk står og
+fortsetter derfra. `sendt` skrives bare når Altinn viser det Skatteetaten
+dokumenterer: oppgaven `Tilbakemelding`, eller en avsluttet prosess. Alt
+annet blir `uavklart`. Én kjøring om gangen holder en advisory-lås per
+innsending på en egen tilkobling, og hver skriving kontrollerer at historikken
+ikke har fått noe nytt siden, så et sent svar aldri overskriver en nyere
+tilstand. Rett før hvert kall som endrer noe i Altinn kontrollerer kjøringen
+at den fortsatt holder låsen og at historikken er uendret. En jobb som møter en
+annen kjøring venter en stund, og går så tilbake i køen uten å bruke et forsøk,
+så den aldri står som ferdig mens den andre arbeider.
+
+Et token som ikke kan brukes sier ingenting om hva som er sendt. Uten instans
+gir det `ma_godkjennes`. **Med en instans på plass blir det alltid `uavklart`**,
+og portalen ber personen sjekke Altinn før noe annet gjøres. Etter et usikkert
+steg lukkes en innsending som `avbrutt` bare når Altinn har bekreftet at utkastet
+er slettet. Svarer ikke slettingen, forblir den `uavklart`.
+
+Valideringen regnes som ren bare når svaret faktisk er et `valideringsresultat`
+med `ingen avvik`. Et avkortet eller ukjent svar stopper innsendingen.
+
+Status beregnes fra de innsettings-bare hendelsene:
+
+| Status | Betyr | Neste steg |
+| --- | --- | --- |
+| `opprettet` | lagret, ikke godkjent | Godkjenn og send |
+| `godkjent`, `oppretter_instans`, `instans_opprettet` | arbeideren jobber. Uten åpen jobb har den stoppet | vent, eller logg inn og fortsett |
+| `avvik` | Skatteetatens kontroll stoppet den | rett og godkjenn på nytt |
+| `feilet` | Altinn avviste steget, oftest manglende rett | logg inn og fortsett |
+| `ma_godkjennes` | tokenet kunne ikke brukes | logg inn og fortsett |
+| `uavklart` | vi vet ikke hvor langt den kom | sjekk Altinn. Med instans: logg inn, så leses den. Ellers, eller hvis den er avklart i Altinn: lukk med notat |
+| `lukket_etter_kontroll` med funn `levert` | levert ifølge personens kontroll i Altinn. regnmed har ikke sett kvitteringen selv | ingen, terminen er lukket |
+| `lukket_etter_kontroll` med funn `ikke_levert` | ikke levert ifølge personens kontroll | ny innsending |
+| `sendt` | innsendt, venter på svar | hentes automatisk |
+| `kvittert` / `avvist` | Skatteetatens svar. `avvist` krever et valideringsresultat med feil, ellers ventes det på kvitteringen | endelig |
+| `avbrutt` | ikke sendt | ny innsending |
+
+**Lukking etter kontroll** (`POST …/{fid}/close-unresolved`) krever
+`MVA_SEND`, som ingen maskin kan ha, en bekreftelse på at Altinn er sjekket, et
+uttrykkelig funn (`funn`: `levert` eller `ikke_levert`) og et notat. Hvem, når,
+funnet og notatet lagres som en egen hendelse og vises i `lukking`. Lukkingen
+endrer ingenting i Altinn. Bare `ikke_levert` åpner for en ny innsending. Med
+`levert` forblir terminen lukket, og den vises som levert *ifølge personens
+kontroll*, tydelig adskilt fra en kvittering regnmed har hentet selv.
+
+**Hvem som står bak en innsendt melding** er personen på hendelsen `bekrefter`,
+altså den som faktisk sendte det bekreftende steget. En senere innlogging som
+bare leser instansen, endrer ikke `godkjent_av`.
+
+**Et bekreftende steg uten klart svar sendes aldri på nytt.** Bare at Altinn
+avviser akkurat det kallet (`bekreftelse_avvist`) gjør det avklart. En senere
+lesing som får 401 eller 403, eller en annen `feilet`, sier ingenting om det.
+Står instansen fortsatt i bekreftelse, beviser ikke det at det første kallet er
+dødt. Arbeideren forsøker da å slette utkastet, og skriver `avbrutt` bare når
+slettingen er bekreftet. Ellers forblir innsendingen `uavklart`.
+
+En instans som fortsatt står i utfylling eller bekreftelse når regnskapet
+er endret, sendes ikke: arbeideren avbryter den, og personen godkjenner de
+nye tallene. Det samme gjelder hvis en annen person godkjenner mens
+instansen står i bekreftelse, for konvolutten der navngir den første. Den
+nye personen bekrefter aldri den andres konvolutt, men starter en ny
+innsending. Utkastet forsøkes slettet i Altinn, og en mislykket sletting
+stopper ingenting. En termin som er sendt kan ikke sendes på nytt herfra.
+Korrigert melding er ikke bygget.
+
+### Når en regnskapsfører leverer for kunden
+
+Regnskapsføreren godkjenner med **sin egen** ID-porten-innlogging. Det må
+stemme to steder, og de kontrolleres hver for seg:
+
+- **I regnmed:** et oppdrag som gir `bokforing`, som inneholder `MVA_SEND`.
+  Revisor og lesetilgang gir den ikke, og ingen maskin eller egendefinert
+  rolle kan få den.
+- **I Altinn:** personen må ha rett for akkurat denne klienten. Altinn-appen
+  krever `merverdiavgift` eller `regnskapsforer-med-signeringsrettighet`
+  for å bekrefte. Kunden gir pakken til byrået, og byråets
+  klientadministrator gir den videre til den ansatte. Pakken
+  `regnskapsforer-uten-signeringsrettighet` kan fylle ut, men ikke sende.
+
+Mangler Altinn-retten, stopper innsendingen med `feilet` og en forklaring
+på nettopp dette.
+
+**Ikke prøvd mot TT02 ennå:** hele flyten er testet mot en mock av
+ID-porten og Altinn, med formatene fra Skatteetatens dokumentasjon og
+eksempler. Den krever en ID-porten-klient i Samarbeidsportalen. Disse
+antakelsene må bekreftes av en ekte kjøring:
+
+- scopene `openid skatteetaten:mvameldingvalidering altinn:instances.read
+  altinn:instances.write` er nok. Skatteetatens eldre guide nevner også
+  `skatteetaten:mvameldinginnsending`.
+- TestID gir `acr=idporten-loa-high`.
+- `Task_1` er utfylling, `Task_2` bekreftelse, og `process.currentTask.name`
+  er `Tilbakemelding` etter innsending i testappen.
+- `prompt=login` virker sammen med TestID, og `auth_time` og `sub` er med
+  i id_token. `sub` er stabil per klient.
+- `DELETE` på en instans i bekreftelse er tillatt for personen som godkjente.
+- valideringstjenesten svarer `valideringsresultat` med
+  `avvikVedMeldingslevering` = `ingen avvik` for en ren melding, slik XSD-en og
+  Skatteetatens publiserte eksempel viser. Repoet har ikke et fanget svar fra
+  tjenesten. Svarer den annerledes, stopper innsendingen trygt til parseren er
+  rettet.
+- konvolutten godtas uten navnerom, slik eksemplene viser, og med én
+  `vedlegg`-rad for meldingen.
+- Altinn-tokenet varer lenge nok til at svaret rekker å komme.
+- meldingskategorien er alltid `alminnelig`, også for primærnæring. Det
+  er slik `regnmed-core::vat_return` skriver den i dag.
+
 ## Web API (the product surface)
 
 The web is the product; the CLI wraps the same crate functions for
@@ -206,6 +373,7 @@ ops/admin. Authenticated, engagement-guarded endpoints (see
 | `GET /companies/{id}/reports/mva/postings?year=&termin=&kode=` | posteringene bak én kode i terminen (bilag, dato, konto, tekst, part, grunnlag), inntil 500 med `total` — det regnskapsføreren kontrollerer før meldingen sendes |
 | `GET /companies/{id}/mva/terminordning?year=` | ordningen som gjelder for året (den som gjaldt 1. januar, som rapporten og meldingen bruker), med årets terminer og frister; uten `year` dette året |
 | `GET /companies/{id}/reports/mva-melding?year=&termin=` | `mvaMeldingDto` XML download |
+| `GET/POST /companies/{id}/vat-filings`, `GET …/{fid}`, `POST …/{fid}/authorize`, `/approve`, `/abandon`, `GET …/{fid}/documents/{type}` | «Godkjenn og send», se over |
 | `GET /companies/{id}/reports/saft?year=` (or `from=&to=`) | SAF-T XML download; header contact defaults to the authenticated person's name |
 
 Portalen (`#/c/{id}/mva?year=&termin=&kode=`): registreringsstatusen
@@ -216,8 +384,9 @@ som skal leveres). Antall terminer hentes per år, så et år med en annen
 ordning viser sine egne terminer. Fristen sies i ord («Frist 10.
 desember 2026, om 27 dager»). Hver kode åpner posteringene bak seg, med
 lenke til bilagene, og beløpene vises slik meldingen leser dem.
-Meldingen lastes ned med en setning om hva den brukes til fram til
-direkte innsending er på plass; SAF-T er flyttet til Rapporter.
+Meldingskortet viser status, avvik, betalingsinformasjon og kvittering og
+har «Godkjenn og send». Meldingen kan fortsatt lastes ned; SAF-T er
+flyttet til Rapporter.
 Terminordningsskjemaet vises bare for den som har `MVA_ORDNING_ADMIN`.
 
 ### Omvendt avgiftsplikt i spesifikasjonen (rettet 2026-11-13)
@@ -242,6 +411,16 @@ koster null, kode 87 koster 25 000.
   direction.
 - `crates/regnmed-core/src/mvamelding.rs` — sign/unit conversion, code 0
   exclusion, fradrag lines without grunnlag, fastsatt sum, XSD validity.
+- `crates/regnmed-api/tests/grupper/vat_filing.rs` — «Godkjenn og send»
+  mot en mock av ID-porten og Altinn: feil person, gjenbrukt `state`,
+  forfalsket id_token, gammel innlogging, feil ID-porten-identitet, endret
+  regnskap, en annen godkjenner ved bekreftelse, samtidige godkjenninger,
+  kjøringer som kommer for sent eller mister låsen, mislykket tokenveksling,
+  bekreftet sletting etter usikre steg, lukking med notat, operatørens
+  ombinding, en ødelagt rad i oppfølgingen, avvik, utløpt token,
+  usikre steg som aldri gir en andre instans, og at verken token eller
+  fødselsnummer står lesbart i basen. Enhetstester i `regnmed-gov::idporten`,
+  `regnmed-gov::vat_return` og `regnmed-db::vat_filing`.
 - `crates/regnmed-db/tests/mva.rs` (real Postgres, also CI) — the
   spesifikasjon's numbers per termin, the 2017 historical rate (10 %),
   and the dated rate flowing into SAF-T lines.
