@@ -1344,7 +1344,10 @@ async fn payroll_run(
                     )
                 })
             }
-            Some(Err(reason)) if basis_ore > 0 => december_warnings.push(match reason {
+            // Withheld holiday pay is never halved, so with no pay there is
+            // nothing the reason could explain.
+            Some(Err(reason)) if gross + taxable_allowance > 0 => {
+                december_warnings.push(match reason {
                 payroll::NoDecemberHalf::HourlyPay => format!(
                     "{}: timelønn er trukket fullt i desember. Fritaket for timelønn gjelder to \
                      bestemte uker (skattebetalingsforskriften § 5-7-2 annet ledd), og en \
@@ -1369,7 +1372,8 @@ async fn payroll_run(
                     employee.name,
                     paid_date.year(),
                 ),
-            }),
+                })
+            }
             _ => {}
         }
         let card_withholds = !matches!(

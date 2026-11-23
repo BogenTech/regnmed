@@ -266,11 +266,13 @@ pub fn calculate(
     let december_average = basis
         .december_average_ore
         .filter(|_| month == 12 && !twelve_months && basis.withholding != Withholding::None);
-    let half_withholding = december_average.is_some();
     // The supplement is never halved, so only ordinary pay counts here.
     let within_average = december_average.map_or(0, |average| ordinary_basis.min(average));
+    // A month with only withheld holiday pay halves nothing, and must not
+    // use up the year's one half.
+    let half_withholding = within_average > 0;
     // Says how much was halved when it was not all of it.
-    let halved_part = if half_withholding && within_average < trekkgrunnlag {
+    let halved_part = if half_withholding && within_average < trekkgrunnlag + card_percent_ore {
         format!(", halvt på {} kr", crate::payslip::kr(within_average))
     } else {
         String::new()
@@ -1242,6 +1244,26 @@ mod tests {
             unknown_addition: supplement.is_none(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_december_with_only_withheld_holiday_pay_halves_nothing() {
+        let mut only_holiday = over_60_payment(Withholding::Percent(3500));
+        only_holiday.gross_ore = 0;
+        let c = calculate(&only_holiday, 2026, 12).unwrap();
+        assert!(!c.half_withholding);
+        assert_eq!(c.withholding_ore, 402_500);
+        assert_eq!(c.method, "35,00 %");
+
+        // Holiday pay at the card's percentage is not in the halved part.
+        let mut leaving = basis(1_000_000, Withholding::Percent(3500));
+        leaving.holiday_pay_ore = 500_000;
+        leaving.holiday_pay_card_percent_ore = 500_000;
+        leaving.december_average_ore = Some(1_000_000);
+        let c = calculate(&leaving, 2026, 12).unwrap();
+        assert!(c.half_withholding);
+        assert_eq!(c.withholding_ore, 175_000 + 175_000);
+        assert!(c.method.contains("halvt på"), "{}", c.method);
     }
 
     #[test]
