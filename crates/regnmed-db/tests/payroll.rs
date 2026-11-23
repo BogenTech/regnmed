@@ -265,6 +265,176 @@ async fn holiday_pay_paid_out_reduces_the_liability_and_carries_no_withholding()
     assert_eq!(run.sum.employer_contribution_ore, 987_000); // 14,1 % av 70 000
 }
 
+async fn employee_at_rate(pool: &PgPool, company: Uuid, nin: &str, rate_bp: i32) -> Uuid {
+    payroll::create_employee(
+        pool,
+        company,
+        &NewEmployee {
+            nin: nin.into(),
+            name: format!("Ansatt {rate_bp}"),
+            stilling: None,
+            employed_from: date(2025, 1, 1),
+            monthly_salary_ore: None,
+            hourly_wage_ore: None,
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3500),
+            withholding_table: None,
+            holiday_pay_bp: rate_bp,
+            bank_account: None,
+            note: None,
+            details: Default::default(),
+        },
+        "Test",
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_over_60_addition_is_capped_at_6g_across_the_earning_year() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    // Born 1967: turns 59 in 2026, so 2026 pay carries the addition.
+    let statutory = employee_at_rate(&pool, company, "15866710020", 1250).await;
+    let tariff = employee_at_rate(&pool, company, "16866710140", 1430).await;
+    let plain_tariff = employee_at_rate(&pool, company, "17866710260", 1200).await;
+    // Born 1968: 12,5 % here is an agreement, not the statutory addition.
+    let too_young = employee_at_rate(&pool, company, "15866810041", 1250).await;
+    let all = [statutory, tariff, plain_tariff, too_young];
+
+    let mut accrued = std::collections::HashMap::new();
+    // 500 000 + 300 000 + 100 000 + 100 000 kr, crossing 6 G (819 294 kr)
+    // in the third run. The last run is December's pay paid in January.
+    for (month, paid, gross) in [
+        (1, date(2026, 1, 20), 50_000_000),
+        (2, date(2026, 2, 20), 30_000_000),
+        (3, date(2026, 3, 20), 10_000_000),
+        (4, date(2026, 4, 20), 10_000_000),
+        (12, date(2027, 1, 5), 10_000_000),
+    ] {
+        let entries: Vec<_> = all
+            .iter()
+            .map(|&employee_id| PayrollEntry {
+                employee_id,
+                gross_ore: Some(gross),
+                holiday_pay_ore: 0,
+                from_timesheet: false,
+            })
+            .collect();
+        let run = payroll::run_payroll(&pool, company, 2026, month, paid, "I", &entries, "Test")
+            .await
+            .unwrap();
+        assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
+        assert_eq!(
+            run.warnings.iter().filter(|w| w.contains("6G")).count(),
+            if month == 3 || month == 4 { 2 } else { 0 },
+            "{:?}",
+            run.warnings
+        );
+        for line in &run.lines {
+            if month == 12 {
+                // A new earning year: the count starts over, uncapped.
+                let rate = match line.employee_id {
+                    e if e == tariff => 1430,
+                    e if e == plain_tariff => 1200,
+                    _ => 1250,
+                };
+                assert_eq!(line.holiday_pay_accrual_ore, gross * rate / 10_000);
+            } else {
+                *accrued.entry(line.employee_id).or_insert(0) += line.holiday_pay_accrual_ore;
+            }
+        }
+    }
+
+    // 1 000 000 kr in 2026. 2,3 % of 819 294 kr = 18 843,76 kr.
+    assert_eq!(accrued[&statutory], 10_200_000 + 1_884_376);
+    assert_eq!(accrued[&tariff], 12_000_000 + 1_884_376);
+    assert_eq!(accrued[&plain_tariff], 12_000_000);
+    assert_eq!(accrued[&too_young], 12_500_000);
+}
+
+#[tokio::test]
+async fn a_leaver_is_capped_at_the_g_on_the_leaving_date_and_earlier_cuts_are_netted() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "15866710020", 1250).await;
+    let entry = |gross| {
+        [PayrollEntry {
+            employee_id: id,
+            gross_ore: Some(gross),
+            holiday_pay_ore: 0,
+            from_timesheet: false,
+        }]
+    };
+
+    // 850 000 kr against 6 G of 819 294 kr: 2,3 % of 30 706 kr = 706,24 kr.
+    let first = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        1,
+        date(2026, 1, 20),
+        "I",
+        &entry(85_000_000),
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(first.lines[0].holiday_pay_cap_cut_ore, 70_624);
+
+    // Leaving before 1 May moves the cap to 6 × 130 160 = 780 960 kr.
+    payroll::end_employment(&pool, company, id, Some(date(2026, 3, 31)))
+        .await
+        .unwrap();
+    let last = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        3,
+        date(2026, 3, 20),
+        "I",
+        &entry(10_000_000),
+        "Test",
+    )
+    .await
+    .unwrap();
+    // The year's cut is 2,3 % of 169 040 kr = 3 887,92 kr, less 706,24 kr.
+    assert_eq!(last.lines[0].holiday_pay_cap_cut_ore, 388_792 - 70_624);
+    // 10,2 % of 950 000 kr + 2,3 % of 780 960 kr.
+    assert_eq!(
+        first.lines[0].holiday_pay_accrual_ore + last.lines[0].holiday_pay_accrual_ore,
+        9_690_000 + 1_796_208
+    );
+}
+
+#[tokio::test]
+async fn a_run_says_so_when_the_cap_rests_on_a_stale_g() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "15866710020", 1250).await;
+    let run = payroll::preview_payroll(
+        &pool,
+        company,
+        2099,
+        1,
+        date(2099, 1, 20),
+        "I",
+        &[PayrollEntry {
+            employee_id: id,
+            gross_ore: Some(10_000_000_000),
+            holiday_pay_ore: 0,
+            from_timesheet: false,
+        }],
+    )
+    .await
+    .unwrap();
+    assert!(
+        run.warnings.iter().any(|w| w.contains("utdatert")),
+        "{:?}",
+        run.warnings
+    );
+}
+
 #[tokio::test]
 async fn december_withholds_half() {
     let Some(pool) = pool().await else { return };

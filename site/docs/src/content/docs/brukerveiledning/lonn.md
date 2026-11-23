@@ -88,7 +88,7 @@ Satsen hentes fra satsregisteret per sone, med kilde på hver rad. Avgiften regn
 
 ## Feriepenger
 
-Feriepengesatsen settes per ansatt (lovens minimum 10,2 %, eller 12,5 % over 60 år). Hver kjøring avsetter feriepenger og avgift på dem. Utbetalte feriepenger trekker ned gjelden. De er ingen ny kostnad.
+Feriepengesatsen settes per ansatt (lovens minimum 10,2 %, eller 12,5 % fra og med opptjeningsåret den ansatte fyller 59). Tillegget på 2,3 prosentpoeng gjelder bare opp til 6G av årets lønn, mens 10,2 % gjelder all lønn. Hver kjøring avsetter feriepenger og avgift på dem. Utbetalte feriepenger trekker ned gjelden. De er ingen ny kostnad.
 
 Hvis feriepengegjeld stammer fra noe annet enn lønnskjøringene (åpningsbalanse, import, manuelt bilag), kan regnmed ikke knytte den til en ansatt. Kjøringen sier fra med beløpet. Den delen må avsettes manuelt.
 

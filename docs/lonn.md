@@ -125,7 +125,8 @@ Alt ligger i satsregisteret (docs/regelverk.md) med kilde per rad.
 | `aga_sone_iva` | 7,9 % | ↑ |
 | `aga_sone_v` | 0 % | ↑ — nullsats er en sats, ikke en manglende verdi |
 | `feriepenger_lovens_minimum` | 10,2 % | ferieloven §10 nr. 2 |
-| `feriepenger_over_60` | 12,5 % | ferieloven §10 nr. 3 (+2,3 prosentpoeng) |
+| `feriepenger_over_60` | 12,5 % | ferieloven §10 nr. 3 (+2,3 prosentpoeng, tillegget bare opp til 6 G) |
+| `folketrygdens_grunnbelop` | 124 028 kr fra 1.5.2024, 130 160 kr fra 1.5.2025, 136 549 kr fra 1.5.2026 | FOR-2024-05-24-815, FOR-2025-05-23-837 § 1, FOR-2026-05-22-869 § 1 |
 
 Meldingen sier selv at verken soneinndeling eller satser er endret fra
 2025 til 2026, så periodene starter 2025-01-01 — den tidligste
@@ -133,6 +134,53 @@ Meldingen sier selv at verken soneinndeling eller satser er endret fra
 
 Feriepengesatsen ligger per ansatt, fordi den er et faktum om
 arbeidsforholdet (alder, tariff), ikke en systeminnstilling.
+
+## Feriepenger for arbeidstakere over 60 år
+
+**Bare tillegget stopper ved 6 G.** Ferieloven § 10 nr. 2 gir 10,2 % av
+hele grunnlaget. § 10 nr. 3 første ledd forhøyer satsen med 2,3
+prosentpoeng, og andre ledd sier at feriepenger «etter første ledd» ikke
+ytes for den delen av grunnlaget som overstiger 6 G. Forarbeidene beskriver
+det som en begrensning «for ekstraferie» (Ot.prp. nr. 65 (2007–2008) pkt.
+6.2.1), og Skatteetatens a-meldingsveiledning oppgir «supplement 2.3 percent
+up to 6 National Insurance basic amounts (G)». Med 1 000 000 kr i grunnlag
+for opptjeningsåret 2026 blir feriepengene 102 000 kr + 2,3 % av 819 294 kr
+= 120 843,76 kr.
+
+**Hvilket år tillegget starter.** Retten følger av at arbeidstakeren
+fyller 60 år i ferieåret (§ 5 nr. 2), og feriepengene for ferieåret beregnes
+av lønn utbetalt i opptjeningsåret, altså året før (§ 4 og § 10 nr. 1).
+Lovavdelingen legger det samme til grunn i sin uttalelse 23. mai 2009
+(sak 200902697): den forhøyede satsen beregnes av grunnlaget tjent opp året
+før. Den som fyller 60 i 2027 skal derfor ha tillegget på lønn utbetalt i
+2026, året vedkommende fyller 59. Satsen velges fortsatt per ansatt, og
+regnmed hever den ikke av seg selv.
+
+**Hvilken G.** Grunnbeløpet per 31. desember i opptjeningsåret, eller på
+fratredelsestidspunktet for den som slutter i opptjeningsåret (§ 10 nr. 3
+andre ledd). Før ny G er fastsatt i mai brukes den siste registrerte. Hver
+kjøring regner årets kutt på nytt fra alt som er utbetalt i året, og trekker
+fra det tidligere linjer allerede har kuttet (`holiday_pay_cap_cut_ore`),
+så en ny G retter seg selv ved neste kjøring. Bokførte linjer endres aldri.
+Mangler årets G etter fristen i satsregisteret, advarer kjøringen når taket
+slår inn.
+Lønn teller i det året den er **utbetalt**, så desemberlønn utbetalt i januar
+hører til det nye året.
+
+**Tariff.** 12 % har ikke noe 60-årstillegg og derfor ikke noe tak. 14,3 %
+er 12 % + 2,3 prosentpoeng: 12 % løper på all lønn og tillegget stopper ved
+6 G, slik Skatteetatens tabell viser. § 10 nr. 6 lar en tariffavtale fravike
+beregningsreglene, og Skatteetaten nevner at tariff eller annen avtale kan gi
+høyere grunnlag. regnmed vet ikke hva den enkelte avtalen sier, så kjøringen
+**advarer med beløpet** hver gang taket slår inn. Gir avtalen høyere grunnlag,
+må differansen avsettes for hånd. Andre satser enn 12,5 % og 14,3 % behandles
+som avtalte satser uten tak. Det samme gjelder disse to satsene før
+opptjeningsåret den ansatte fyller 59.
+
+Kilder: [ferieloven](https://lovdata.no/dokument/NL/lov/1988-04-29-21),
+[Ot.prp. nr. 65 (2007–2008)](https://www.regjeringen.no/no/dokumenter/otprp-nr-65-2007-2008-/id516695/?ch=6),
+[Lovavdelingens uttalelse](https://www.regjeringen.no/no/dokumenter/-5---tolkning-av-ferieloven---innforing-/id571024/),
+[Skatteetaten om feriepenger i a-meldingen](https://www.skatteetaten.no/en/business-and-organisation/employer/the-a-melding/the-a-melding-guide/salary-and-benefits/overview-of-salary-and-other-benefits/holiday-pay/).
 
 **Den ekstra arbeidsgiveravgiften på 5 % over 750 000 kroner ble fjernet
 fra 2025.** Den finnes ikke i registeret fordi den ikke finnes.

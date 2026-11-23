@@ -67,6 +67,8 @@ const CADENCES: &[(&str, i64)] = &[
     ("diett_dag_over_12", 400),
     ("diett_overnatting", 400),
     ("nattillegg", 400),
+    // Set every 1 May; caps the over-60 feriepenger addition.
+    ("folketrygdens_grunnbelop", 400),
 ];
 
 #[derive(Debug, PartialEq, Eq)]
