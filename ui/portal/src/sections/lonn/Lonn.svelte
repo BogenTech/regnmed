@@ -33,6 +33,7 @@
       koder: employees.koder,
       canFetchCard: employees.can_fetch_tax_card,
       kjoringer: payroll.kjoringer,
+      ameldingMaaneder: payroll.amelding_maaneder,
       invitasjoner: invitasjoner ? invitasjoner.invitasjoner : null,
       medlemmer: medlemmer ? medlemmer.medlemmer : null,
     };
@@ -61,7 +62,13 @@
   <!-- The monthly job first: run, then check the a-melding; the
        register and tax cards are set up once and visited rarely. -->
   <KjorLonn {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} onDone={reload} />
-  <Lonnskjoring {companyId} ansatte={data.ansatte} kjoringer={data.kjoringer} />
+  <Lonnskjoring
+    {companyId}
+    ansatte={data.ansatte}
+    kjoringer={data.kjoringer}
+    maaneder={data.ameldingMaaneder}
+    onMaaneder={(m) => (data.ameldingMaaneder = m)}
+  />
   <Ansatte
     {companyId}
     ansatte={data.ansatte}

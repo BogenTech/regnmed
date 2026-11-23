@@ -8,7 +8,20 @@
   import { MANEDER } from "./konstanter.js";
   import { slipFilename } from "./periode.js";
 
-  let { companyId, ansatte, kjoringer } = $props();
+  let { companyId, ansatte, kjoringer, maaneder = [], onMaaneder } = $props();
+
+  // Skatteetatens siste ord per måned. Et svar på én måned kan legge avvik
+  // på en annen, så dette følger selskapet og ikke den åpne kjøringen.
+  const medAvvik = $derived(maaneder.filter((m) => m.avvik.length));
+  const maanedNavn = (periode) => {
+    const [ar, maned] = periode.split("-");
+    return MANEDER[Number(maned) - 1] + " " + ar;
+  };
+  const kildeFor = (periode) => {
+    const kjoring = kjoringer.find((k) => k.utbetalt_dato?.startsWith(periode));
+    return kjoring ? fraKjoring(kjoring) : fraManed(periode);
+  };
+  const ansattNavn = (id) => ansatte.find((a) => a.id === id)?.navn;
 
   // A-meldingen for én lagret kjøring — eller for en måned UTEN kjøring,
   // der arbeidsforholdene likevel skal rapporteres (F108). Alt som hindrer
@@ -32,6 +45,7 @@
     try {
       const [svar, liste] = await Promise.all([api(kilde.sti), api(kilde.sti + "/submissions")]);
       amelding = { kilde, svar, innsendinger: liste.innsendinger, mulig: liste.innsending_mulig };
+      onMaaneder?.(liste.amelding_maaneder);
     } catch (error) {
       toast(error.message, false);
     }
@@ -88,6 +102,29 @@
     A-meldingen kan alltid lastes ned som fil fra en kjøring, og sendes herfra der innsending er satt
     opp. Sjekk at Skatteetaten har svart «mottatt» uten avvik før fristen den 5.
   </p>
+  {#if medAvvik.length}
+    <div role="alert" class="alert alert-warning alert-soft mb-4 text-sm">
+      <div class="w-full">
+        <p class="font-semibold">Skatteetaten melder avvik</p>
+        <ul class="mt-1">
+          {#each medAvvik as m (m.periode)}
+            <li class="flex flex-wrap items-center gap-2">
+              <span>
+                {maanedNavn(m.periode)}: {m.avvik.length} avvik
+              </span>
+              <button
+                class="btn btn-xs"
+                aria-label={"Se avvik for " + maanedNavn(m.periode)}
+                onclick={() => sjekkAmelding(kildeFor(m.periode))}
+              >
+                Se avvik
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
   {#if kjoringer.length}
     <div class="overflow-x-auto">
       <table class="table table-sm mb-4">
@@ -177,6 +214,7 @@
   {#if amelding}
     {@const kilde = amelding.kilde}
     {@const svar = amelding.svar}
+    {@const maaned = maaneder.find((m) => m.periode === svar.kalendermaaned)}
     <div class="card border border-base-300 card-sm mb-4 max-w-2xl">
       <div class="card-body">
         <h4 class="font-semibold text-sm">
@@ -237,8 +275,9 @@
                 {#if i.erstatter_melding_id}<span class="badge badge-sm">erstatning</span>{/if}
                 {#if i.tilbakemelding}
                   <span class={i.tilbakemelding.avvik?.length ? "text-warning" : ""}>
-                    — {i.tilbakemelding.mottakstatus ?? "ukjent"}, {i.tilbakemelding.avvik?.length ??
-                      0} avvik
+                    — {i.tilbakemelding.mottakstatus ?? "ukjent"}{i.tilbakemelding.avvik?.length
+                      ? ", " + i.tilbakemelding.avvik.length + " avvik på meldingen"
+                      : ""}
                   </span>
                 {/if}
                 {#if i.siste_feil}
@@ -252,6 +291,30 @@
               </li>
             {/each}
           </ul>
+        {/if}
+        {#if maaned?.avvik.length}
+          <div class="text-sm text-warning mt-2">
+            <p class="font-semibold">Avvik for {maanedNavn(maaned.periode)}</p>
+            <ul class="list-disc ml-5">
+              {#each maaned.avvik as a, n (n)}
+                <li>
+                  {#if ansattNavn(a.arbeidsforhold_id)}{ansattNavn(a.arbeidsforhold_id)}:{/if}
+                  {a.navn}
+                  {a.detaljer}
+                  <span class="opacity-70">({a.id})</span>
+                </li>
+              {/each}
+            </ul>
+            <p class="mt-1">
+              Rett det som mangler, og send {amelding.innsendinger.some(
+                (i) => i.status !== "ikke_levert",
+              )
+                ? "måneden som en erstatning"
+                : "a-meldingen for måneden"}.
+            </p>
+          </div>
+        {:else if maaned}
+          <p class="text-sm mt-2">Skatteetaten har ingen avvik for måneden.</p>
         {/if}
       </div>
     </div>

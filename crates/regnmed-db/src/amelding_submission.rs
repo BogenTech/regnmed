@@ -434,6 +434,33 @@ async fn status(pool: &PgPool, submission_id: Uuid) -> Result<SubmissionStatus> 
     })
 }
 
+/// Skatteetaten's latest word on each month, keyed by `kalendermaaned`.
+/// One tilbakemelding can cover several months: a melding for October can
+/// put a new avvik on November, and that answer is stored on October's
+/// submission. The newest SUBMISSION decides, not the newest fetch, so an
+/// old answer fetched late cannot overrule a newer one.
+pub async fn latest_month_feedback(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
+    let rows = sqlx::query(
+        "select distinct on (month) block ->> 'kalendermaaned' as month, block
+         from (select s.created_at, jsonb_path_query(e.detail, '$.mottak[*]') as block
+               from amelding_submission_event e
+               join amelding_submission s on s.id = e.submission_id
+               where s.company_id = $1 and e.kind = 'feedback') f
+         where block ->> 'kalendermaaned' is not null
+         order by month, created_at desc",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| (r.get("month"), r.get("block")))
+        .collect())
+}
+
 /// The arbeidsforhold Skatteetaten holds OPEN after `period`: reported
 /// without a sluttdato in a melding delivered for that month (and not
 /// replaced by another delivered one). F108 requires each of them again

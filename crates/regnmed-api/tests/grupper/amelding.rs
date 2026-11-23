@@ -27,6 +27,8 @@ struct Skatteetaten {
     subscriptions: Vec<serde_json::Value>,
     /// Times the tilbakemelding itself was fetched.
     feedback_fetches: usize,
+    /// The next tilbakemelding, when a test needs a specific one.
+    next_feedback: Option<serde_json::Value>,
     /// Unique per mock, as real dialog ids are: the test database is
     /// shared, and a fixed id would match other tests' submissions.
     dialog_id: String,
@@ -104,8 +106,12 @@ async fn mock_skatteetaten() -> (String, Arc<Mutex<Skatteetaten>>) {
         .route(
             "/tb/v1/forsendelser/t-info",
             get(|State(seen): State<Arc<Mutex<Skatteetaten>>>| async move {
-                seen.lock().unwrap().feedback_fetches += 1;
-                let melding = seen.lock().unwrap().calls[0].1["leveranse"]["meldingsId"].clone();
+                let mut s = seen.lock().unwrap();
+                s.feedback_fetches += 1;
+                if let Some(feedback) = s.next_feedback.take() {
+                    return Json(feedback);
+                }
+                let melding = s.calls[0].1["leveranse"]["meldingsId"].clone();
                 Json(serde_json::json!({"mottak": [{"mottattLeveranse": [
                     {"meldingsId": melding, "mottakstatus": "mottatt", "avvik": []}
                 ]}]}))
@@ -531,6 +537,111 @@ async fn a_month_without_a_run_is_sent_with_the_arbeidsforhold_alone() {
     .await;
     assert_eq!(code, StatusCode::OK, "{fed}");
     assert_eq!(fed["tilbakemelding"]["mottakstatus"], "mottatt");
+}
+
+/// Found against Skatteetaten's test environment: a melding for one month
+/// can put an avvik on ANOTHER month, and the delivery there still says
+/// `mottatt` with no avvik of its own. The month's standing is what counts,
+/// and the newest submission decides it however late an answer is fetched.
+#[tokio::test]
+async fn an_avvik_on_another_month_is_shown_until_a_replacement_clears_it() {
+    let Some(f) = setup(None).await else {
+        return;
+    };
+    let (state, admin) = (&f.state, &f.admin);
+    let company = f.submissions.split('/').nth(2).unwrap();
+    let april = format!("/companies/{company}/payroll/months/2026-04/amelding/submissions");
+    let employment = Uuid::new_v4().to_string();
+    let clean = |month: &str| {
+        serde_json::json!({
+            "kalendermaaned": month,
+            "mottattPeriode": {"avvik": [], "virksomhet": []},
+        })
+    };
+    let missing = serde_json::json!({
+        "kalendermaaned": "2026-03",
+        "mottattPeriode": {"avvik": [], "virksomhet": [{"avvik": [], "inntektsmottaker": [{
+            "avvik": [],
+            "norskIdentifikator": "26829398612",
+            "arbeidsforhold": [{"arbeidsforholdId": employment, "avvik": [{
+                "id": "MAGNET_EDAG-108",
+                "navn": "Opplysninger om arbeidsforhold mangler.",
+                "detaljer": "Alle arbeidsforhold må rapporteres hver måned.",
+                "alvorlighetsgrad": "oeyeblikkelig",
+            }]}],
+        }]}]},
+    });
+    let answer = |uri: String, body: serde_json::Value| {
+        f.skatteetaten.lock().unwrap().next_feedback = Some(body);
+        async move {
+            let (code, fed) = call(state, "POST", &uri, admin, "").await;
+            assert_eq!(code, StatusCode::OK, "{fed}");
+        }
+    };
+    let id = |sent: &serde_json::Value| sent["id"].as_str().unwrap().to_string();
+    let march_avvik = || async {
+        let (_, listed) = call(state, "GET", &f.submissions, admin, "").await;
+        let months = listed["amelding_maaneder"].as_array().unwrap().clone();
+        months.iter().find(|m| m["periode"] == "2026-03").unwrap()["avvik"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+
+    let (_, march) = call(state, "POST", &f.submissions, admin, "{}").await;
+    answer(
+        format!("{}/{}/feedback", f.submissions, id(&march)),
+        serde_json::json!({"mottak": [clean("2026-03")]}),
+    )
+    .await;
+    assert_eq!(march_avvik().await, Vec::<serde_json::Value>::new());
+
+    // April's answer puts an avvik on March; March's delivery stays clean.
+    let (_, first_april) = call(state, "POST", &april, admin, "{}").await;
+    answer(
+        format!("{april}/{}/feedback", id(&first_april)),
+        serde_json::json!({"mottak": [clean("2026-04"), missing.clone()]}),
+    )
+    .await;
+    let avvik = march_avvik().await;
+    assert_eq!(avvik.len(), 1, "{avvik:?}");
+    assert_eq!(avvik[0]["id"], "MAGNET_EDAG-108");
+    assert_eq!(avvik[0]["arbeidsforhold_id"], employment);
+    assert!(
+        !serde_json::Value::Array(avvik.clone())
+            .to_string()
+            .contains("26829398612"),
+        "the national ID stays out of the summary"
+    );
+    let (_, payroll) = call(
+        state,
+        "GET",
+        &format!("/companies/{company}/payroll"),
+        admin,
+        "",
+    )
+    .await;
+    assert_eq!(
+        payroll["amelding_maaneder"][0]["avvik"][0]["id"],
+        "MAGNET_EDAG-108"
+    );
+
+    // April's replacement is sent first but answered last, still carrying
+    // the old avvik: March's newer replacement decides.
+    let (_, second_april) = call(state, "POST", &april, admin, r#"{"erstatt":true}"#).await;
+    let (_, replacement) = call(state, "POST", &f.submissions, admin, r#"{"erstatt":true}"#).await;
+    answer(
+        format!("{}/{}/feedback", f.submissions, id(&replacement)),
+        serde_json::json!({"mottak": [clean("2026-03")]}),
+    )
+    .await;
+    assert_eq!(march_avvik().await, Vec::<serde_json::Value>::new());
+    answer(
+        format!("{april}/{}/feedback", id(&second_april)),
+        serde_json::json!({"mottak": [clean("2026-04"), missing]}),
+    )
+    .await;
+    assert_eq!(march_avvik().await, Vec::<serde_json::Value>::new());
 }
 
 /// The feedback arrives as an Altinn event: the first delivery subscribes

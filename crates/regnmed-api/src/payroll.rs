@@ -510,6 +510,55 @@ fn verdict(feedback: &serde_json::Value, melding_id: &str) -> serde_json::Value 
     }
 }
 
+/// Every avvik Skatteetaten holds against a month, at any level of its
+/// `mottattPeriode`. The delivery's own `avvik` says nothing about these:
+/// a melding can be `mottatt` while the month is missing an arbeidsforhold.
+fn month_deviations(block: &serde_json::Value) -> Vec<serde_json::Value> {
+    fn walk(v: &serde_json::Value, employment: Option<&str>, out: &mut Vec<serde_json::Value>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                let employment = o
+                    .get("arbeidsforholdId")
+                    .and_then(|id| id.as_str())
+                    .or(employment);
+                for (key, child) in o {
+                    if key == "avvik" {
+                        out.extend(child.as_array().into_iter().flatten().map(|a| {
+                            json!({
+                                "id": a["id"],
+                                "navn": a["navn"],
+                                "detaljer": a["detaljer"],
+                                "alvorlighetsgrad": a["alvorlighetsgrad"],
+                                "arbeidsforhold_id": employment,
+                            })
+                        }));
+                    } else {
+                        walk(child, employment, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|c| walk(c, employment, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(&block["mottattPeriode"], None, &mut out);
+    out
+}
+
+/// Each month Skatteetaten has answered for, with what it holds against it.
+async fn amelding_months(
+    state: &AppState,
+    company_id: Uuid,
+) -> Result<Vec<serde_json::Value>, ApiError> {
+    let months =
+        regnmed_db::amelding_submission::latest_month_feedback(&state.pool, company_id).await?;
+    Ok(months
+        .iter()
+        .map(|(period, block)| json!({ "periode": period, "avvik": month_deviations(block) }))
+        .collect())
+}
+
 fn submission_json(
     s: &regnmed_db::amelding_submission::Submission,
     status: &regnmed_db::amelding_submission::SubmissionStatus,
@@ -575,6 +624,7 @@ async fn list_submissions(
     Ok(Json(json!({
         "innsendinger": list.iter().map(|(s, st)| submission_json(s, st)).collect::<Vec<_>>(),
         "innsending_mulig": state.amelding.is_some(),
+        "amelding_maaneder": amelding_months(state, company_id).await?,
     })))
 }
 
@@ -889,7 +939,8 @@ pub async fn list_payroll(
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let runs = regnmed_db::payroll::list_kjoringer(&state.pool, company_id, q.year).await?;
     Ok(Json(json!({
-        "kjoringer": runs.iter().map(run_json).collect::<Vec<_>>()
+        "kjoringer": runs.iter().map(run_json).collect::<Vec<_>>(),
+        "amelding_maaneder": amelding_months(&state, company_id).await?,
     })))
 }
 
