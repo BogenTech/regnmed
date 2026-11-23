@@ -977,3 +977,22 @@ pub async fn employee_link_history(
         })).collect::<Vec<_>>(),
     })))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_request_has_no_default_zone() {
+        let mut body = json!({
+            "ar": 2026,
+            "maned": 11,
+            "utbetalt_dato": "2026-11-23",
+            "linjer": [],
+        });
+        assert!(serde_json::from_value::<RunPayrollRequest>(body.clone()).is_err());
+        body["sone"] = json!("IV");
+        let request: RunPayrollRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.zone, "IV");
+    }
+}

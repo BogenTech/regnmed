@@ -26,6 +26,8 @@
       api("/companies/" + id + "/invitations").catch(() => null),
       api("/companies/" + id + "/access").catch(() => null),
     ]);
+    // A late answer for the previous company must not seed this one's form.
+    if (id !== companyId) return;
     data = {
       ansatte: employees.ansatte,
       koder: employees.koder,

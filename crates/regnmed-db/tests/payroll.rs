@@ -2547,6 +2547,15 @@ async fn a_preview_books_nothing_and_matches_the_run() {
         }
     };
 
+    // The portal's unchosen zone is "": never a default rate.
+    let err = payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 25), "", &entries)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("ukjent arbeidsgiveravgiftssone"),
+        "{err}"
+    );
+
     let preview =
         payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 25), "I", &entries)
             .await

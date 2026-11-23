@@ -8,7 +8,7 @@
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
   import { AGA_SONER, MANEDER } from "./konstanter.js";
-  import { nextPeriod } from "./periode.js";
+  import { nextPeriod, startingZone } from "./periode.js";
   import { untrack } from "svelte";
 
   let { companyId, ansatte, kjoringer, onDone } = $props();
@@ -23,7 +23,7 @@
   let year = $state(start.year);
   let maned = $state(start.month);
   let dato = $state(iDag);
-  let sone = $state(untrack(() => kjoringer[0]?.sone ?? AGA_SONER[0][0]));
+  let sone = $state(untrack(() => startingZone(kjoringer)));
 
   let kjort = $derived(
     new Set(kjoringer.filter((k) => k.ar === year).map((k) => k.maned)),
@@ -167,11 +167,23 @@
       </label>
       <label class="flex flex-col gap-1 text-xs">
         Arbeidsgiveravgiftssone
-        <select class="select select-sm" bind:value={sone}>
+        <select
+          class="select select-sm"
+          required
+          aria-describedby={sone ? undefined : "aga-sone-hjelp"}
+          bind:value={sone}
+        >
+          <option value="" disabled>Velg sone</option>
           {#each AGA_SONER as s (s[0])}<option value={s[0]}>{s[1]}</option>{/each}
         </select>
       </label>
     </div>
+    {#if !sone}
+      <p id="aga-sone-hjelp" class="text-sm text-warning mb-2">
+        Velg arbeidsgiveravgiftssone før du går videre. Sonen følger normalt kommunen underenheten
+        er registrert i, og en feil sone kan bare rettes med et reverserende bilag og en ny kjøring.
+      </p>
+    {/if}
     {#if kjort.has(maned)}
       <p role="alert" class="text-sm text-warning mb-2">
         Lønn for {periode} er allerede kjørt. En retting er et reverserende bilag og en ny kjøring.
@@ -323,7 +335,7 @@
     {:else}
       <button
         class="btn btn-primary btn-sm w-fit"
-        disabled={arbeider || kjort.has(maned)}
+        disabled={arbeider || kjort.has(maned) || !sone}
         onclick={forhandsvis}
       >
         Se hva som bokføres for {periode}
