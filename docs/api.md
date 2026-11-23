@@ -194,6 +194,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/employees/{employee_id}/employment` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/withholding` | GET PUT |
 | `/companies/{company_id}/employees/{employee_id}/end` | PUT |
+| `/companies/{company_id}/employees/{employee_id}/holiday-rate` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/link` | POST DELETE |
 | `/companies/{company_id}/employees/{employee_id}/link/history` | GET |
 | `/companies/{company_id}/payroll` | GET POST |

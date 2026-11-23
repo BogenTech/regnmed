@@ -17,6 +17,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | POST | `/companies/{company_id}/employees` | `LONN_SKRIV` |
 | PUT | `/companies/{company_id}/employees/{employee_id}/employment` | `LONN_SKRIV` |
 | PUT | `/companies/{company_id}/employees/{employee_id}/end` | `LONN_SKRIV` |
+| PUT | `/companies/{company_id}/employees/{employee_id}/holiday-rate` | `LONN_SKRIV` |
 | DELETE | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | POST | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/employees/{employee_id}/link/history` | `LONN_LES` |

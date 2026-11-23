@@ -20,6 +20,8 @@ pub struct ReceivedCard {
     pub raw: serde_json::Value,
     /// `Ok` = set on the employee; `Err` = kept, with the reason.
     pub decision: std::result::Result<Withholding, String>,
+    /// The percentage printed on a table card (forskriften § 5-10-3).
+    pub table_percent_bp: Option<i64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -284,7 +286,14 @@ pub async fn record_answer(
             Ok(Withholding::PercentTwelveMonths(bp)) => {
                 (Some("prosent"), Some(*bp as i32), None, true, None, None)
             }
-            Ok(Withholding::Table(n)) => (Some("tabell"), None, Some(*n), false, None, None),
+            Ok(Withholding::Table(n)) => (
+                Some("tabell"),
+                card.table_percent_bp.map(|bp| bp as i32),
+                Some(*n),
+                false,
+                None,
+                None,
+            ),
             Ok(Withholding::TaxFreeCard { limit_ore }) => {
                 (Some("frikort"), None, None, false, Some(*limit_ore), None)
             }

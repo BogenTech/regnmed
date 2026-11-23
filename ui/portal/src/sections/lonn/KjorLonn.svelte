@@ -28,23 +28,40 @@
   let kjort = $derived(
     new Set(kjoringer.filter((k) => k.ar === year).map((k) => k.maned)),
   );
-  let aktive = $derived(ansatte.filter((a) => !a.ansatt_til || a.ansatt_til >= iDag));
 
   const krTekst = (ore) => (ore == null ? "" : (ore / 100).toFixed(2).replace(".", ","));
 
+  // One line per employee, so changing the period keeps what was typed.
   let linjer = $state([]);
   $effect(() => {
-    linjer = aktive.map((a) => ({
-      employee_id: a.id,
-      navn: a.navn,
-      brutto: krTekst(a.manedslonn_ore),
-      fp: "",
-      timelonn: !!a.timelonn_ore,
-      // Paid by the hour only: the hours are the pay, so start there.
-      fra_timer: !!a.timelonn_ore && a.manedslonn_ore == null,
-      med: true,
-    }));
+    linjer = ansatte.map((a) => {
+      // A final settlement is a deliberate choice: nothing is due by default.
+      const hasLeft = !!a.ansatt_til && a.ansatt_til < iDag;
+      return {
+        employee_id: a.id,
+        navn: a.navn,
+        endDate: a.ansatt_til,
+        brutto: hasLeft ? "0,00" : krTekst(a.manedslonn_ore),
+        fp: "",
+        canMarkExempt: !!a.ansatt_til && !a.trekk_12_maneder,
+        holidayPayExempt: false,
+        supplement: "",
+        birthYear: a.fodselsdato ? Number(a.fodselsdato.slice(0, 4)) : null,
+        timelonn: !!a.timelonn_ore,
+        // Paid by the hour only: the hours are the pay, so start there.
+        fra_timer: !!a.timelonn_ore && a.manedslonn_ore == null,
+        med: !hasLeft,
+      };
+    });
   });
+  // Everyone employed in the month, so a final settlement can run after the end date.
+  let monthStart = $derived(`${year}-${String(maned).padStart(2, "0")}-01`);
+  let aktive = $derived(linjer.filter((l) => !l.endDate || l.endDate >= monthStart));
+
+  // The server asks for the supplement from the earning year the employee
+  // turns 59, whatever the rate says today.
+  const mayCarrySupplement = (l) =>
+    l.birthYear == null || Number(dato.slice(0, 4)) - 1 - l.birthYear >= 59;
 
   function foresporsel() {
     return {
@@ -52,7 +69,7 @@
       maned,
       utbetalt_dato: dato,
       sone,
-      linjer: linjer
+      linjer: aktive
         .filter((l) => l.med)
         .map((l) => ({
           employee_id: l.employee_id,
@@ -60,6 +77,11 @@
           // regner det fra de låste timene.
           brutto_ore: l.fra_timer ? null : l.brutto.trim() ? parseKr(l.brutto.trim()) : null,
           feriepenger_ore: l.fp.trim() ? parseKr(l.fp.trim()) : 0,
+          feriepenger_trekkfri: l.canMarkExempt && l.holidayPayExempt,
+          holiday_pay_supplement_ore:
+            mayCarrySupplement(l) && l.fp.trim() && l.supplement.trim()
+              ? parseKr(l.supplement.trim())
+              : null,
           fra_timer: l.fra_timer,
         })),
     };
@@ -67,7 +89,7 @@
 
   // The form as text: a preview is valid only while this is unchanged.
   let skjemaNokkel = $derived(
-    JSON.stringify([year, maned, dato, sone, linjer.map((l) => [l.brutto, l.fp, l.fra_timer, l.med])]),
+    JSON.stringify([year, maned, dato, sone, aktive.map((l) => [l.employee_id, l.brutto, l.fp, l.supplement, l.holidayPayExempt, l.fra_timer, l.med, mayCarrySupplement(l)])]),
   );
   let forhand = $state(null); // { nokkel, svar }
   let gyldig = $derived(forhand && forhand.nokkel === skjemaNokkel);
@@ -202,7 +224,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each linjer as l (l.employee_id)}
+          {#each aktive as l (l.employee_id)}
             <tr class={l.med ? "" : "opacity-50"}>
               <td>
                 <input
@@ -231,6 +253,25 @@
                   disabled={!l.med}
                   bind:value={l.fp}
                 />
+                {#if l.canMarkExempt && l.fp.trim()}
+                  <label class="label cursor-pointer justify-start gap-2 text-xs mt-1">
+                    <input type="checkbox" class="checkbox checkbox-xs" bind:checked={l.holidayPayExempt} />
+                    Trekkfri: dødsfall eller løpende utbetaling
+                  </label>
+                {/if}
+                {#if mayCarrySupplement(l) && l.fp.trim()}
+                  <label class="block mt-1 text-xs">
+                    <span class="block opacity-70">Herav tillegg over 60 (kr)</span>
+                    <input
+                      class="input input-xs w-32 text-right"
+                      inputmode="decimal"
+                      placeholder="beregnes"
+                      aria-label={"Tillegg for over 60 år i feriepengene til " + l.navn + " i kroner"}
+                      disabled={!l.med}
+                      bind:value={l.supplement}
+                    />
+                  </label>
+                {/if}
               </td>
               <td>
                 {#if l.timelonn}

@@ -75,7 +75,10 @@ Hvis selskapet ble opprettet før 11. november 2026 og mangler noen av lønnskon
 
 - **Prosenttrekk** fra skattekortet.
 - **Tabelltrekk** regnes med Skatteetatens egen trekkrutine, sjekket mot hele den publiserte tabellfilen for 2026. Et år uten innlagte konstanter stopper kjøringen i stedet for å bruke fjorårets.
-- **Feriepenger er trekkfrie** i utbetalingsåret, og det trekkes halv skatt i desember. Begge deler gjelder bare kort over 10,5 måneder. Kort over 12 måneder trekker fullt hver måned.
+- **Feriepenger er trekkfrie** når de utbetales året etter at de er opptjent, og det trekkes halv skatt i desember. Begge deler gjelder bare kort over 10,5 måneder. Kort over 12 måneder trekker fullt hver måned.
+- **Det trekkes likevel skatt** av feriepenger som er opptjent i år og utbetales fordi den ansatte slutter, og av avtalte feriepenger over 12,34 % av grunnlaget. Gjelder utbetalingen dødsfall, eller løpende utbetaling etter avtale, huker du av for «Trekkfri» i lønnskjøringen.
+- **Tillegget for ansatte over 60 år er ikke trekkfritt**, heller ikke når utbetalingen er merket «Trekkfri». Betaler du ut hele fjorårets feriepenger, regner regnmed det ut. Ved delutbetaling må du fylle inn «Herav tillegg over 60».
+- **Halv skatt i desember gjelder månedslønn opp til den ansattes gjennomsnitt tidligere i året.** Bonus over gjennomsnittet trekkes fullt. Timelønn, en ansatt uten tidligere lønn i regnmed og et andre halvt trekk i samme utbetalingsår trekkes også fullt, og kjøringen sier fra. For mye trekk kommer tilbake i skatteoppgjøret.
 - Trekket **rundes ned til hele kroner**, siden a-meldingen tar hele kroner.
 
 Lønnsslippen sier hvordan trekket ble regnet, for eksempel «35,00 %» eller «tabell 8000».
@@ -88,7 +91,7 @@ Satsen hentes fra satsregisteret per sone, med kilde på hver rad. Avgiften regn
 
 ## Feriepenger
 
-Feriepengesatsen settes per ansatt (lovens minimum 10,2 %, eller 12,5 % over 60 år). Hver kjøring avsetter feriepenger og avgift på dem. Utbetalte feriepenger trekker ned gjelden. De er ingen ny kostnad.
+Feriepengesatsen settes per ansatt (lovens minimum 10,2 %, eller 12,5 % fra og med opptjeningsåret den ansatte fyller 59). Tillegget på 2,3 prosentpoeng gjelder bare opp til 6G av årets lønn, mens 10,2 % gjelder all lønn. Hver kjøring avsetter feriepenger og avgift på dem. Utbetalte feriepenger trekker ned gjelden. De er ingen ny kostnad.
 
 Hvis feriepengegjeld stammer fra noe annet enn lønnskjøringene (åpningsbalanse, import, manuelt bilag), kan regnmed ikke knytte den til en ansatt. Kjøringen sier fra med beløpet. Den delen må avsettes manuelt.
 

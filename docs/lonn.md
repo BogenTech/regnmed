@@ -107,10 +107,156 @@ Begge er bare tidfesting. Skattekortprosenten er beregnet over 10,5
 måneder nettopp for at de skal gå opp, så det er *riktig* å anvende dem
 — ikke dobbelttelling.
 
-- **Feriepenger er trekkfrie** i utbetalingsåret.
-- **Halv skatt i desember** (skattebetalingsloven). Siden 2016 kan
+- **Feriepenger er trekkfrie** når de utbetales i ferieåret, innenfor
+  grensene i neste avsnitt, og aldri for tillegget til arbeidstakere over
+  60 år (se «Forskuddstrekk på tillegget»).
+- **Halv skatt i desember** (skattebetalingsloven,
+  skattebetalingsforskriften § 5-7-2). Siden 2016 kan
   arbeidsgiver i stedet ta det i annen halvdel av november; regnmed
-  gjør desember, det vanlige valget, og sier det her.
+  gjør desember, det vanlige valget, og sier det her. Fritaket følger
+  **lønnsperioden**, ikke utbetalingsdatoen: for månedslønn gjelder det
+  «for» første halvdel av desember (§ 5-7-2 første ledd), mens bare
+  14-dagerslønn er knyttet til selve utbetalingen (tredje ledd).
+  Desemberlønn utbetalt i januar får derfor halvt trekk, og novemberlønn
+  utbetalt i desember fullt. Forskriften nevner ikke lønn utbetalt i en
+  annen måned enn den gjelder, så dette er vår lesing av ordlyden og bør
+  bekreftes med Skatteetaten.
+
+### Feriepenger det likevel skal trekkes i
+
+Fritaket i skattebetalingsforskriften § 5-7-1 (1) gjelder utbetaling i
+ferieåret, altså kalenderåret etter opptjeningsåret. På kort over 10,5
+måneder faller to tilfeller utenfor, uansett alder:
+
+1. **Fratreden i opptjeningsåret** (§ 5-6-1 (1) a). Feriepenger som
+   utbetales i opptjeningsåret fordi den ansatte slutter, er trekkpliktige.
+   Det gjelder også avtalefestede feriepenger.
+2. **Mer enn 21 % over ferielovens beløp** (§ 5-7-1 (1) b). Avtalefestede
+   feriepenger er fritatt opp til 10,2 % × 1,21 = 12,342 % av grunnlaget, og
+   det overskytende er trekkpliktig. Grensen regnes per sats linjene faktisk
+   ble avsatt med, ikke etter den ansattes sats i dag. Skattebetalingshåndboken § 5-7 runder
+   dette til 12,34 %; regnmed bruker forskriftens eksakte grense. Med 15 %
+   av 1 000 000 kr er 123 420 kr fritatt og 26 580 kr trekkpliktig. Satsene
+   12 % og 14,3 % ligger under grensen, fordi den ordinære delen av 14,3 %
+   er 12 %. Tillegget på 2,3 prosentpoeng for arbeidstakere over 60 år har
+   egen hjemmel (§ 5-6-1 (1) b) og telles ikke mot grensen.
+
+**Hvilket år en utbetaling hører til** regnes av de innsettings-bare
+lønnslinjene, etter utbetalingsdato (`payroll::split_holiday_pay`). Eldste
+gjeld dekkes først. Ved fratreden forfaller alt samme år (ferieloven § 11
+nr. 3), så rekkefølgen flytter bare beløp mellom måneder, ikke mellom år.
+Grensen på 21 % regnes kumulativt, så samme utbetaling delt i to gir samme
+overskytende beløp. Hvor mye som er trukket som årets egne feriepenger,
+lagres på linjen (`holiday_pay_earning_year_ore`, migration 0106), slik at
+en senere utbetaling samme år ikke kan telle de samme feriepengene to ganger.
+
+**Hvem som slutter.** En utbetaling regnes som utbetalt på grunn av
+fratreden når sluttdatoen ligger før neste månedlige lønningsdag, fordi
+feriepengene forfaller siste vanlige lønningsdag før fratreden (ferieloven
+§ 11 nr. 3). Oppsigelse til oktober gjør ikke juniutbetalingen til en
+sluttutbetaling, mens sluttdato 5. januar gjør 20. desember til det. Den som
+betaler siste dag i måneden, har neste lønningsdag siste dag i neste måned,
+så 28. februar følges av 31. mars.
+
+**En åpningsbalanse er usynlig i lønnshistorikken.** Derfor regnes et beløp
+over det tidligere år skylder, som årets feriepenger *bare* for den som
+slutter, og aldri mer enn det historikken viser er opptjent i år. Ellers
+ville hver juniutbetaling i et migrert selskap blitt trukket. Det som
+fortsatt ikke kan forklares, behandles som trekkfritt, og kjøringen sier
+fra med beløpet når den ansatte slutter.
+
+**Kjent begrensning.** Historikken skiller ikke et forskudd på årets
+feriepenger til en som blir værende fra utbetaling av en åpningsbalanse.
+Et slikt forskudd trekkes ikke, selv om § 5-7-1 ikke fritar det, og årets
+avsetning ser fortsatt skyldig ut neste år, så en senere fratreden kan bli
+trukket for lite. Forskudd må derfor trekkes for hånd.
+
+**Trekkmåten.** Prosentkort bruker kortets prosent. På tabellkort kan
+disse beløpene ikke gå gjennom tabellen, siden de er opptjent over et
+vesentlig lengre tidsrom enn månedens lønn (§ 5-10-1 (4)). De trekkes med
+trekkprosenten på tabellkortet (§ 5-10-3), av hele kroner (§ 5-10-4).
+regnmed lagrer den prosenten når skattekortet hentes, og migration 0107
+henter den fra kort som allerede er lagret. Mangler den, nekter kjøringen og
+ber om at kortet hentes på nytt; den kan ennå ikke føres inn for hånd.
+Beløpene halveres ikke i
+desember: bare ordinær lønn innenfor gjennomsnittet får halvt trekk (se «Hva
+det halve trekket i desember dekker»), som er siden som ikke gir den ansatte
+restskatt.
+
+**Unntak den som kjører lønn må merke.** Feriepenger ved dødsfall
+(§ 5-7-1 (1) d) og feriepenger som etter avtale utbetales regelmessig med
+lønnen (§ 5-7-1 (1) c) er trekkfrie også i opptjeningsåret. regnmed vet ikke
+hvorfor et arbeidsforhold endte, så skjemaet har en avhuking for ansatte med
+sluttdato (`feriepenger_trekkfri` i API-et). Kjøringen minner om den når den
+trekker i feriepenger ved fratreden. Merkingen fjerner trekk, så den lagres på
+lønnslinjen (`holiday_pay_exempt`, migration 0107) og står i trekkmåten på
+lønnsslippen. En merket utbetaling regnes som oppgjør av årets egne
+feriepenger, så den ikke ser ubetalt ut neste år. På kort over 12 måneder og
+frikort har merkingen ingen virkning, og kjøringen sier fra.
+
+**Ikke bygget:** valget i § 5-7-1 (2) om å gi trekkfritaket som én vanlig
+månedslønn. regnmed følger første ledd. A-meldingen er uendret: feriepenger
+rapporteres som én trekkpliktig `feriepenger`-linje uansett.
+
+### Hva det halve trekket i desember dekker
+
+Skattebetalingsforskriften § 5-7-2 gir ikke «halv skatt på alt som
+utbetales i desember». Fritaket er avgrenset, og der forskriften og
+Skattebetalingshåndboken tier, tar regnmed den siden som ikke kan gi den
+ansatte restskatt. For mye trekk kommer tilbake i skatteoppgjøret; for lite
+blir en regning. Kjøringen sier fra med en advarsel per ansatt hver gang
+desember ikke får fullt halvt trekk.
+
+| Tilfelle | Hva kjøringen gjør | Grunnlag |
+| --- | --- | --- |
+| Månedslønn innenfor gjennomsnittet | Halvt trekk | § 5-7-2 første ledd |
+| Bonus eller tillegg som løfter måneden over gjennomsnittet | Halvt trekk opp til gjennomsnittet, fullt på resten | § 5-7-2 fjerde ledd |
+| Timelønn i en månedskjøring | Fullt trekk | § 5-7-2 annet ledd fritar to bestemte uker. **Vårt valg** |
+| Beløp der kjøringen ikke kan se lønnsformen | Fullt trekk | **Vårt valg** |
+| Ingen tidligere lønnsmåned uten feriepenger i regnmed | Fullt trekk | Fjerde ledd krever et gjennomsnitt. **Vårt valg** |
+| Andre halve trekk i samme utbetalingsår | Fullt trekk | Kildene er tause. **Vårt valg** |
+
+**Gjennomsnittet.** Fjerde ledd sier at fritaket gjelder «så langt den
+samlede ytelsen ikke overstiger arbeidstakerens gjennomsnittsfortjeneste hos
+arbeidsgiveren i denne del av inntektsåret», men ikke hvordan det regnes.
+regnmed tar ordinær lønn og trekkpliktig godtgjørelse for årets lønnsperioder
+før desember og deler på antall slike måneder, rundet ned. To valg er våre:
+
+- **Lønnsperioder, ikke utbetalingsdatoer**, så desemberlønn utbetalt i januar
+  måles mot sitt eget år.
+- **Måneder med feriepenger telles ikke.** Ferietrekket ville ellers gjort at
+  en ansatt med helt jevn lønn så ut til å ligge over sitt eget gjennomsnitt
+  hver desember. Tas ferietrekket i en annen måned enn feriepengene, kan
+  kjøringen ikke se det. Da blir snittet lavere og fritaket mindre, som er
+  den sikre siden, og advarselen viser beløpet.
+
+Eksempel: 50 000 kr i lønn og 100 000 kr i bonus på et kort med 35 %, med
+50 000 kr i gjennomsnitt. 50 000 kr trekkes med 17,5 % og 100 000 kr med 35 %,
+til sammen 43 750 kr. Tidligere ble hele beløpet halvert til 26 250 kr.
+Skattebetalingshåndboken beskriver ikke regnestykket. Simployer regner
+gjennomsnittet på tilleggene alene, mens forskriften sier «samlede ytelsen».
+Med jevn grunnlønn gir de to samme svar, og ved en lønnsøkning gir vår lesing
+mindre fritak, altså den sikre siden.
+
+På **tabellkort** er fritaket halvparten av tabelltrekket på beløpet innenfor
+gjennomsnittet: tabelltrekket på hele måneden minus halve tabelltrekket på
+gjennomsnittet. Forskriften regner ikke dette ut. Tabellen er progressiv, så
+regnmed lar hele beløpet slå ut i trekket og trekker bare fra den halvparten
+en vanlig måned ville fått.
+
+**Timelønn.** Annet ledd fritar «to uker i siste halvdel av november eller
+siste uke i november og første uke i desember». Ingen kilde sier hva en
+månedskjøring av timelønn skal gjøre. Halv måned er ikke to uker, og den ene
+av de to ukene ligger i novemberkjøringen, som allerede er trukket. regnmed
+trekker derfor fullt og sier fra. Det betyr at timelønnede ikke får fritaket
+utbetalt før jul, men får det igjen i skatteoppgjøret.
+
+**To halve trekk i samme år.** Flyttes lønnsdagen over nyttår, kan to
+desemberlønner utbetales i samme inntektsår (desember 2026 i januar 2027 og
+desember 2027 i desember 2027). Forskriften tar ikke stilling til det.
+Skattekortet er regnet for ett halvt trekk per år, så den andre trekkes fullt.
+
+Alt dette er vår lesing av forskriften og bør bekreftes med Skatteetaten.
 
 ## Satsene er data, ikke kode
 
@@ -125,7 +271,8 @@ Alt ligger i satsregisteret (docs/regelverk.md) med kilde per rad.
 | `aga_sone_iva` | 7,9 % | ↑ |
 | `aga_sone_v` | 0 % | ↑ — nullsats er en sats, ikke en manglende verdi |
 | `feriepenger_lovens_minimum` | 10,2 % | ferieloven §10 nr. 2 |
-| `feriepenger_over_60` | 12,5 % | ferieloven §10 nr. 3 (+2,3 prosentpoeng) |
+| `feriepenger_over_60` | 12,5 % | ferieloven §10 nr. 3 (+2,3 prosentpoeng, tillegget bare opp til 6 G) |
+| `folketrygdens_grunnbelop` | 124 028 kr fra 1.5.2024, 130 160 kr fra 1.5.2025, 136 549 kr fra 1.5.2026 | FOR-2024-05-24-815, FOR-2025-05-23-837 § 1, FOR-2026-05-22-869 § 1 |
 
 Meldingen sier selv at verken soneinndeling eller satser er endret fra
 2025 til 2026, så periodene starter 2025-01-01 — den tidligste
@@ -133,6 +280,157 @@ Meldingen sier selv at verken soneinndeling eller satser er endret fra
 
 Feriepengesatsen ligger per ansatt, fordi den er et faktum om
 arbeidsforholdet (alder, tariff), ikke en systeminnstilling.
+
+## Feriepenger for arbeidstakere over 60 år
+
+**Bare tillegget stopper ved 6 G.** Ferieloven § 10 nr. 2 gir 10,2 % av
+hele grunnlaget. § 10 nr. 3 første ledd forhøyer satsen med 2,3
+prosentpoeng, og andre ledd sier at feriepenger «etter første ledd» ikke
+ytes for den delen av grunnlaget som overstiger 6 G. Forarbeidene beskriver
+det som en begrensning «for ekstraferie» (Ot.prp. nr. 65 (2007–2008) pkt.
+6.2.1), og Skatteetatens a-meldingsveiledning oppgir «supplement 2.3 percent
+up to 6 National Insurance basic amounts (G)». Med 1 000 000 kr i grunnlag
+for opptjeningsåret 2026 blir feriepengene 102 000 kr + 2,3 % av 819 294 kr
+= 120 843,76 kr.
+
+**Hvilket år tillegget starter.** Retten følger av at arbeidstakeren
+fyller 60 år i ferieåret (§ 5 nr. 2), og feriepengene for ferieåret beregnes
+av lønn utbetalt i opptjeningsåret, altså året før (§ 4 og § 10 nr. 1).
+Lovavdelingen legger det samme til grunn i sin uttalelse 23. mai 2009
+(sak 200902697): den forhøyede satsen beregnes av grunnlaget tjent opp året
+før. Den som fyller 60 i 2027 skal derfor ha tillegget på lønn utbetalt i
+2026, året vedkommende fyller 59. Satsen velges fortsatt per ansatt, og
+regnmed hever den ikke av seg selv. Står den ansatte på 10,2 % eller 12 % fra
+det året, viser ansattlisten satsen som kreves (12,5 % eller 14,3 %), og hver
+kjøring advarer til satsen er endret.
+
+**Når satsen endres.** Satsen endres under Ansatte
+(`PUT …/employees/{eid}/holiday-rate`, `LONN_SKRIV`) og gjelder fra neste
+kjøring. Hver lønnslinje lagrer satsen den ble avsatt med
+(`payroll_line.holiday_pay_bp`, migration 0105), så en lønnsslipp viser alltid
+satsen som faktisk ble brukt. Linjer fra før migrasjonen endres ikke. De leser
+satsen den ansatte hadde da migrasjonen kjørte, som var den eneste satsen de
+kunne ha fått.
+
+Tillegget gjelder hele opptjeningsåret. Heves satsen fra 10,2 % til 12,5 %
+eller fra 12 % til 14,3 % midt i året, tar **første kjøring etter endringen
+igjen** 2,3 % av lønnen som alt er utbetalt i året, og kjøringen sier fra med
+beløpet. Den lønnen teller også mot 6 G. Etter året er tillegget dermed
+2,3 % av det laveste av årets grunnlag og 6 G, uansett når satsen ble hevet.
+Eksempel: 300 000 kr utbetalt på 10,2 %, så 600 000 kr på 12,5 %, gir
+91 800 kr + 2,3 % av 819 294 kr = 110 643,76 kr.
+
+Lønn på en annen avtalt sats, for eksempel 13 %, teller verken mot 6 G eller
+gir etterbetaling, siden regnmed ikke kan se om den satsen allerede rommer
+tillegget. To kjøringer samtidig kan ikke begge ta igjen det samme beløpet: den
+som kommer sist nektes og kjøres på nytt.
+
+Andre endringer virker bare framover: en overgang fra 10,2 % til 12 % etter
+ny tariffavtale tar ikke igjen noe, og en senket sats endrer ikke det som alt
+er avsatt. Et **tidligere** opptjeningsår med for lav sats rettes ikke
+automatisk, fordi det året kan være utbetalt og innrapportert. Advarselen sier
+fra, og differansen må føres for hånd.
+
+**Hvilken G.** Grunnbeløpet per 31. desember i opptjeningsåret, eller på
+fratredelsestidspunktet for den som slutter i opptjeningsåret (§ 10 nr. 3
+andre ledd). Før ny G er fastsatt i mai brukes den siste registrerte. Hver
+kjøring regner årets kutt på nytt fra alt som er utbetalt i året, og trekker
+fra det tidligere linjer allerede har kuttet (`holiday_pay_cap_cut_ore`),
+så en ny G retter seg selv ved neste kjøring. Bokførte linjer endres aldri.
+Mangler årets G etter fristen i satsregisteret, advarer kjøringen når taket
+slår inn.
+Lønn teller i det året den er **utbetalt**, så desemberlønn utbetalt i januar
+hører til det nye året.
+
+**Tariff.** 12 % har ikke noe 60-årstillegg og derfor ikke noe tak. 14,3 %
+er 12 % + 2,3 prosentpoeng: 12 % løper på all lønn og tillegget stopper ved
+6 G, slik Skatteetatens tabell viser. § 10 nr. 6 lar en tariffavtale fravike
+beregningsreglene, og Skatteetaten nevner at tariff eller annen avtale kan gi
+høyere grunnlag. regnmed vet ikke hva den enkelte avtalen sier, så kjøringen
+**advarer med beløpet** hver gang taket slår inn. Gir avtalen høyere grunnlag,
+må differansen avsettes for hånd. Andre satser enn 12,5 % og 14,3 % behandles
+som avtalte satser uten tak. Det samme gjelder disse to satsene før
+opptjeningsåret den ansatte fyller 59.
+
+Kilder: [ferieloven](https://lovdata.no/dokument/NL/lov/1988-04-29-21),
+[Ot.prp. nr. 65 (2007–2008)](https://www.regjeringen.no/no/dokumenter/otprp-nr-65-2007-2008-/id516695/?ch=6),
+[Lovavdelingens uttalelse](https://www.regjeringen.no/no/dokumenter/-5---tolkning-av-ferieloven---innforing-/id571024/),
+[Skatteetaten om feriepenger i a-meldingen](https://www.skatteetaten.no/en/business-and-organisation/employer/the-a-melding/the-a-melding-guide/salary-and-benefits/overview-of-salary-and-other-benefits/holiday-pay/).
+
+### Forskuddstrekk på tillegget
+
+Feriepenger utbetalt i ferieåret er trekkfrie, men **tillegget på 2,3
+prosentpoeng er trekkpliktig** (skattebetalingsforskriften § 5-6-1 første ledd
+bokstav b). Fritaket i § 5-7-1 første ledd bokstav a gjelder feriepenger etter
+ferieloven § 10 nr. 2 og nevner ikke nr. 3, og Skattebetalingshåndboken sier at
+det «alltid» skal trekkes i tillegget.
+
+| Sats | Trekkfritt | Trekkpliktig |
+| --- | --- | --- |
+| 12,5 % | 10,2 % av hele grunnlaget | 2,3 % av grunnlaget opp til 6 G |
+| 14,3 % (tariff) | 12 % av hele grunnlaget | 2,3 % av grunnlaget opp til 6 G |
+
+Med 1 000 000 kr i grunnlag og 6 G på 819 294 kr er 102 000 kr trekkfritt og
+18 843,76 kr trekkpliktig på 12,5 %. På 14,3 % er 120 000 kr trekkfritt og det
+samme beløpet trekkpliktig. Tariffens 12 % ligger under grensen på 12,34 % av
+grunnlaget (§ 5-7-1 første ledd bokstav b). Kort over 12 måneder trekker i alle
+feriepenger som før.
+
+**Hele fjorårets opptjening regnes ut.** Er utbetalingen nøyaktig det som ble
+avsatt i fjor og fortsatt er skyldig, er tillegget det som faktisk ble avsatt
+over den ordinære satsen. Da er 6 G-taket allerede med.
+
+**Alt annet må oppgis.** Ingen kilde sier om en delutbetaling går først til den
+trekkfrie delen, til tillegget eller forholdsmessig, så regnmed fordeler ikke.
+Kjøringen nekter til tillegget er oppgitt (`holiday_pay_supplement_ore`, i
+portalen «Herav tillegg over 60») ved delutbetaling, rest etter en tidligere
+utbetaling, feriepengegjeld uten lønnshistorikk i regnmed og avtalte satser der
+vi ikke ser delene (fra 14,642 % dekker det som trekkes over grensen et helt
+tillegg uansett, så der trengs det ikke). Feilmeldingen oppgir hva som er skyldig fra tidligere år.
+Andelen regnes av satsen hver lønnslinje ble avsatt med
+(`payroll_line.holiday_pay_bp`), så en sats som er endret etter opptjeningen
+flytter den ikke.
+
+**Merket trekkfri.** Tillegget trekkes også når utbetalingen er merket trekkfri
+for dødsfall eller løpende utbetaling (§ 5-7-1 første ledd bokstav c og d).
+§ 5-6-1 første ledd bokstav b har ikke noe unntak, og ingen av bestemmelsene
+sier hvilken som går foran, så regnmed velger siden som ikke gir restskatt.
+Den som kjører lønn, kan oppgi 0 i «Herav tillegg over 60» når Skatteetaten har
+sagt at tillegget er fritatt. Holder utbetalingen også årets opptjening, må
+tillegget oppgis, siden beløpet da dekker to år.
+
+**Over 12,34 %.** Tillegget er den delen som ligger over den ordinære satsen,
+så det trekkes bare én gang: det som går til tillegget, regnes ikke også som
+overskudd over grensen. **Kjent begrensning:** kjøringen ser bare tillegget i
+den utbetalingen den regner på. En avtalt sats over grensen som utbetales i
+flere deler med oppgitt tillegg, kan derfor bli trukket for mye. Det rettes i
+skatteoppgjøret.
+
+**Tabellkort er en tolkning.** Tillegget legges til månedens lønn, og trekket
+leses av tabellen én gang. § 5-10-2 annet ledd legger trekkpliktig
+feriegodtgjørelse til arbeidstakere over 60 år under tabellreglene i første
+ledd, § 5-10-1 første ledd hindrer to tabelloppslag for samme periode, og Sticos
+og Simployer beskriver tillegget som en del av trekkgrunnlaget ved utbetaling.
+Skatteetatens generelle veiledning sier derimot at «ytelser som gjelder annen
+periode enn den lønnen betales ut for» skal bruke kortets prosent. Den nevner
+ikke dette tillegget, og vi legger den særskilte forskriftsteksten til grunn.
+Ingen kilde sier det uttrykkelig, så punktet bør bekreftes av Skatteetaten.
+
+**Desember.** Halvt trekk gjelder den ordinære lønnen innenfor
+gjennomsnittsfortjenesten, ikke tillegget. Kildene omtaler ikke tillegget her,
+så regnmed velger siden som ikke gir den ansatte restskatt.
+
+**A-meldingen** har én `feriepenger`-linje med hele beløpet, alltid trekkpliktig.
+Skatteetatens veiledning har ingen egen linje for tillegget. Det som trekkes,
+inngår i forskuddstrekket.
+
+Kilder: [skattebetalingsforskriften § 5-6-1](https://lovdata.no/forskrift/2007-12-21-1766/§5-6-1),
+[§ 5-7-1](https://lovdata.no/forskrift/2007-12-21-1766/§5-7-1),
+[§ 5-10-2](https://lovdata.no/forskrift/2007-12-21-1766/§5-10-2),
+[Skattebetalingshåndboken](https://oppslag.rettskilder.skatteetaten.no/rettskilder2/type/handboker/skattebetalingshandboken/gjeldende/SKTB_ID-5-0.001/SKTB_ID-5-9.001/SKTB_ID-5-9.008),
+[Slik trekker du riktig skatt](https://www.skatteetaten.no/bedrift-og-organisasjon/arbeidsgiver/skattekort-og-skattetrekk/slik-trekker-du-riktig-skatt/),
+[Sticos](https://www.sticos.no/fagstoff/slik-er-reglene-feriepenger-til-ansatte-over-60-aar),
+[Simployer](https://www.simployer.com/no/artikler/skatt-feriepenger-60).
 
 **Den ekstra arbeidsgiveravgiften på 5 % over 750 000 kroner ble fjernet
 fra 2025.** Den finnes ikke i registeret fordi den ikke finnes.
@@ -189,8 +487,12 @@ gjøre de samme operasjonene i samme rekkefølge og runde likt (Javas
 I lønnskjøringen: månedstabellen, trekkgrunnlaget i hele kroner (øre
 under en krone flytter aldri trekket over neste 100-kronerstrinn), og
 **halvt tabelltrekk i desember** — som for prosenttrekk, fordi
-10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie som
-før.
+10,5-månederstabellene er regnet for det, og med samme avgrensning (se
+«Hva det halve trekket i desember dekker»). Feriepenger er trekkfrie på
+samme vilkår som for prosentkort; det som faller utenfor, trekkes med
+kortets trekkprosent (se «Feriepenger det likevel skal trekkes i»).
+Tillegget for arbeidstakere over 60 år går derimot inn i månedens grunnlag
+og halveres ikke i desember.
 
 **Tabellene over 12 måneder** (7350, 7500, 7700, 6350, 6500, 6700,
 0100, 0101, 7150, 7160) regnes også: rutinen kjenner dem selv, og
@@ -259,7 +561,7 @@ men brukes ikke.
 | --- | --- |
 | Trekkprosent over 10,5 måneder | **settes** (prosenten leses som desimaltekst, aldri som flyttall) |
 | Trekkprosent over 12 måneder (bl.a. kildeskatt) | **settes**, merket 12 måneder (under) |
-| Trekktabell | **settes** når tabellnummeret og kortet er enige om 10,5 eller 12 måneder; ellers beholdes |
+| Trekktabell | **settes** når tabellnummeret og kortet er enige om 10,5 eller 12 måneder, sammen med kortets trekkprosent; ellers beholdes |
 | Frikort uten beløpsgrense, eller «ikke trekkplikt» | **settes** til ingen trekk |
 | Frikort med beløpsgrense | **settes** med grensen arbeidsgiveren er tildelt (under) |
 | Trekk over 11 måneder, eller et annet antall | beholdes — regnmed kjenner reglene for 10,5 og 12 |
@@ -372,6 +674,7 @@ listingen.
 | Metode | Sti |
 | --- | --- |
 | GET/POST | `/companies/{id}/employees` |
+| PUT | `/companies/{id}/employees/{eid}/holiday-rate` (feriepengesats fra neste kjøring) |
 | POST/DELETE | `/companies/{id}/employees/{eid}/link` (koble/koble fra portalbruker) |
 | GET | `/companies/{id}/employees/{eid}/link/history` |
 | GET/POST | `/companies/{id}/payroll` (`?preview=true`: beregn uten å bokføre) |
@@ -857,9 +1160,11 @@ ansvarlig for, uten en motor med skjult oppførsel.
 
 **Slippen lagres ikke.** Til forskjell fra fakturaen, der PDF-en *er*
 salgsdokumentet og derfor bokføres som vedlegg, er lønnsslippen utledet
-av lønnslinjen — og linjene er innsettings-bare. Samme linje gir samme
-bytes for alltid, så den rendres på forespørsel i stedet for å lagre
-enda en kopi av personopplysninger.
+av lønnslinjen — og linjene er innsettings-bare. Slippens egne tall står
+derfor fast, så den rendres på forespørsel i stedet for å lagre enda en
+kopi av personopplysninger. Hittil-i-år-tallene summeres fra kjøringene
+hver gang, så de endrer seg hvis en kjøring bokføres senere med en
+tidligere utbetalingsdato.
 
 Slippen **forklarer** trekket i stedet for bare å oppgi det: grunnlaget
 står i parentes («Forskuddstrekk (35 % av 55 000,00)»), og både
@@ -867,6 +1172,14 @@ feriepengenes trekkfrihet og desembers halve trekk får sin egen linje
 når de gjelder. Feriepenger opptjent denne måneden står under en egen
 overskrift, tydelig utenfor «Til utbetaling», og hittil-i-år-tallene
 står nederst.
+
+**Hittil i år følger utbetalingsåret**, for brutto, forskuddstrekk og
+opptjente feriepenger. Feriepengegrunnlaget teller lønn det året den
+utbetales (ferieloven § 10 nr. 1), og trekktabellene hentes fra
+utbetalingsdatoen. Desemberlønn utbetalt i januar står derfor under
+«Hittil i 2027», selv om lønnsperioden er desember 2026. Kjøringene
+telles i rekkefølge etter utbetalingsdato og deretter lønnsperiode, så
+desember kommer foran januar også når begge utbetales samme dag.
 
 `GET /companies/{id}/payroll/{run}/slip/{employee}` → `application/pdf`.
 Fødselsdato, ikke fødselsnummer — også på et dokument som sendes til
@@ -929,6 +1242,11 @@ til neste måned.
 Ansatte med timesats og uten månedslønn starter med «Fra låste timer»
 krysset av; serveren nekter hvis måneden ikke er låst.
 
+Skjemaet viser alle som var ansatt i den valgte måneden, også etter
+sluttdatoen, slik at et sluttoppgjør kan kjøres. Den som alt har sluttet,
+står uten hake og med 0 kr i brutto, så en vanlig kjøring aldri betaler
+vedkommende ved et uhell. Det som er skrevet inn, beholdes når måneden endres.
+
 **Lønnskjøringer og a-melding** viser hver kjøring med brutto,
 **utbetalte feriepenger**, trekk, kjøregodtgjørelse, netto og
 avsetningene — uten feriepengekolonnen gikk ikke tallene opp når
@@ -948,6 +1266,18 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
 
+- Endret feriepengesats (`crates/regnmed-db/tests/payroll.rs`, ekte
+  Postgres): at kjøringen advarer når tillegget mangler, at en hevet sats
+  tar igjen tillegget nøyaktig én gang også når to kjøringer går samtidig,
+  at året ender på 10,2 % + 2,3 % av 6 G, at avtalte satser ikke bruker opp
+  taket, at gamle lønnsslipper beholder satsen sin, og at endringen holder
+  seg innenfor selskapet. Tilgangsvakten er festet i `grupper/access.rs`.
+- Trekk i feriepenger utenfor fritaket: enhetstester i `regnmed-core::payroll`
+  for fratreden, grensen på 21 % (også utbetalt i to deler), åpningsbalanser,
+  at årets feriepenger ikke trekkes to ganger, kortets prosent på tabellkort
+  og fullt trekk i desember. Mot ekte Postgres (`regnmed-db/tests/payroll.rs`):
+  en hel fratreden med fjorårets og årets feriepenger, avtalt sats over
+  grensen, avhukingen for dødsfall, og tabellkort med og uten lagret prosent.
 - Skattekortene: `regnmed-gov::tax_card` leser det EKTE svaret fra
   testmiljøet og fester beslutningen for hver korttype (prosent, tabell,
   frikort med og uten grense, kildeskatt, uten kort), og at prosenten
@@ -965,11 +1295,16 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   kontroller (trygdeavgiftsgrensene 125 188 / 143 175, aldri mer enn
   grunnlaget), og at ukjente tabeller og år nektes.
 - `regnmed-core::payroll` — prosenttrekk, tabelltrekk (og halvt i
-  desember), trekkfrie feriepenger, halv skatt i desember, kort over 12
+  desember), trekkfrie feriepenger, trekk i 60-årstillegget (også over 6 G,
+  på tariff, i tabell og i desember), at en delutbetaling nekter til
+  tillegget er oppgitt, halv skatt i desember, kort over 12
   måneder (trekk i feriepenger, fullt i desember), frikort med grense
   (under, over og på vei over), trekk og arbeidsgiveravgift avrundet
   ned til hele kroner (Skatteetatens 1 727,25 → 1 727, og ned også ved
   ,99), og at ukjente tabeller, år og sone Ia nektes med begrunnelse.
+- Mot ekte Postgres: 60-årstillegget fra opptjening til utbetaling (regnet
+  ut for hele fjorårets opptjening, nektet og oppgitt ved delutbetaling, én
+  `feriepenger`-linje i a-meldingen).
 - Mot ekte Postgres: frikort over to kjøringer (januar under grensen,
   februar 50 % av det som overstiger) med fjorårets lønn utenfor
   tellingen, at en kjøring utbetalt i et år uten hentet frikort nekter,
@@ -1023,7 +1358,10 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   reduserer gjelden i stedet for å bli kostnad, at sone V er nullsats,
   at samme måned ikke kan kjøres to ganger, at kjøringer og identitet
   ikke kan endres i ettertid, og at listen viser fødselsdato og ikke
-  fødselsnummer.
+  fødselsnummer. Desember: at bonus bare halveres opp til gjennomsnittet,
+  at en feriepengemåned ikke trekker snittet ned, at timelønn og en ansatt
+  uten tidligere lønn trekkes fullt med advarsel, og at samme utbetalingsår
+  ikke får to halve trekk.
 - Timelønn: at beløpet regnes fra minutter, at en ULÅST måned nektes,
   at kjøringen går etter låsing og gir riktig brutto og trekk, og at en
   ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.
@@ -1049,4 +1387,5 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   fødselsnummeret ikke er i dokumentet.
 - Lønnsslippen bygget fra en ekte kjøring, med hittil-i-år summert over
   flere måneder — og hentet som `application/pdf` fra en kjørende
-  server (2,8 kB, uten fødselsnummer).
+  server (2,8 kB, uten fødselsnummer). Desemberlønn utbetalt i januar
+  teller i det nye året og foran januarlønnen.

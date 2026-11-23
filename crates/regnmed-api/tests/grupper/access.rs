@@ -571,7 +571,9 @@ async fn an_employee_gets_only_their_own_payslip() {
                 employee_id: *id,
                 gross_ore: None,
                 holiday_pay_ore: 0,
+                holiday_pay_supplement_ore: None,
                 from_timesheet: false,
+                holiday_pay_exempt: false,
             })
             .collect::<Vec<_>>(),
         "Test",
@@ -709,6 +711,21 @@ async fn payroll_is_not_general_reading() {
             .await,
             StatusCode::FORBIDDEN,
             "{name} skulle ikke fått endre arbeidsforholdet"
+        );
+        assert_eq!(
+            status(
+                &state,
+                "PUT",
+                &format!(
+                    "/companies/{company}/employees/{}/holiday-rate",
+                    Uuid::new_v4()
+                ),
+                token,
+                r#"{"feriepenger_bp":1250}"#,
+            )
+            .await,
+            StatusCode::FORBIDDEN,
+            "{name} skulle ikke fått endre feriepengesatsen"
         );
     }
     // The a-melding carries every employee's fødselsnummer, so it needs

@@ -82,13 +82,15 @@ pub struct PayslipInput {
     /// not money paid now, so it is stated apart from the total.
     pub holiday_pay_accrual_ore: i64,
     pub holiday_pay_bp: i64,
+    /// What the 6 G cap took off this month's accrual (ferieloven § 10 nr. 3).
+    pub holiday_pay_cap_cut_ore: i64,
     /// Year to date, through this run.
     pub year_to_date_gross_ore: i64,
     pub year_to_date_withholding_ore: i64,
     pub ytd_holiday_pay_ore: i64,
 }
 
-fn kr(ore: i64) -> String {
+pub(crate) fn kr(ore: i64) -> String {
     let raw = Ore(ore).to_string();
     let (heltall, rest) = raw.split_once(',').expect("Ore always has decimals");
     let (sign, digits) = heltall
@@ -207,12 +209,28 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly += 12.0;
     }
     if input.gross_ore != input.withholding_basis_ore {
+        // A slip is re-rendered from its line, so one with all holiday pay
+        // exempt must keep the wording it was issued with.
+        let exempt_holiday_pay = input.gross_ore - input.withholding_basis_ore;
+        let holiday_pay: i64 = input
+            .lines
+            .iter()
+            .filter(|l| l.text == "Feriepenger")
+            .map(|l| l.amount_ore)
+            .sum();
         pdf.text(
             MARGIN,
             ly,
             8.0,
             Font::Regular,
-            "Feriepenger utbetales uten forskuddstrekk.",
+            &if exempt_holiday_pay == holiday_pay {
+                "Feriepenger utbetales uten forskuddstrekk.".to_string()
+            } else {
+                format!(
+                    "Feriepenger uten forskuddstrekk: {} kr.",
+                    kr(exempt_holiday_pay)
+                )
+            },
         );
         ly += 12.0;
     }
@@ -250,10 +268,22 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         9.0,
         Font::Regular,
-        &format!(
-            "Feriepenger ({} av bruttolønn) — utbetales neste år",
-            percent(input.holiday_pay_bp)
-        ),
+        &if input.holiday_pay_cap_cut_ore == 0 {
+            format!(
+                "Feriepenger ({} av bruttolønn) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
+        } else if input.holiday_pay_cap_cut_ore < 0 {
+            format!(
+                "Feriepenger ({}, rettet for hele opptjeningsåret) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
+        } else {
+            format!(
+                "Feriepenger ({}, tillegget på 2,3 poeng bare opp til 6G) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
+        },
     );
     pdf.text_right(
         RIGHT,
@@ -270,7 +300,8 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         8.0,
         Font::Bold,
-        &format!("HITTIL I {}", input.year),
+        // The figures below count by payment year, not the pay month's.
+        &format!("HITTIL I {}", input.paid_date.format("%Y")),
     );
     ly += 14.0;
     for (text, amount) in [
@@ -318,6 +349,7 @@ mod tests {
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
             holiday_pay_bp: 1020,
+            holiday_pay_cap_cut_ore: 0,
             year_to_date_gross_ore: 15_000_000,
             year_to_date_withholding_ore: 5_250_000,
             ytd_holiday_pay_ore: 1_530_000,
@@ -365,11 +397,29 @@ mod tests {
             "feriepengenes trekkfrihet skal forklares"
         );
 
+        // The over-60 supplement is withheld, so only the rest is exempt.
+        june.withholding_basis_ore = 3_920_000;
+        let text = String::from_utf8_lossy(&render_payslip(&june)).to_string();
+        assert!(
+            text.contains("Feriepenger uten forskuddstrekk: 30") && text.contains("800,00 kr"),
+            "{text}"
+        );
+
         let mut desember = input();
         desember.month = 12;
         desember.half_withholding = true;
         let text = String::from_utf8_lossy(&render_payslip(&desember)).to_string();
         assert!(text.contains("Halvt forskuddstrekk"), "{text}");
+    }
+
+    #[test]
+    fn the_year_to_date_heading_names_the_payment_year() {
+        let mut december = input();
+        december.month = 12;
+        december.paid_date = date(2027, 1, 15);
+        let text = String::from_utf8_lossy(&render_payslip(&december)).to_string();
+        assert!(text.contains("HITTIL I 2027"), "{text}");
+        assert!(text.contains("2026"), "the pay period stays: {text}");
     }
 
     /// The fødselsnummer must never end up in a document that travels.
