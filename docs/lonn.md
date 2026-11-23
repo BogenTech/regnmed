@@ -250,6 +250,14 @@ Skatteetaten på selskapets vegne, så **kundevilkårene må være godtatt**
 først, og den står i registeret over kall til myndighetene
 (`/authority-calls`, docs/vilkar-teknisk.md).
 
+**Prøvd fra deployet test 2026-11-23:** portalen bestilte skattekortet til en
+av Skatteetatens publiserte testpersoner for et syntetisk selskap (`BR29541`,
+skattekort-id 340079). Kortet på 38 % over 10,5 måneder ble lagret og satt på
+den ansatte. Forhåndsvisningen av en lønn på 40 000 kr trakk 15 200 kr i
+november og 7 600 kr (halv skatt) i desember. Ingen lønnskjøring ble bokført,
+så dette kortet er ikke prøvd gjennom en bokført kjøring og en a-melding. Andre
+korttyper er ikke satt på en ansatt fra deployet test.
+
 Ikke bygget ennå: endringsbestillinger (`HENT_KUN_ENDRING`) og varsel
 ved endring — i dag hentes kortet på nytt med knappen — og bestillinger
 over 1000 ansatte, som API-et ikke tar i ett kall.
