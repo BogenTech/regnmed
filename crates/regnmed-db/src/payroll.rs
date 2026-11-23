@@ -138,11 +138,6 @@ pub async fn set_withholding(
     validate_withholding(&change.kind, change.percent_bp, change.table)?;
     let reason = change.reason.trim();
     ensure!(!reason.is_empty(), "skriv hvorfor trekket endres");
-    let (percent_bp, table) = match change.kind.as_str() {
-        "prosent" => (change.percent_bp, None),
-        "tabell" => (None, change.table),
-        _ => (None, None),
-    };
     let mut tx = pool.begin().await?;
     let old = sqlx::query(
         "select trekk_type, trekk_prosent_bp, trekk_tabell, withholding_twelve_months,
@@ -154,6 +149,16 @@ pub async fn set_withholding(
     .fetch_optional(&mut *tx)
     .await?
     .context("ukjent ansatt")?;
+    // A table's percentage is printed on its card (§ 5-10-3) and withholds
+    // holiday pay, so it survives saving the same table and no other.
+    let same_table = old.get::<String, _>("trekk_type") == "tabell"
+        && old.get::<Option<i32>, _>("trekk_tabell") == change.table;
+    let (percent_bp, table) = match change.kind.as_str() {
+        "prosent" => (change.percent_bp, None),
+        "tabell" if same_table => (old.get("trekk_prosent_bp"), change.table),
+        "tabell" => (None, change.table),
+        _ => (None, None),
+    };
     sqlx::query(
         "update employee set trekk_type = $3, trekk_prosent_bp = $4, trekk_tabell = $5,
                 withholding_twelve_months = false, tax_free_card_limit_ore = null

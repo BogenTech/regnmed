@@ -230,6 +230,25 @@ async fn withholding_set_by_hand_is_validated_and_leaves_a_trail() {
     assert_eq!(change["reason"], "Nytt kort fra den ansatte");
     assert_eq!(change["changed_by"], "Lønnsansvarlig");
 
+    // The percentage on a table card withholds holiday pay: saving the same
+    // table keeps it, and another table must not inherit it.
+    let table = |n: i32| json!({"trekk_type": "tabell", "trekk_tabell": n, "reason": "Rettet"});
+    let (status, body) = send(&state, &token, "PUT", &uri, table(9040)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    sqlx::query("update employee set trekk_prosent_bp = 3100 where id = $1::uuid")
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let (status, body) = send(&state, &token, "PUT", &uri, table(9040)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, list) = call(&state, &token, &base).await;
+    assert_eq!(list["ansatte"][0]["trekk_prosent_bp"], 3100);
+    let (status, body) = send(&state, &token, "PUT", &uri, table(8010)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, list) = call(&state, &token, &base).await;
+    assert!(list["ansatte"][0]["trekk_prosent_bp"].is_null(), "{list}");
+
     // The trail is insert-only, also for the application's own role.
     assert!(
         sqlx::query(
@@ -304,6 +323,7 @@ async fn setting_withholding_by_hand_answers_a_card_that_was_not_applied() {
             issued: None,
             raw: json!({}),
             decision: Err("Før trekket for hånd.".into()),
+            table_percent_bp: None,
         }],
     )
     .await

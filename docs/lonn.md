@@ -453,13 +453,16 @@ skattekort** der henting er satt opp, og alternativene **Prosent**,
 Trekket på en eksisterende ansatt endres med `PUT
 …/employees/{eid}/withholding` (`LONN_SKRIV`), og **begrunnelse er
 påkrevd**. Endringen og raden i den innsettings-bare
-`employee_withholding_change` (migration 0106: fra, til, hvorfor, hvem,
+`employee_withholding_change` (migration 0108: fra, til, hvorfor, hvem,
 når) skrives i samme transaksjon. Sporet leses med `GET` på samme adresse
 (`LONN_LES`). Bokførte kjøringer beholder trekket de brukte, og et nytt
 skattekort erstatter det som er satt for hånd.
 
 Å sette trekket for hånd på en ansatt med frikort eller prosent over 12
 måneder fjerner kortets vilkår, og skjemaet advarer om det før lagring.
+Trekkprosenten på et tabellkort, som brukes på feriepenger utenfor
+fritaket, består når samme tabell lagres på nytt. Et annet tabellnummer
+fjerner den, og kjøringen nekter da slike feriepenger til kortet er hentet.
 Et kort som ikke ble satt, gir en advarsel i lønnskjøringen til noen har
 satt trekket for hånd med begrunnelse. Skattekort-kortet i portalen viser
 nyeste kort per ansatt for året og hver bestilling som fortsatt venter
