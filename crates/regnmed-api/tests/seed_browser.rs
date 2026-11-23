@@ -346,7 +346,9 @@ async fn seed_browser_demo() {
                 employee_id: a.id,
                 gross_ore: None,
                 holiday_pay_ore: 0,
+                holiday_pay_supplement_ore: None,
                 from_timesheet: false,
+                holiday_pay_exempt: false,
             })
             .collect::<Vec<_>>(),
         "Demo Bruker",
@@ -367,7 +369,9 @@ async fn seed_browser_demo() {
                 gross_ore: None,
                 // June: feriepenger are paid out, and they carry no withholding.
                 holiday_pay_ore: 4_500_000,
+                holiday_pay_supplement_ore: None,
                 from_timesheet: false,
+                holiday_pay_exempt: false,
             })
             .collect::<Vec<_>>(),
         "Demo Bruker",

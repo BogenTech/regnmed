@@ -272,7 +272,9 @@ async fn fetch_answer(
                 regnmed_gov::tax_card::Decision::Apply(w) => Ok(w),
                 regnmed_gov::tax_card::Decision::Keep(reason) => Err(reason),
             };
+            let table_percent_bp = regnmed_gov::tax_card::table_percent_bp(&c);
             regnmed_db::tax_card::ReceivedCard {
+                table_percent_bp,
                 nin: c.nin,
                 result: c.result,
                 card_id: c.card_id,

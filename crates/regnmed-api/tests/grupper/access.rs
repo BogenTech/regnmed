@@ -571,7 +571,9 @@ async fn an_employee_gets_only_their_own_payslip() {
                 employee_id: *id,
                 gross_ore: None,
                 holiday_pay_ore: 0,
+                holiday_pay_supplement_ore: None,
                 from_timesheet: false,
+                holiday_pay_exempt: false,
             })
             .collect::<Vec<_>>(),
         "Test",

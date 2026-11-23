@@ -785,11 +785,20 @@ pub struct PayrollLine {
     #[serde(default)]
     #[serde(rename = "feriepenger_ore")]
     holiday_pay_ore: i64,
+    /// How much of the holiday pay is the over-60 supplement. Omitted, the
+    /// run works it out for last year's whole accrual and refuses otherwise.
+    #[serde(default)]
+    holiday_pay_supplement_ore: Option<i64>,
     /// Pay from hours logged this month instead. The timesheet month
     /// must be locked first (docs/lonn.md).
     #[serde(default)]
     #[serde(rename = "fra_timer")]
     from_timesheet: bool,
+    /// Death, or paid regularly with each wage payment under an agreement
+    /// (skattebetalingsforskriften § 5-7-1 (1) c and d).
+    #[serde(default)]
+    #[serde(rename = "feriepenger_trekkfri")]
+    holiday_pay_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -832,7 +841,9 @@ pub async fn run_payroll(
             employee_id: l.employee_id,
             gross_ore: l.gross_ore,
             holiday_pay_ore: l.holiday_pay_ore,
+            holiday_pay_supplement_ore: l.holiday_pay_supplement_ore,
             from_timesheet: l.from_timesheet,
+            holiday_pay_exempt: l.holiday_pay_exempt,
         })
         .collect();
     let run = if q.preview {
@@ -868,6 +879,7 @@ pub async fn run_payroll(
             "navn": l.name,
             "brutto_ore": l.calculation.gross_ore,
             "feriepenger_ore": l.calculation.holiday_pay_ore,
+            "feriepenger_trekkfri": l.holiday_pay_exempt,
             "forskuddstrekk_ore": l.calculation.withholding_ore,
             "kjoregodtgjorelse_ore": l.calculation.allowance_ore,
             "netto_ore": l.calculation.net_ore,

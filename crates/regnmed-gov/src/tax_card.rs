@@ -300,6 +300,16 @@ pub fn decide(card: &TaxCard) -> Decision {
     Decision::Keep("Skattekortet har en trekkform regnmed ikke kjenner.".into())
 }
 
+/// The percentage printed on a table card, for what cannot go through the
+/// table (skattebetalingsforskriften § 5-10-3).
+pub fn table_percent_bp(card: &TaxCard) -> Option<i64> {
+    card.raw["skattekort"]["forskuddstrekk"]
+        .as_array()?
+        .iter()
+        .find(|t| t["trekkode"] == MAIN_EMPLOYER)
+        .and_then(|t| basis_points(&t["trekktabell"]["prosentsats"]))
+}
+
 /// Whether the trekk is spread over 12 months (true) or 10,5 (false).
 /// Any other spread is kept: regnmed knows the rules for these two only.
 fn months(trekk: &Value) -> Result<bool, Decision> {
@@ -403,6 +413,22 @@ mod tests {
             ]}}),
         };
         assert_eq!(decide(&card), Decision::Apply(Withholding::None));
+    }
+
+    #[test]
+    fn a_table_cards_percentage_is_read_from_the_main_employer_line() {
+        let card = TaxCard {
+            nin: "1".into(),
+            result: "skattekortopplysningerOK".into(),
+            card_id: None,
+            issued: None,
+            raw: serde_json::json!({"skattekort": {"forskuddstrekk": [
+                {"trekkode": "loennFraBiarbeidsgiver", "trekkprosent": {"prosentsats": 50}},
+                {"trekkode": MAIN_EMPLOYER, "trekktabell":
+                    {"tabellnummer": "8000", "prosentsats": 40.5}}
+            ]}}),
+        };
+        assert_eq!(table_percent_bp(&card), Some(4050));
     }
 
     /// A table card must agree with its own table on 10,5 vs 12 months,
