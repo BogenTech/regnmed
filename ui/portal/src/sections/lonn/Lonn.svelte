@@ -31,6 +31,7 @@
     data = {
       ansatte: employees.ansatte,
       koder: employees.koder,
+      canFetchCard: employees.can_fetch_tax_card,
       kjoringer: payroll.kjoringer,
       invitasjoner: invitasjoner ? invitasjoner.invitasjoner : null,
       medlemmer: medlemmer ? medlemmer.medlemmer : null,
@@ -65,9 +66,10 @@
     {companyId}
     ansatte={data.ansatte}
     koder={data.koder}
+    canFetchCard={data.canFetchCard}
     invitasjoner={data.invitasjoner}
     medlemmer={data.medlemmer}
     onDone={reload}
   />
-  <Skattekort {companyId} onDone={reload} />
+  <Skattekort {companyId} ansatte={data.ansatte} onDone={reload} />
 {/if}

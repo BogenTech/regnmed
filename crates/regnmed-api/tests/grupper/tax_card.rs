@@ -490,4 +490,26 @@ async fn skattekort_are_fetched_stored_and_applied_only_where_payroll_is_right()
         "{body}"
     );
     assert_eq!(skatteetaten.lock().unwrap().answer_calls, calls);
+
+    // One employee: a new hire's card, without re-fetching everyone.
+    skatteetaten.lock().unwrap().reject_answers = false;
+    let sent_before = skatteetaten.lock().unwrap().orders.len();
+    let (status, body) = call(
+        &state,
+        &token,
+        "POST",
+        &format!("{order}&employee={}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(skatteetaten.lock().unwrap().orders.len(), sent_before);
+    let one = ids["20857597940"];
+    let (status, body) = call(&state, &token, "POST", &format!("{order}&employee={one}")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["antall_ansatte"], 1);
+    let sent = skatteetaten.lock().unwrap().orders.last().unwrap().clone();
+    assert_eq!(
+        sent["forespoerselOmSkattekortTilArbeidsgiver"]["arbeidsgiver"][0]["arbeidstakeridentifikator"],
+        json!(["20857597940"])
+    );
 }

@@ -189,7 +189,10 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/expenses/{expense_id}/submit` | POST |
 | `/companies/{company_id}/expenses/{expense_id}/suggestion` | GET |
 | `/companies/{company_id}/employees` | GET POST |
+| `/companies/{company_id}/business-units` | GET |
+| `/companies/{company_id}/occupations` | GET |
 | `/companies/{company_id}/employees/{employee_id}/employment` | PUT |
+| `/companies/{company_id}/employees/{employee_id}/withholding` | GET PUT |
 | `/companies/{company_id}/employees/{employee_id}/end` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/holiday-rate` | PUT |
 | `/companies/{company_id}/employees/{employee_id}/link` | POST DELETE |

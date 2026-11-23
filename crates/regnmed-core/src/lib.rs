@@ -34,6 +34,7 @@ pub mod kid;
 pub mod migration_csv;
 pub mod money;
 pub mod nin;
+pub mod occupation;
 pub mod ocr;
 pub mod orgnumber;
 pub mod pain001;

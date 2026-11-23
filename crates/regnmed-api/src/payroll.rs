@@ -137,6 +137,123 @@ pub async fn list_employees(
             "arbeidstidsordning": regnmed_core::amelding::WORKING_HOURS_SCHEMES,
             "ansettelsesform": regnmed_core::amelding::EMPLOYMENT_FORMS,
         },
+        "can_fetch_tax_card": state.tax_card.is_some(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct WithholdingRequest {
+    #[serde(rename = "trekk_type")]
+    kind: String,
+    #[serde(rename = "trekk_prosent_bp")]
+    percent_bp: Option<i32>,
+    #[serde(rename = "trekk_tabell")]
+    table: Option<i32>,
+    reason: String,
+}
+
+/// Sets an employee's withholding by hand, with the reason on the trail.
+/// A later skattekort replaces it.
+pub async fn update_withholding(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<WithholdingRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
+    regnmed_db::payroll::set_withholding(
+        &state.pool,
+        company_id,
+        employee_id,
+        &regnmed_db::payroll::WithholdingChange {
+            kind: request.kind,
+            percent_bp: request.percent_bp,
+            table: request.table,
+            reason: request.reason,
+        },
+        person.display(),
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn withholding_history(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
+    let rows =
+        regnmed_db::payroll::withholding_history(&state.pool, company_id, employee_id).await?;
+    Ok(Json(json!({
+        "history": rows.iter().map(|h| json!({
+            "from": {
+                "trekk_type": h.old_type,
+                "trekk_prosent_bp": h.old_percent_bp,
+                "trekk_tabell": h.old_table,
+                "trekk_12_maneder": h.old_twelve_months,
+                "frikort_grense_ore": h.old_tax_free_card_limit_ore,
+            },
+            "to": {
+                "trekk_type": h.new_type,
+                "trekk_prosent_bp": h.new_percent_bp,
+                "trekk_tabell": h.new_table,
+                "trekk_12_maneder": false,
+                "frikort_grense_ore": null,
+            },
+            "reason": h.reason,
+            "changed_by": h.changed_by,
+            "at": h.created_at.to_rfc3339(),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+/// The company's business units from Enhetsregisteret, to suggest in the
+/// employment form. An outage leaves the list empty: the field is still
+/// typed by hand, so a registry problem never blocks registering someone.
+pub async fn business_units(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
+    let orgnumber = regnmed_db::payroll::company_orgnumber(&state.pool, company_id).await?;
+    let units = regnmed_gov::brreg::BrregClient::from_env()
+        .business_units(&orgnumber)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("business unit lookup for {orgnumber}: {e:#}");
+            Vec::new()
+        });
+    Ok(Json(json!({
+        "units": units.iter().map(|u| json!({
+            "orgnumber": u.orgnumber,
+            "name": u.name,
+            "municipality": u.location.as_ref().and_then(|l| l.municipality.as_deref()),
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct OccupationQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Searches SSB's occupation catalogue by code or job title.
+pub async fn occupations(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+    Query(query): Query<OccupationQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollRead).await?;
+    Ok(Json(json!({
+        "occupations": regnmed_core::occupation::search(&query.q, 12)
+            .into_iter()
+            .map(|(code, name)| json!({"code": code, "name": name}))
+            .collect::<Vec<_>>(),
     })))
 }
 

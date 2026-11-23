@@ -799,8 +799,20 @@ pub fn router(state: AppState) -> Router {
             get(payroll::list_employees).post(payroll::create_employee),
         )
         .route(
+            "/companies/{company_id}/business-units",
+            get(payroll::business_units),
+        )
+        .route(
+            "/companies/{company_id}/occupations",
+            get(payroll::occupations),
+        )
+        .route(
             "/companies/{company_id}/employees/{employee_id}/employment",
             axum::routing::put(payroll::update_employment),
+        )
+        .route(
+            "/companies/{company_id}/employees/{employee_id}/withholding",
+            get(payroll::withholding_history).put(payroll::update_withholding),
         )
         .route(
             "/companies/{company_id}/employees/{employee_id}/end",

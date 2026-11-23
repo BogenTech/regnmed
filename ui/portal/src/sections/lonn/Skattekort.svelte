@@ -5,9 +5,10 @@
   import { api, post } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { kr } from "../../lib/format.js";
+  import { newestCards, openCardOrders } from "./employment.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, onDone } = $props();
+  let { companyId, ansatte, onDone } = $props();
 
   // Bare inneværende år: kortet settes på den ansatte og gjelder hver
   // kjøring, så neste års kort hentes i januar (serveren nekter ellers).
@@ -32,6 +33,7 @@
 
   $effect(() => {
     companyId;
+    ansatte; // the employee form can fetch a card too
     hent();
   });
 
@@ -79,6 +81,8 @@
   }
 
   let siste = $derived(data?.bestillinger?.[0]);
+  let open = $derived(openCardOrders(data?.bestillinger ?? [], iAar));
+  let cards = $derived(newestCards(data?.bestillinger ?? [], iAar));
 </script>
 
 <Card title="Skattekort">
@@ -105,19 +109,27 @@
         {new Date(siste.bestilt_tidspunkt).toLocaleString("nb-NO")}
       </p>
       {#if siste.feil}
-        <div role="alert" class="alert alert-error alert-soft text-xs">
+        <div role="alert" class="alert alert-error alert-soft text-xs mb-2">
           <span>Skatteetaten avviste bestillingen: {siste.feil}</span>
         </div>
-      {:else if !siste.besvart}
-        <button class="btn btn-xs btn-outline" onclick={() => hentSvar(siste.id)} disabled={arbeider}>
-          Hent svaret
-        </button>
-      {:else}
+      {/if}
+      {#each open as o (o.id)}
+        <div class="flex flex-wrap items-center gap-2 text-xs mb-2">
+          <span>
+            Venter på svar for {o.antall_ansatte}
+            {o.antall_ansatte === 1 ? "ansatt" : "ansatte"} ({o.referanse})
+          </span>
+          <button class="btn btn-xs btn-outline" onclick={() => hentSvar(o.id)} disabled={arbeider}>
+            Hent svaret
+          </button>
+        </div>
+      {/each}
+      {#if cards.length}
         <div class="overflow-x-auto">
           <table class="table table-sm">
             <thead><tr><th>Ansatt</th><th>Skatteetaten</th><th>Satt</th><th>Merknad</th></tr></thead>
             <tbody>
-              {#each siste.skattekort as k}
+              {#each cards as k (k.ansatt_id)}
                 <tr>
                   <td>{k.navn}</td>
                   <td>{RESULTAT[k.resultat] ?? k.resultat}</td>

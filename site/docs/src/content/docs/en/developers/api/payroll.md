@@ -12,6 +12,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 
 | Method | Path | Right |
 | --- | --- | --- |
+| GET | `/companies/{company_id}/business-units` | `LONN_LES` |
 | GET | `/companies/{company_id}/employees` | `LONN_LES` |
 | POST | `/companies/{company_id}/employees` | `LONN_SKRIV` |
 | PUT | `/companies/{company_id}/employees/{employee_id}/employment` | `LONN_SKRIV` |
@@ -20,6 +21,8 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | DELETE | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | POST | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/employees/{employee_id}/link/history` | `LONN_LES` |
+| GET | `/companies/{company_id}/employees/{employee_id}/withholding` | `LONN_LES` |
+| PUT | `/companies/{company_id}/employees/{employee_id}/withholding` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/expenses` | — |
 | POST | `/companies/{company_id}/expenses` | — |
 | GET | `/companies/{company_id}/expenses/addresses` | `UTLEGG_SKRIV_EGNE`, `RESKONTRO_LES` |
@@ -44,6 +47,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | POST | `/companies/{company_id}/expenses/{expense_id}/reject` | `UTLEGG_GODKJENN` |
 | POST | `/companies/{company_id}/expenses/{expense_id}/submit` | — |
 | GET | `/companies/{company_id}/expenses/{expense_id}/suggestion` | — |
+| GET | `/companies/{company_id}/occupations` | `LONN_LES` |
 | GET | `/companies/{company_id}/payroll` | `LONN_LES` |
 | POST | `/companies/{company_id}/payroll` | `LONN_KJOR` |
 | GET | `/companies/{company_id}/payroll/hours/{employee_id}` | `LONN_LES` |

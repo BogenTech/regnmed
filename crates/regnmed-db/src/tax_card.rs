@@ -147,7 +147,8 @@ pub async fn has_tax_free_card(
 }
 
 /// Warnings for a payroll run: employees whose newest skattekort for the
-/// year was NOT applied, so the run used whatever withholding they had.
+/// year was NOT applied and nobody has set the withholding by hand since,
+/// so the run used whatever withholding they had.
 /// The card's own note says what to do.
 pub async fn unapplied_warnings(
     pool: &PgPool,
@@ -156,9 +157,12 @@ pub async fn unapplied_warnings(
     employees: &[(Uuid, String)],
 ) -> Result<Vec<String>> {
     let rows = sqlx::query(
-        "select distinct on (employee_id) employee_id, applied, note
-           from tax_card where company_id = $1 and income_year = $2
-          order by employee_id, created_at desc",
+        "select distinct on (c.employee_id) c.employee_id, c.applied, c.note,
+                exists (select 1 from employee_withholding_change w
+                         where w.company_id = c.company_id and w.employee_id = c.employee_id
+                           and w.created_at > c.created_at) as set_by_hand
+           from tax_card c where c.company_id = $1 and c.income_year = $2
+          order by c.employee_id, c.created_at desc",
     )
     .bind(company_id)
     .bind(year)
@@ -170,7 +174,8 @@ pub async fn unapplied_warnings(
             let r = rows
                 .iter()
                 .find(|r| r.get::<Uuid, _>("employee_id") == *id)?;
-            if r.get::<Option<String>, _>("applied").is_some() {
+            // Someone acted on the card's note and recorded why.
+            if r.get::<Option<String>, _>("applied").is_some() || r.get::<bool, _>("set_by_hand") {
                 return None;
             }
             let note: Option<String> = r.get("note");

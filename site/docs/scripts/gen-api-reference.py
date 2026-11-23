@@ -52,7 +52,7 @@ def group(path):
     if s == "reports": return "shares" if "aksjonaer" in p else "reports"
     if s in ("budgets","mva","period-lock"): return "reports" if s != "period-lock" else "ledger"
     if s in ("bank","ocr","payments","cards","currency"): return "bank"
-    if s in ("employees","payroll","tax-cards","timesheet","expenses"): return "payroll"
+    if s in ("employees","payroll","tax-cards","timesheet","expenses","business-units","occupations"): return "payroll"
     if s in ("inbox","import","jobs","schedules","opening-balance"): return "inbox"
     if s in ("shareholders","share-events","dividends","assets"): return "shares"
     if p == "/anchors" or s == "anchors": return "verification"

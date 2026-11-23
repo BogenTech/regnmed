@@ -74,6 +74,8 @@ fn order_json(o: &regnmed_db::tax_card::OrderView) -> serde_json::Value {
 #[derive(Deserialize)]
 pub struct OrderQuery {
     year: i32,
+    /// Only this employee: a new hire's card without re-fetching everyone.
+    employee: Option<Uuid>,
 }
 
 pub async fn order(
@@ -98,8 +100,11 @@ pub async fn order(
     }
     crate::terms::require_accepted(&state, company_id).await?;
     let settings = regnmed_db::company_settings(&state.pool, company_id).await?;
-    let employees =
+    let mut employees =
         regnmed_db::tax_card::employees_in_year(&state.pool, company_id, q.year).await?;
+    if let Some(employee) = q.employee {
+        employees.retain(|(id, _)| *id == employee);
+    }
     if employees.is_empty() {
         return Err(ApiError::BadRequest(format!(
             "ingen ansatte i {} å hente skattekort for",
