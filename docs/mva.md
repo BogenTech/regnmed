@@ -240,7 +240,10 @@ vanlige innlogging, og godkjenningen gjelder én innsending.
 personen. **Fødselsnummeret tas aldri vare på.** `pid` leses ikke ut av
 tokenet. Altinn-profilen inneholder `ssn`, men parseren henter bare navnet, og
 en feil fra profilen logges bare med statuskoden. Navnet hentes fra Altinn
-fordi ID-porten bare oppgir navn for noen eID-er. Det er dette navnet som står
+fordi ID-porten bare oppgir navn for noen eID-er. Altinns `party.name` har
+etternavnet først, så regnmed setter sammen fornavn, mellomnavn og etternavn fra
+`party.person`, slik Skatteetatens kvittering skriver navnet. Mangler fornavn
+eller etternavn, brukes `party.name`. Det er dette navnet som står
 i konvolutten og i `godkjent_av`, ikke navnet på regnmed-kontoen. Kan ikke
 Altinn oppgi navnet, stopper innsendingen før noe er sendt inn. En gjenopptatt
 innsending kan da ha et utkast i Altinn. Bekrefter en annen person enn den
@@ -361,10 +364,17 @@ Dette er dermed bekreftet:
   `ingen avvik` for en ren melding.
 - konvolutten godtas uten navnerom og med én `vedlegg`-rad.
 
+**Prøvd mot TT02 2026-11-23:** en ny innsending med en annen TestID-person hentet
+navnet fra Altinn-profilen og fikk kvittering uten avvik. Kvitteringen oppgir
+personen som godkjente. Profilen har `party.person.firstName`, `middleName` og
+`lastName`, mens `party.name` har etternavnet først.
+
 Ikke bekreftet ennå:
 
-- at Altinn-profilen gir navnet slik appens OpenAPI-beskrivelse viser.
-  Kjøringen over brukte fortsatt regnmed-kontoens navn i konvolutten.
+- hva som står i konvolutten slik Altinn har lagret den. Den leses ikke tilbake,
+  så navnet i den bygger på regnmeds egen hendelseslogg.
+- en innsending med navnet satt sammen med fornavnet først. Innsendingen
+  2026-11-23 brukte `party.name`.
 - at `DELETE` på en instans i bekreftelse er tillatt for personen som
   godkjente.
 - at svaret normalt kommer innen tokenets levetid.
