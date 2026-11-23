@@ -442,6 +442,10 @@ pub struct PayrollEntry {
     /// Compute pay from hours logged this month × the employee's
     /// timelønn. Requires the timesheet month to be locked.
     pub from_timesheet: bool,
+    /// The operator states the payout is exempt whatever the history says:
+    /// on death, or paid regularly with each wage payment under an
+    /// agreement (skattebetalingsforskriften § 5-7-1 (1) c and d).
+    pub holiday_pay_exempt: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -475,6 +479,8 @@ pub struct Lonnslinje {
     /// nr. 3). Negative when a higher G gives some of it back, or when a
     /// raised rate catches up the addition on earlier pay.
     pub holiday_pay_cap_cut_ore: i64,
+    /// The payout's part that is this year's holiday pay, paid on leaving.
+    pub holiday_pay_earning_year_ore: i64,
     /// This run's change to the accrued aga on the employee's unpaid
     /// feriepenger — positive when new feriepenger were earned, negative
     /// when they were paid out.
@@ -568,6 +574,64 @@ async fn earning_year_totals(
             )
         })
         .collect())
+}
+
+/// Per employee: every year of payroll lines, by payment date, which is
+/// what ferieloven § 10 nr. 1 counts. Grouped by the rate each line was
+/// accrued at, because the exempt limit depends on that rate.
+async fn holiday_pay_years(
+    pool: &PgPool,
+    company_id: Uuid,
+    employees: &[Employee],
+) -> Result<std::collections::HashMap<Uuid, Vec<payroll::HolidayPayYear>>> {
+    let rows = sqlx::query(
+        "select l.employee_id,
+                extract(year from r.utbetalt_dato)::int as year,
+                coalesce(l.holiday_pay_bp, e.legacy_holiday_pay_bp, e.feriepenger_bp)::bigint
+                    as rate,
+                sum(l.brutto_ore)::bigint as basis,
+                sum(l.feriepengeavsetning_ore)::bigint as accrued,
+                sum(l.feriepenger_ore)::bigint as paid,
+                sum(l.holiday_pay_earning_year_ore)::bigint as earning_year
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         join employee e on e.id = l.employee_id
+         where r.company_id = $1
+         group by l.employee_id, 2, 3",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    let mut years: std::collections::HashMap<Uuid, Vec<payroll::HolidayPayYear>> =
+        Default::default();
+    for r in &rows {
+        let employee_id: Uuid = r.get("employee_id");
+        let (year, accrued): (i32, i64) = (r.get("year"), r.get("accrued"));
+        let birth = employees
+            .iter()
+            .find(|e| e.id == employee_id)
+            .and_then(|e| e.birth_date);
+        let over_60 =
+            birth.is_some_and(|b| payroll::has_over_60_addition(r.get("rate"), b.year(), year));
+        let employee_years = years.entry(employee_id).or_default();
+        let index = employee_years
+            .iter()
+            .position(|y| y.year == year)
+            .unwrap_or_else(|| {
+                employee_years.push(payroll::HolidayPayYear {
+                    year,
+                    ..Default::default()
+                });
+                employee_years.len() - 1
+            });
+        let y = &mut employee_years[index];
+        y.accrued_ore += accrued;
+        y.paid_ore += r.get::<i64, _>("paid");
+        y.earning_year_withheld_ore += r.get::<i64, _>("earning_year");
+        y.exempt_ceiling_ore +=
+            payroll::holiday_pay_exempt_ceiling(r.get("basis"), accrued, over_60);
+    }
+    Ok(years)
 }
 
 async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Result<i64> {
@@ -885,7 +949,15 @@ async fn payroll_run(
     let history = feriepengehistorikk(pool, company_id).await?;
     let earning_year = paid_date.year();
     let year_totals = earning_year_totals(pool, company_id, earning_year).await?;
+    // shortcut: simultaneous runs can classify the same holiday pay, and no
+    // later run corrects it; take a company lock if runs ever become jobs.
+    let holiday_years = holiday_pay_years(pool, company_id, &employees).await?;
+    // Ferieloven § 11 nr. 3: due on the last ordinary payday before leaving.
+    let next_payday = paid_date
+        .checked_add_months(chrono::Months::new(1))
+        .context("ugyldig dato")?;
     let mut cap_warnings = Vec::new();
+    let mut holiday_pay_warnings = Vec::new();
 
     let mut sum = PayrollTotals::default();
     let mut contribution_basis_ore = 0i64;
@@ -1008,24 +1080,6 @@ async fn payroll_run(
         mileage.extend(claims);
         travel.extend(trips);
 
-        let calculation = payroll::calculate(
-            &PayrollBasis {
-                gross_ore: gross,
-                holiday_pay_ore: post.holiday_pay_ore,
-                withholding: employee.withholding(),
-                paid_earlier_this_year_ore,
-                taxable_allowance_ore: taxable_allowance,
-                tax_free_allowance_ore: tax_free_allowance,
-            },
-            // Pay is taxed in the year it is paid, so December's pay paid
-            // in January takes January's tables -- like the aga rate. The
-            // month stays the pay month: the half-month exemption is for
-            // a pay period (skattebetalingsforskriften § 5-7-2 (1)).
-            paid_date.year(),
-            month,
-        )
-        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
-
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
         let holiday_rate = employee.holiday_pay_bp as i64;
@@ -1104,6 +1158,70 @@ async fn payroll_run(
             0
         };
         let avsetning = payroll::holiday_pay_accrual(gross, holiday_rate) - cap_cut;
+
+        let leaving = employee.employed_to.is_some_and(|d| d < next_payday);
+        let split = if post.holiday_pay_exempt {
+            payroll::HolidayPaySplit::default()
+        } else {
+            payroll::split_holiday_pay(
+                holiday_years
+                    .get(&employee.id)
+                    .map_or(&[][..], Vec::as_slice),
+                paid_date.year(),
+                avsetning,
+                post.holiday_pay_ore,
+                leaving,
+            )
+        };
+        let calculation = payroll::calculate(
+            &PayrollBasis {
+                gross_ore: gross,
+                holiday_pay_ore: post.holiday_pay_ore,
+                holiday_pay_card_percent_ore: split.card_percent_ore(),
+                table_percent_bp: employee.withholding_percent_bp.map(i64::from),
+                withholding: employee.withholding(),
+                paid_earlier_this_year_ore,
+                taxable_allowance_ore: taxable_allowance,
+                tax_free_allowance_ore: tax_free_allowance,
+            },
+            // Pay is taxed in the year it is paid, so December's pay paid
+            // in January takes January's tables -- like the aga rate. The
+            // month stays the pay month: the half-month exemption is for
+            // a pay period (skattebetalingsforskriften § 5-7-2 (1)).
+            paid_date.year(),
+            month,
+        )
+        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        let card_withholds = !matches!(
+            employee.withholding(),
+            Withholding::None | Withholding::TaxFreeCard { .. }
+        );
+        if card_withholds && split.earning_year_ore > 0 {
+            holiday_pay_warnings.push(format!(
+                "{}: {} kr av feriepengene er opptjent i år og utbetalt ved fratreden, så det \
+                 trekkes skatt av dem (skattebetalingsforskriften § 5-6-1). Gjelder utbetalingen \
+                 dødsfall eller løpende utbetaling etter avtale, skal den merkes som trekkfri.",
+                employee.name,
+                kroner(split.earning_year_ore),
+            ));
+        }
+        if card_withholds && split.excess_ore > 0 {
+            holiday_pay_warnings.push(format!(
+                "{}: {} kr av feriepengene er over grensen på 21 prosent over ferielovens beløp, \
+                 så det trekkes skatt av dem (skattebetalingsforskriften § 5-7-1).",
+                employee.name,
+                kroner(split.excess_ore),
+            ));
+        }
+        if leaving && split.unexplained_ore > 0 {
+            holiday_pay_warnings.push(format!(
+                "{}: {} kr av feriepengene finnes ikke i lønnshistorikken og er behandlet som \
+                 trekkfrie. Er de opptjent i år, må trekket rettes for hånd.",
+                employee.name,
+                kroner(split.unexplained_ore),
+            ));
+        }
+
         // The avgift falls on what is actually paid out, and is computed
         // once on the run's whole basis below.
         contribution_basis_ore += gross + post.holiday_pay_ore + taxable_allowance;
@@ -1134,6 +1252,7 @@ async fn payroll_run(
             holiday_pay_accrual_ore: avsetning,
             holiday_pay_bp: employee.holiday_pay_bp,
             holiday_pay_cap_cut_ore: cap_cut,
+            holiday_pay_earning_year_ore: split.earning_year_ore,
             employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
             pay_kind,
         });
@@ -1425,8 +1544,9 @@ async fn payroll_run(
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
                   pay_kind, withholding_method, allowance_ore, taxable_allowance_ore,
-                  holiday_pay_cap_cut_ore, holiday_pay_bp)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)",
+                  holiday_pay_cap_cut_ore, holiday_pay_bp,
+                  holiday_pay_earning_year_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
             )
             .bind(Uuid::new_v4())
             .bind(run_id)
@@ -1456,6 +1576,7 @@ async fn payroll_run(
             .bind(b.taxable_allowance_ore)
             .bind(l.holiday_pay_cap_cut_ore)
             .bind(l.holiday_pay_bp)
+            .bind(l.holiday_pay_earning_year_ore)
             .execute(&mut *tx)
             .await?;
         }
@@ -1542,6 +1663,7 @@ async fn payroll_run(
         )
         .chain(frikort_warnings)
         .chain(cap_warnings)
+        .chain(holiday_pay_warnings)
         .collect();
     Ok(PayrollRun {
         id: run_id,

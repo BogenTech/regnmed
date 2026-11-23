@@ -214,7 +214,10 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
             ly,
             8.0,
             Font::Regular,
-            "Feriepenger utbetales uten forskuddstrekk.",
+            &format!(
+                "Feriepenger uten forskuddstrekk: {} kr.",
+                kr(input.gross_ore - input.withholding_basis_ore)
+            ),
         );
         ly += 12.0;
     }

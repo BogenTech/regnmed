@@ -107,7 +107,8 @@ Begge er bare tidfesting. Skattekortprosenten er beregnet over 10,5
 måneder nettopp for at de skal gå opp, så det er *riktig* å anvende dem
 — ikke dobbelttelling.
 
-- **Feriepenger er trekkfrie** i utbetalingsåret.
+- **Feriepenger er trekkfrie** når de utbetales i ferieåret, innenfor
+  grensene i neste avsnitt.
 - **Halv skatt i desember** (skattebetalingsloven,
   skattebetalingsforskriften § 5-7-2). Siden 2016 kan
   arbeidsgiver i stedet ta det i annen halvdel av november; regnmed
@@ -119,6 +120,74 @@ måneder nettopp for at de skal gå opp, så det er *riktig* å anvende dem
   utbetalt i desember fullt. Forskriften nevner ikke lønn utbetalt i en
   annen måned enn den gjelder, så dette er vår lesing av ordlyden og bør
   bekreftes med Skatteetaten.
+
+### Feriepenger det likevel skal trekkes i
+
+Fritaket i skattebetalingsforskriften § 5-7-1 (1) gjelder utbetaling i
+ferieåret, altså kalenderåret etter opptjeningsåret. På kort over 10,5
+måneder faller to tilfeller utenfor, uansett alder:
+
+1. **Fratreden i opptjeningsåret** (§ 5-6-1 (1) a). Feriepenger som
+   utbetales i opptjeningsåret fordi den ansatte slutter, er trekkpliktige.
+   Det gjelder også avtalefestede feriepenger.
+2. **Mer enn 21 % over ferielovens beløp** (§ 5-7-1 (1) b). Avtalefestede
+   feriepenger er fritatt opp til 10,2 % × 1,21 = 12,342 % av grunnlaget, og
+   det overskytende er trekkpliktig. Grensen regnes per sats linjene faktisk
+   ble avsatt med, ikke etter den ansattes sats i dag. Skattebetalingshåndboken § 5-7 runder
+   dette til 12,34 %; regnmed bruker forskriftens eksakte grense. Med 15 %
+   av 1 000 000 kr er 123 420 kr fritatt og 26 580 kr trekkpliktig. Satsene
+   12 % og 14,3 % ligger under grensen, fordi den ordinære delen av 14,3 %
+   er 12 %. Tillegget på 2,3 prosentpoeng for arbeidstakere over 60 år har
+   egen hjemmel (§ 5-6-1 (1) b) og telles ikke mot grensen.
+
+**Hvilket år en utbetaling hører til** regnes av de innsettings-bare
+lønnslinjene, etter utbetalingsdato (`payroll::split_holiday_pay`). Eldste
+gjeld dekkes først. Ved fratreden forfaller alt samme år (ferieloven § 11
+nr. 3), så rekkefølgen flytter bare beløp mellom måneder, ikke mellom år.
+Grensen på 21 % regnes kumulativt, så samme utbetaling delt i to gir samme
+overskytende beløp. Hvor mye som er trukket som årets egne feriepenger,
+lagres på linjen (`holiday_pay_earning_year_ore`, migration 0106), slik at
+en senere utbetaling samme år ikke kan telle de samme feriepengene to ganger.
+
+**Hvem som slutter.** En utbetaling regnes som utbetalt på grunn av
+fratreden når sluttdatoen ligger før neste månedlige lønningsdag, fordi
+feriepengene forfaller siste vanlige lønningsdag før fratreden (ferieloven
+§ 11 nr. 3). Oppsigelse til oktober gjør ikke juniutbetalingen til en
+sluttutbetaling, mens sluttdato 5. januar gjør 20. desember til det.
+
+**En åpningsbalanse er usynlig i lønnshistorikken.** Derfor regnes et beløp
+over det tidligere år skylder, som årets feriepenger *bare* for den som
+slutter, og aldri mer enn det historikken viser er opptjent i år. Ellers
+ville hver juniutbetaling i et migrert selskap blitt trukket. Det som
+fortsatt ikke kan forklares, behandles som trekkfritt, og kjøringen sier
+fra med beløpet når den ansatte slutter.
+
+**Kjent begrensning.** Historikken skiller ikke et forskudd på årets
+feriepenger til en som blir værende fra utbetaling av en åpningsbalanse.
+Et slikt forskudd trekkes ikke, selv om § 5-7-1 ikke fritar det, og årets
+avsetning ser fortsatt skyldig ut neste år, så en senere fratreden kan bli
+trukket for lite. Forskudd må derfor trekkes for hånd.
+
+**Trekkmåten.** Prosentkort bruker kortets prosent. På tabellkort kan
+disse beløpene ikke gå gjennom tabellen, siden de er opptjent over et
+vesentlig lengre tidsrom enn månedens lønn (§ 5-10-1 (4)). De trekkes med
+trekkprosenten på tabellkortet (§ 5-10-3), av hele kroner (§ 5-10-4).
+regnmed lagrer den prosenten når skattekortet hentes. Mangler den, nekter
+kjøringen og ber om at kortet hentes på nytt. Beløpene halveres ikke i
+desember: § 5-7-2 (4) dekker slike ytelser bare så langt samlet ytelse ikke
+overstiger gjennomsnittsfortjenesten, som regnmed ikke beregner, så
+kjøringen velger siden som ikke gir den ansatte restskatt.
+
+**Unntak den som kjører lønn må merke.** Feriepenger ved dødsfall
+(§ 5-7-1 (1) d) og feriepenger som etter avtale utbetales regelmessig med
+lønnen (§ 5-7-1 (1) c) er trekkfrie også i opptjeningsåret. regnmed vet ikke
+hvorfor et arbeidsforhold endte, så skjemaet har en avhuking for ansatte med
+sluttdato (`feriepenger_trekkfri` i API-et). Kjøringen minner om den når den
+trekker i feriepenger ved fratreden.
+
+**Ikke bygget:** valget i § 5-7-1 (2) om å gi trekkfritaket som én vanlig
+månedslønn. regnmed følger første ledd. A-meldingen er uendret: feriepenger
+rapporteres som én trekkpliktig `feriepenger`-linje uansett.
 
 ## Satsene er data, ikke kode
 
@@ -244,8 +313,9 @@ gjøre de samme operasjonene i samme rekkefølge og runde likt (Javas
 I lønnskjøringen: månedstabellen, trekkgrunnlaget i hele kroner (øre
 under en krone flytter aldri trekket over neste 100-kronerstrinn), og
 **halvt tabelltrekk i desember** — som for prosenttrekk, fordi
-10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie som
-før.
+10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie på
+samme vilkår som for prosentkort; det som faller utenfor, trekkes med
+kortets trekkprosent (se «Feriepenger det likevel skal trekkes i»).
 
 **Tabellene over 12 måneder** (7350, 7500, 7700, 6350, 6500, 6700,
 0100, 0101, 7150, 7160) regnes også: rutinen kjenner dem selv, og
@@ -314,7 +384,7 @@ men brukes ikke.
 | --- | --- |
 | Trekkprosent over 10,5 måneder | **settes** (prosenten leses som desimaltekst, aldri som flyttall) |
 | Trekkprosent over 12 måneder (bl.a. kildeskatt) | **settes**, merket 12 måneder (under) |
-| Trekktabell | **settes** når tabellnummeret og kortet er enige om 10,5 eller 12 måneder; ellers beholdes |
+| Trekktabell | **settes** når tabellnummeret og kortet er enige om 10,5 eller 12 måneder, sammen med kortets trekkprosent; ellers beholdes |
 | Frikort uten beløpsgrense, eller «ikke trekkplikt» | **settes** til ingen trekk |
 | Frikort med beløpsgrense | **settes** med grensen arbeidsgiveren er tildelt (under) |
 | Trekk over 11 måneder, eller et annet antall | beholdes — regnmed kjenner reglene for 10,5 og 12 |
@@ -993,6 +1063,12 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   at året ender på 10,2 % + 2,3 % av 6 G, at avtalte satser ikke bruker opp
   taket, at gamle lønnsslipper beholder satsen sin, og at endringen holder
   seg innenfor selskapet. Tilgangsvakten er festet i `grupper/access.rs`.
+- Trekk i feriepenger utenfor fritaket: enhetstester i `regnmed-core::payroll`
+  for fratreden, grensen på 21 % (også utbetalt i to deler), åpningsbalanser,
+  at årets feriepenger ikke trekkes to ganger, kortets prosent på tabellkort
+  og fullt trekk i desember. Mot ekte Postgres (`regnmed-db/tests/payroll.rs`):
+  en hel fratreden med fjorårets og årets feriepenger, avtalt sats over
+  grensen, avhukingen for dødsfall, og tabellkort med og uten lagret prosent.
 - Skattekortene: `regnmed-gov::tax_card` leser det EKTE svaret fra
   testmiljøet og fester beslutningen for hver korttype (prosent, tabell,
   frikort med og uten grense, kildeskatt, uten kort), og at prosenten

@@ -251,6 +251,7 @@ async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
             gross_ore: None,
             holiday_pay_ore: 0,
             from_timesheet: false,
+            holiday_pay_exempt: false,
         }],
         "Test",
     )

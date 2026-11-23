@@ -50,6 +50,9 @@ pub enum PayrollError {
     ZoneIaRequiresExemptionCalculation,
     /// The satsregister has no verified rate covering this date.
     MissingRate(String, NaiveDate),
+    /// Holiday pay outside the exemption takes the percentage printed on a
+    /// table card (forskriften § 5-10-3), and this employee has none stored.
+    TableCardWithoutPercent(i32),
 }
 
 impl std::fmt::Display for PayrollError {
@@ -67,6 +70,12 @@ impl std::fmt::Display for PayrollError {
                 f,
                 "satsregisteret har ingen verifisert «{domain}» som dekker {date} \
                  — legg inn satsen med kilde før lønnskjøringen"
+            ),
+            Self::TableCardWithoutPercent(number) => write!(
+                f,
+                "feriepengene er trekkpliktige og skal trekkes med prosenten på \
+                 skattekortet, men regnmed har ingen trekkprosent for tabell \
+                 {number:04} — hent skattekortet på nytt før lønnskjøringen"
             ),
         }
     }
@@ -134,8 +143,13 @@ pub struct PayrollBasis {
     /// Ordinary pay for the month (fastlønn, timelønn, tillegg).
     pub gross_ore: i64,
     /// Feriepenger paid out this month. Kept separate because they are
-    /// **trekkfrie** — see [`beregn`].
+    /// normally **trekkfrie** — see [`calculate`].
     pub holiday_pay_ore: i64,
+    /// The part of `holiday_pay_ore` outside the exemption, from
+    /// [`split_holiday_pay`]. A 12-month card already counts all of it.
+    pub holiday_pay_card_percent_ore: i64,
+    /// The percentage printed on a table card; unused on other cards.
+    pub table_percent_bp: Option<i64>,
     pub withholding: Withholding,
     /// Trekkpliktig pay this employer already paid the employee earlier
     /// in the income year (ordinary pay + feriepenger). Only a frikort
@@ -173,10 +187,18 @@ pub struct PayrollCalculation {
 /// these two hold, which is why applying them is correct rather than
 /// double counting:
 ///
-/// - **Feriepenger are trekkfrie** in the year they are paid.
+/// - **Feriepenger are trekkfrie** when paid in the holiday year, up to
+///   the limit in [`split_holiday_pay`].
 /// - **December is half trekk** (skattebetalingsloven; since 2016 the
 ///   employer may instead take it in the second half of November —
 ///   regnmed does December, the common choice, and says so).
+///
+/// Holiday pay outside the exemption was earned over far longer than the
+/// month's pay, so it cannot go through the table (forskriften § 5-10-1
+/// (4)) and takes the card's percentage (§ 5-10-3), on whole kroner
+/// (§ 5-10-4). December does not halve it: § 5-7-2 (4) covers such a
+/// payment only while the total stays within average earnings, which
+/// regnmed does not compute, so it takes the side that avoids restskatt.
 ///
 /// The trekk is rounded DOWN to whole kroner: the a-melding reports
 /// forskuddstrekk in whole kroner (`amelding::whole_kroner` refuses
@@ -208,6 +230,12 @@ pub fn calculate(
         } else {
             basis.gross_ore
         };
+    let card_percent_ore = match basis.withholding {
+        Withholding::Percent(_) => basis.holiday_pay_card_percent_ore,
+        Withholding::Table(_) if !twelve_months => basis.holiday_pay_card_percent_ore,
+        _ => 0,
+    };
+    let card_percent_kroner_ore = card_percent_ore - card_percent_ore % 100;
     let half_withholding = month == 12 && !twelve_months;
     let (withholding, method) = match basis.withholding {
         Withholding::None => (0, "ingen trekk".to_string()),
@@ -215,8 +243,25 @@ pub fn calculate(
             let rate = if half_withholding { bp / 2 } else { bp };
             let months = if twelve_months { " (12 måneder)" } else { "" };
             (
-                bp_of(trekkgrunnlag, rate),
+                bp_of(trekkgrunnlag, rate) + bp_of(card_percent_kroner_ore, bp),
                 format!("{},{:02} %{months}", bp / 100, bp % 100),
+            )
+        }
+        Withholding::Table(number) if card_percent_ore != 0 => {
+            let bp = basis
+                .table_percent_bp
+                .ok_or(PayrollError::TableCardWithoutPercent(number))?;
+            let full = withholding_kr(year, number, Period::Month, trekkgrunnlag.max(0) / 100)
+                .map_err(PayrollError::Table)?
+                * 100;
+            let w = if half_withholding { full / 2 } else { full };
+            (
+                w + bp_of(card_percent_kroner_ore, bp),
+                format!(
+                    "tabell {number:04}, {},{:02} % på feriepenger",
+                    bp / 100,
+                    bp % 100
+                ),
             )
         }
         Withholding::Table(number) => {
@@ -248,7 +293,7 @@ pub fn calculate(
     Ok(PayrollCalculation {
         gross_ore: basis.gross_ore,
         holiday_pay_ore: basis.holiday_pay_ore,
-        withholding_basis_ore: trekkgrunnlag,
+        withholding_basis_ore: trekkgrunnlag + card_percent_ore,
         withholding_ore: withholding,
         allowance_ore: basis.taxable_allowance_ore + basis.tax_free_allowance_ore,
         taxable_allowance_ore: basis.taxable_allowance_ore,
@@ -406,6 +451,104 @@ pub fn over_60_catch_up(basis_without_addition_ore: i64) -> i64 {
     bp_of(basis_without_addition_ore, OVER_60_ADDITION_BP)
 }
 
+/// One calendar year of an employee's payroll lines, by payment date.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HolidayPayYear {
+    pub year: i32,
+    pub accrued_ore: i64,
+    pub paid_ore: i64,
+    /// The part of `paid_ore` withheld on as this year's own holiday pay.
+    pub earning_year_withheld_ore: i64,
+    /// What may be paid exempt in the holiday year, summed per rate with
+    /// [`holiday_pay_exempt_ceiling`] because the rate can change mid-year.
+    pub exempt_ceiling_ore: i64,
+}
+
+/// Where one holiday pay payment falls under forskriften §§ 5-6-1, 5-7-1.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HolidayPaySplit {
+    /// Drawn from earlier earning years, excess included.
+    pub prior_year_ore: i64,
+    /// This year's holiday pay, paid because the employee leaves: § 5-6-1
+    /// (1) a, withheld in full.
+    pub earning_year_ore: i64,
+    /// The part of `prior_year_ore` above the § 5-7-1 (1) b limit.
+    pub excess_ore: i64,
+    /// More than the history explains (an opening balance, say). Left
+    /// exempt, because nothing shows it was earned this year.
+    pub unexplained_ore: i64,
+}
+
+impl HolidayPaySplit {
+    pub fn card_percent_ore(&self) -> i64 {
+        self.earning_year_ore + self.excess_ore
+    }
+}
+
+/// § 5-7-1 (1) b: exempt up to 21 % above 10,2 % of the basis, 12,342 %
+/// exactly (the handbook rounds it to 12,34). An over-60 rate is exempt
+/// here because its ordinary part (10,2 or 12) is under the limit; its
+/// 2,3-point addition is handled on its own.
+pub fn holiday_pay_exempt_ceiling(basis_ore: i64, accrued_ore: i64, over_60: bool) -> i64 {
+    if over_60 {
+        return accrued_ore;
+    }
+    accrued_ore.min((basis_ore as i128 * 12_342 / 100_000) as i64)
+}
+
+/// Splits a payment by earning year, oldest debt first, from the payroll
+/// history. The order moves amounts between months at most: on leaving,
+/// ferieloven § 11 nr. 3 makes everything due in the same year.
+///
+/// A payment above what earlier years still owe counts as this year's only
+/// for someone `leaving`, since an opening balance is invisible in the
+/// history and would otherwise look like earning-year pay at every June
+/// payout of a migrated company.
+///
+/// shortcut: an advance paid in its own earning year looks like an opening
+/// balance, so that year's accrual still reads as owed and a later leaver
+/// can be under-withheld; record each payment's earning year to fix it.
+pub fn split_holiday_pay(
+    history: &[HolidayPayYear],
+    paid_year: i32,
+    accrual_this_run_ore: i64,
+    payment_ore: i64,
+    leaving: bool,
+) -> HolidayPaySplit {
+    let mut earlier: Vec<_> = history.iter().filter(|y| y.year < paid_year).collect();
+    earlier.sort_by_key(|y| y.year);
+    let (mut owed, mut exempt) = (0i64, 0i64);
+    for y in earlier {
+        let from_earlier_years = y.paid_ore - y.earning_year_withheld_ore;
+        // Floored: paying out an opening balance must not eat this year's.
+        owed = (owed - from_earlier_years).max(0) + y.accrued_ore - y.earning_year_withheld_ore;
+        owed = owed.max(0);
+        exempt = ((exempt - from_earlier_years).max(0) + y.exempt_ceiling_ore).min(owed);
+    }
+
+    let this_year = history
+        .iter()
+        .find(|y| y.year == paid_year)
+        .copied()
+        .unwrap_or_default();
+    let paid_from_earlier = (this_year.paid_ore - this_year.earning_year_withheld_ore).min(owed);
+    let prior_year_ore = payment_ore.min(owed - paid_from_earlier);
+    // Cumulative, so a payout in two parts gives the same excess as one.
+    let excess_ore =
+        (paid_from_earlier + prior_year_ore - exempt).max(0) - (paid_from_earlier - exempt).max(0);
+
+    let rest = payment_ore - prior_year_ore;
+    let earned_unpaid =
+        (this_year.accrued_ore + accrual_this_run_ore - this_year.earning_year_withheld_ore).max(0);
+    let earning_year_ore = if leaving { rest.min(earned_unpaid) } else { 0 };
+    HolidayPaySplit {
+        prior_year_ore,
+        earning_year_ore,
+        excess_ore,
+        unexplained_ore: rest - earning_year_ore,
+    }
+}
+
 /// What a month's payroll costs and owes, per employee, summed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PayrollTotals {
@@ -452,6 +595,8 @@ mod tests {
             gross_ore: gross,
             holiday_pay_ore: 0,
             withholding,
+            holiday_pay_card_percent_ore: 0,
+            table_percent_bp: None,
             paid_earlier_this_year_ore: 0,
             taxable_allowance_ore: 0,
             tax_free_allowance_ore: 0,
@@ -475,6 +620,8 @@ mod tests {
             gross_ore: 1_000_000,
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::Percent(3500),
+            holiday_pay_card_percent_ore: 0,
+            table_percent_bp: None,
             paid_earlier_this_year_ore: 0,
             taxable_allowance_ore: 0,
             tax_free_allowance_ore: 0,
@@ -540,6 +687,8 @@ mod tests {
             gross_ore: 1_000_000,
             holiday_pay_ore: 4_000_000,
             withholding: Withholding::PercentTwelveMonths(2220),
+            holiday_pay_card_percent_ore: 0,
+            table_percent_bp: None,
             paid_earlier_this_year_ore: 0,
             taxable_allowance_ore: 0,
             tax_free_allowance_ore: 0,
@@ -624,6 +773,8 @@ mod tests {
             withholding: Withholding::TaxFreeCard {
                 limit_ore: 3_000_000,
             },
+            holiday_pay_card_percent_ore: 0,
+            table_percent_bp: None,
             paid_earlier_this_year_ore: 0,
             taxable_allowance_ore: 0,
             tax_free_allowance_ore: 0,
@@ -641,6 +792,8 @@ mod tests {
             withholding: Withholding::TaxFreeCard {
                 limit_ore: 10_000_000,
             },
+            holiday_pay_card_percent_ore: 0,
+            table_percent_bp: None,
             paid_earlier_this_year_ore: earlier,
             taxable_allowance_ore: 0,
             tax_free_allowance_ore: 0,
@@ -766,6 +919,127 @@ mod tests {
         assert_eq!(
             basic_amount_date(2026, Some(d(2027, 1, 31))),
             d(2026, 12, 31)
+        );
+    }
+
+    fn holiday_year(year: i32, basis: i64, accrued: i64, paid: i64) -> HolidayPayYear {
+        HolidayPayYear {
+            year,
+            accrued_ore: accrued,
+            paid_ore: paid,
+            earning_year_withheld_ore: 0,
+            exempt_ceiling_ore: holiday_pay_exempt_ceiling(basis, accrued, false),
+        }
+    }
+
+    #[test]
+    fn a_leaver_is_withheld_on_this_years_holiday_pay_only() {
+        // 51 000 kr from 2025 and 15 300 kr earned so far in 2026.
+        let history = [
+            holiday_year(2025, 50_000_000, 5_100_000, 0),
+            holiday_year(2026, 15_000_000, 1_530_000, 0),
+        ];
+        let leaving = split_holiday_pay(&history, 2026, 0, 6_630_000, true);
+        assert_eq!(leaving.prior_year_ore, 5_100_000);
+        assert_eq!(leaving.earning_year_ore, 1_530_000);
+        assert_eq!(leaving.card_percent_ore(), 1_530_000);
+        assert_eq!(leaving.unexplained_ore, 0);
+
+        // The same amount without leaving is not § 5-6-1 (1) a.
+        let staying = split_holiday_pay(&history, 2026, 0, 6_630_000, false);
+        assert_eq!(staying.card_percent_ore(), 0);
+        assert_eq!(staying.unexplained_ore, 1_530_000);
+    }
+
+    #[test]
+    fn holiday_pay_above_21_percent_over_the_statutory_amount_is_withheld() {
+        // 15 % of 1 000 000 kr; the limit is 10,2 % x 1,21 = 12,342 %.
+        let history = [holiday_year(2025, 100_000_000, 15_000_000, 0)];
+        let whole = split_holiday_pay(&history, 2026, 0, 15_000_000, false);
+        assert_eq!(whole.excess_ore, 2_658_000);
+
+        // In two parts the excess falls on what passes the limit.
+        let first = split_holiday_pay(&history, 2026, 0, 10_000_000, false);
+        assert_eq!(first.excess_ore, 0);
+        let after_first = [history[0], holiday_year(2026, 0, 0, 10_000_000)];
+        let second = split_holiday_pay(&after_first, 2026, 0, 5_000_000, false);
+        assert_eq!(second.excess_ore, 2_658_000);
+
+        // 12 % is under the limit, and so is an over-60 rate's ordinary part.
+        let tariff = [holiday_year(2025, 100_000_000, 12_000_000, 0)];
+        let at_12 = split_holiday_pay(&tariff, 2026, 0, 12_000_000, false);
+        assert_eq!(at_12.excess_ore, 0);
+        let mut over_60 = holiday_year(2025, 100_000_000, 14_300_000, 0);
+        over_60.exempt_ceiling_ore = holiday_pay_exempt_ceiling(100_000_000, 14_300_000, true);
+        let at_143 = split_holiday_pay(&[over_60], 2026, 0, 14_300_000, false);
+        assert_eq!(at_143.excess_ore, 0);
+    }
+
+    #[test]
+    fn an_opening_balance_never_counts_as_this_years_holiday_pay() {
+        // June paid 50 000 kr from an opening balance the history cannot
+        // see; leaving later still withholds on all of 2026's own 30 600 kr.
+        let migrated = [holiday_year(2026, 30_000_000, 3_060_000, 5_000_000)];
+        let split = split_holiday_pay(&migrated, 2026, 0, 3_060_000, true);
+        assert_eq!(split.earning_year_ore, 3_060_000);
+
+        // Overpaying 2025 from an opening balance leaves 2025's accrual owed.
+        let year_before = [holiday_year(2025, 20_000_000, 2_040_000, 5_000_000)];
+        let split = split_holiday_pay(&year_before, 2026, 0, 2_040_000, true);
+        assert_eq!(split.prior_year_ore, 2_040_000);
+        assert_eq!(split.earning_year_ore, 0);
+
+        // More than the history explains stays exempt.
+        let split = split_holiday_pay(&[], 2026, 0, 1_000_000, true);
+        assert_eq!(split.unexplained_ore, 1_000_000);
+    }
+
+    #[test]
+    fn earned_holiday_pay_is_withheld_on_only_once() {
+        let mut year = holiday_year(2026, 30_000_000, 3_060_000, 3_060_000);
+        year.earning_year_withheld_ore = 3_060_000;
+        let split = split_holiday_pay(&[year], 2026, 0, 1_000_000, true);
+        assert_eq!(split.earning_year_ore, 0);
+        assert_eq!(split.unexplained_ore, 1_000_000);
+    }
+
+    #[test]
+    fn holiday_pay_outside_the_exemption_takes_the_cards_percentage_in_full() {
+        let mut percent = basis(1_000_000, Withholding::Percent(3500));
+        percent.holiday_pay_ore = 2_000_000;
+        percent.holiday_pay_card_percent_ore = 500_000;
+        let june = calculate(&percent, 2026, 6).unwrap();
+        assert_eq!(june.withholding_basis_ore, 1_500_000);
+        assert_eq!(june.withholding_ore, 525_000);
+        // December halves the pay, not the holiday pay.
+        assert_eq!(
+            calculate(&percent, 2026, 12).unwrap().withholding_ore,
+            350_000
+        );
+
+        // A table card: the table on the pay, its percentage on the rest.
+        let mut table = basis(5_000_000, Withholding::Table(8000));
+        table.holiday_pay_ore = 500_000;
+        table.holiday_pay_card_percent_ore = 500_000;
+        assert_eq!(
+            calculate(&table, 2026, 3),
+            Err(PayrollError::TableCardWithoutPercent(8000))
+        );
+        table.table_percent_bp = Some(4000);
+        let on_pay = calculate(&basis(5_000_000, Withholding::Table(8000)), 2026, 3)
+            .unwrap()
+            .withholding_ore;
+        let b = calculate(&table, 2026, 3).unwrap();
+        assert_eq!(b.withholding_ore, on_pay + 200_000);
+        assert_eq!(b.method, "tabell 8000, 40,00 % på feriepenger");
+
+        // A 12-month card already counts all holiday pay at its own rate.
+        let mut twelve = basis(1_000_000, Withholding::PercentTwelveMonths(2500));
+        twelve.holiday_pay_ore = 2_000_000;
+        twelve.holiday_pay_card_percent_ore = 500_000;
+        assert_eq!(
+            calculate(&twelve, 2026, 6).unwrap().withholding_ore,
+            750_000
         );
     }
 

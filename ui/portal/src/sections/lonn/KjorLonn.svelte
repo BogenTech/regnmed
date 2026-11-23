@@ -28,7 +28,9 @@
   let kjort = $derived(
     new Set(kjoringer.filter((k) => k.ar === year).map((k) => k.maned)),
   );
-  let aktive = $derived(ansatte.filter((a) => !a.ansatt_til || a.ansatt_til >= iDag));
+  // Everyone employed in the month, so a final settlement can run after the end date.
+  let manedStart = $derived(`${year}-${String(maned).padStart(2, "0")}-01`);
+  let aktive = $derived(ansatte.filter((a) => !a.ansatt_til || a.ansatt_til >= manedStart));
 
   const krTekst = (ore) => (ore == null ? "" : (ore / 100).toFixed(2).replace(".", ","));
 
@@ -39,6 +41,8 @@
       navn: a.navn,
       brutto: krTekst(a.manedslonn_ore),
       fp: "",
+      slutter: !!a.ansatt_til,
+      fp_trekkfri: false,
       timelonn: !!a.timelonn_ore,
       // Paid by the hour only: the hours are the pay, so start there.
       fra_timer: !!a.timelonn_ore && a.manedslonn_ore == null,
@@ -60,6 +64,7 @@
           // regner det fra de låste timene.
           brutto_ore: l.fra_timer ? null : l.brutto.trim() ? parseKr(l.brutto.trim()) : null,
           feriepenger_ore: l.fp.trim() ? parseKr(l.fp.trim()) : 0,
+          feriepenger_trekkfri: l.slutter && l.fp_trekkfri,
           fra_timer: l.fra_timer,
         })),
     };
@@ -67,7 +72,7 @@
 
   // The form as text: a preview is valid only while this is unchanged.
   let skjemaNokkel = $derived(
-    JSON.stringify([year, maned, dato, sone, linjer.map((l) => [l.brutto, l.fp, l.fra_timer, l.med])]),
+    JSON.stringify([year, maned, dato, sone, linjer.map((l) => [l.brutto, l.fp, l.fp_trekkfri, l.fra_timer, l.med])]),
   );
   let forhand = $state(null); // { nokkel, svar }
   let gyldig = $derived(forhand && forhand.nokkel === skjemaNokkel);
@@ -231,6 +236,12 @@
                   disabled={!l.med}
                   bind:value={l.fp}
                 />
+                {#if l.slutter && l.fp.trim()}
+                  <label class="label cursor-pointer justify-start gap-2 text-xs mt-1">
+                    <input type="checkbox" class="checkbox checkbox-xs" bind:checked={l.fp_trekkfri} />
+                    Trekkfri: dødsfall eller løpende utbetaling
+                  </label>
+                {/if}
               </td>
               <td>
                 {#if l.timelonn}

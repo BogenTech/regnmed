@@ -790,6 +790,11 @@ pub struct PayrollLine {
     #[serde(default)]
     #[serde(rename = "fra_timer")]
     from_timesheet: bool,
+    /// Death, or paid regularly with each wage payment under an agreement
+    /// (skattebetalingsforskriften § 5-7-1 (1) c and d).
+    #[serde(default)]
+    #[serde(rename = "feriepenger_trekkfri")]
+    holiday_pay_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -833,6 +838,7 @@ pub async fn run_payroll(
             gross_ore: l.gross_ore,
             holiday_pay_ore: l.holiday_pay_ore,
             from_timesheet: l.from_timesheet,
+            holiday_pay_exempt: l.holiday_pay_exempt,
         })
         .collect();
     let run = if q.preview {
