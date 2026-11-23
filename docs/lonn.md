@@ -108,9 +108,17 @@ måneder nettopp for at de skal gå opp, så det er *riktig* å anvende dem
 — ikke dobbelttelling.
 
 - **Feriepenger er trekkfrie** i utbetalingsåret.
-- **Halv skatt i desember** (skattebetalingsloven). Siden 2016 kan
+- **Halv skatt i desember** (skattebetalingsloven,
+  skattebetalingsforskriften § 5-7-2). Siden 2016 kan
   arbeidsgiver i stedet ta det i annen halvdel av november; regnmed
-  gjør desember, det vanlige valget, og sier det her.
+  gjør desember, det vanlige valget, og sier det her. Fritaket følger
+  **lønnsperioden**, ikke utbetalingsdatoen: for månedslønn gjelder det
+  «for» første halvdel av desember (§ 5-7-2 første ledd), mens bare
+  14-dagerslønn er knyttet til selve utbetalingen (tredje ledd).
+  Desemberlønn utbetalt i januar får derfor halvt trekk, og novemberlønn
+  utbetalt i desember fullt. Forskriften nevner ikke lønn utbetalt i en
+  annen måned enn den gjelder, så dette er vår lesing av ordlyden og bør
+  bekreftes med Skatteetaten.
 
 ## Satsene er data, ikke kode
 
@@ -811,6 +819,14 @@ når de gjelder. Feriepenger opptjent denne måneden står under en egen
 overskrift, tydelig utenfor «Til utbetaling», og hittil-i-år-tallene
 står nederst.
 
+**Hittil i år følger utbetalingsåret**, for brutto, forskuddstrekk og
+opptjente feriepenger. Feriepengegrunnlaget teller lønn det året den
+utbetales (ferieloven § 10 nr. 1), og trekktabellene hentes fra
+utbetalingsdatoen. Desemberlønn utbetalt i januar står derfor under
+«Hittil i 2027», selv om lønnsperioden er desember 2026. Kjøringene
+telles i rekkefølge etter utbetalingsdato og deretter lønnsperiode, så
+desember kommer foran januar også når begge utbetales samme dag.
+
 `GET /companies/{id}/payroll/{run}/slip/{employee}` → `application/pdf`.
 Fødselsdato, ikke fødselsnummer — også på et dokument som sendes til
 den ansatte selv.
@@ -992,4 +1008,5 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   fødselsnummeret ikke er i dokumentet.
 - Lønnsslippen bygget fra en ekte kjøring, med hittil-i-år summert over
   flere måneder — og hentet som `application/pdf` fra en kjørende
-  server (2,8 kB, uten fødselsnummer).
+  server (2,8 kB, uten fødselsnummer). Desemberlønn utbetalt i januar
+  teller i det nye året og foran januarlønnen.

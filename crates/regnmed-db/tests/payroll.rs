@@ -627,6 +627,65 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
     assert_eq!(mai.year_to_date_gross_ore, 5_000_000);
 }
 
+/// December's pay paid in January belongs to the new year on the slip,
+/// and still comes before January's pay even on the same payment date.
+#[tokio::test]
+async fn december_pay_paid_in_january_counts_in_the_new_year_to_date() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+    let post = [PayrollEntry {
+        employee_id: a,
+        gross_ore: None,
+        holiday_pay_ore: 0,
+        from_timesheet: false,
+    }];
+    let mut slips = Vec::new();
+    for (year, month, paid) in [
+        (2026, 11, date(2026, 11, 25)),
+        (2026, 12, date(2027, 1, 15)),
+        (2027, 1, date(2027, 1, 15)),
+        (2027, 2, date(2027, 3, 10)),
+        (2027, 3, date(2027, 3, 1)),
+    ] {
+        let run = payroll::run_payroll(&pool, company, year, month, paid, "I", &post, "Test")
+            .await
+            .unwrap();
+        slips.push(run.id);
+    }
+    let november = payroll::payslip(&pool, company, slips[0], a).await.unwrap();
+    let december = payroll::payslip(&pool, company, slips[1], a).await.unwrap();
+    let january = payroll::payslip(&pool, company, slips[2], a).await.unwrap();
+
+    assert_eq!(november.year_to_date_gross_ore, 5_000_000);
+
+    // December opens 2027: November stays behind in 2026.
+    assert_eq!(december.year, 2026, "the pay period is still December 2026");
+    assert_eq!(december.year_to_date_gross_ore, 5_000_000);
+    assert_eq!(
+        december.year_to_date_withholding_ore,
+        december.withholding_ore
+    );
+    assert_eq!(december.ytd_holiday_pay_ore, 510_000);
+    let pdf = regnmed_core::payslip::render_payslip(&december);
+    let text = String::from_utf8_lossy(&pdf);
+    assert!(text.contains("HITTIL I 2027"), "{text}");
+
+    // January carries December, whose month number is the higher one.
+    assert_eq!(january.year_to_date_gross_ore, 10_000_000);
+    assert_eq!(
+        january.year_to_date_withholding_ore,
+        december.withholding_ore + january.withholding_ore
+    );
+    assert_eq!(january.ytd_holiday_pay_ore, 1_020_000);
+
+    // Payment order decides: March was paid before February.
+    let february = payroll::payslip(&pool, company, slips[3], a).await.unwrap();
+    let march = payroll::payslip(&pool, company, slips[4], a).await.unwrap();
+    assert_eq!(march.year_to_date_gross_ore, 15_000_000);
+    assert_eq!(february.year_to_date_gross_ore, 20_000_000);
+}
+
 /// Hourly pay from the timesheet. The important part here is the
 /// REFUSAL: hours that can still be changed must not be payable, because
 /// the payroll run is insert-only and the two would then diverge

@@ -270,7 +270,8 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         8.0,
         Font::Bold,
-        &format!("HITTIL I {}", input.year),
+        // The figures below count by payment year, not the pay month's.
+        &format!("HITTIL I {}", input.paid_date.format("%Y")),
     );
     ly += 14.0;
     for (text, amount) in [
