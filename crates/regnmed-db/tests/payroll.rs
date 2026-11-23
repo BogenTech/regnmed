@@ -354,6 +354,213 @@ async fn the_over_60_addition_is_capped_at_6g_across_the_earning_year() {
 }
 
 #[tokio::test]
+async fn raising_the_rate_mid_year_catches_up_the_addition_and_keeps_old_payslips() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    // Born 1967: turns 59 in 2026.
+    let id = employee_at_rate(&pool, company, "15866710020", 1020).await;
+    let pay = |month, gross| {
+        let pool = pool.clone();
+        async move {
+            payroll::run_payroll(
+                &pool,
+                company,
+                2026,
+                month,
+                date(2026, month, 20),
+                "I",
+                &[PayrollEntry {
+                    employee_id: id,
+                    gross_ore: Some(gross),
+                    holiday_pay_ore: 0,
+                    from_timesheet: false,
+                }],
+                "Test",
+            )
+            .await
+            .unwrap()
+        }
+    };
+
+    let january = pay(1, 30_000_000).await;
+    assert_eq!(january.lines[0].holiday_pay_accrual_ore, 3_060_000);
+    assert!(
+        january.warnings.iter().any(|w| w.contains("krever 12,5 %")),
+        "{:?}",
+        january.warnings
+    );
+
+    payroll::update_holiday_rate(&pool, company, id, 1250)
+        .await
+        .unwrap();
+
+    // 12,5 % of February's pay + 2,3 % of January's.
+    let february = pay(2, 30_000_000).await;
+    assert_eq!(
+        february.lines[0].holiday_pay_accrual_ore,
+        3_750_000 + 690_000
+    );
+    assert!(!february.warnings.iter().any(|w| w.contains("krever")));
+    assert!(
+        february.warnings.iter().any(|w| w.contains("6900,00 kr")),
+        "{:?}",
+        february.warnings
+    );
+
+    // Crosses 6 G (819 294 kr): the year ends at 10,2 % of 900 000 kr + 2,3 %
+    // of 6 G, so pay from before the raise is neither missed nor over-cut.
+    let march = pay(3, 30_000_000).await;
+    assert_eq!(
+        3_060_000
+            + february.lines[0].holiday_pay_accrual_ore
+            + march.lines[0].holiday_pay_accrual_ore,
+        9_180_000 + 1_884_376
+    );
+
+    let slip = |run| payroll::payslip(&pool, company, run, id);
+    assert_eq!(slip(january.id).await.unwrap().holiday_pay_bp, 1020);
+    assert_eq!(slip(february.id).await.unwrap().holiday_pay_bp, 1250);
+}
+
+#[tokio::test]
+async fn pay_at_an_agreed_rate_does_not_use_up_the_6g_of_a_later_addition() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "15866710020", 1300).await;
+    run(&pool, company, id, 1, "I", Some(90_000_000), 0).await;
+    payroll::update_holiday_rate(&pool, company, id, 1430)
+        .await
+        .unwrap();
+    let february = run(&pool, company, id, 2, "I", Some(10_000_000), 0).await;
+    assert_eq!(february.lines[0].holiday_pay_cap_cut_ore, 0);
+    assert_eq!(february.lines[0].holiday_pay_accrual_ore, 1_430_000);
+}
+
+#[tokio::test]
+async fn simultaneous_runs_cannot_both_post_the_catch_up() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "15866710020", 1020).await;
+    let january = run(&pool, company, id, 1, "I", Some(30_000_000), 0).await;
+    payroll::update_holiday_rate(&pool, company, id, 1250)
+        .await
+        .unwrap();
+
+    let attempt = |month| {
+        let pool = pool.clone();
+        async move {
+            payroll::run_payroll(
+                &pool,
+                company,
+                2026,
+                month,
+                date(2026, month, 20),
+                "I",
+                &[PayrollEntry {
+                    employee_id: id,
+                    gross_ore: Some(10_000_000),
+                    holiday_pay_ore: 0,
+                    from_timesheet: false,
+                }],
+                "Test",
+            )
+            .await
+        }
+    };
+    let (february, march) = tokio::join!(attempt(2), attempt(3));
+    // The loser is refused and simply runs again.
+    let february = match february {
+        Ok(run) => run,
+        Err(_) => attempt(2).await.unwrap(),
+    };
+    let march = match march {
+        Ok(run) => run,
+        Err(_) => attempt(3).await.unwrap(),
+    };
+    assert_eq!(
+        january.lines[0].holiday_pay_accrual_ore
+            + february.lines[0].holiday_pay_accrual_ore
+            + march.lines[0].holiday_pay_accrual_ore,
+        6_250_000 // 12,5 % of 500 000 kr, with the catch-up counted once.
+    );
+}
+
+/// A line from before migration 0105 has no rate of its own.
+#[tokio::test]
+async fn a_line_without_a_stored_rate_reads_the_rate_from_before_any_edit() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "15866710020", 1020).await;
+    sqlx::query("update employee set legacy_holiday_pay_bp = 1020 where id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let january = run(&pool, company, id, 1, "I", Some(30_000_000), 0).await;
+    let old_run = Uuid::new_v4();
+    sqlx::query(
+        "insert into payroll_run (id, company_id, ar, maned, utbetalt_dato, sone, brutto_ore,
+                                  forskuddstrekk_ore, netto_ore, feriepengeavsetning_ore,
+                                  aga_ore, aga_feriepenger_ore, voucher_id, created_by)
+         select $1, company_id, ar, 2, date '2026-02-20', sone, brutto_ore, forskuddstrekk_ore,
+                netto_ore, feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, voucher_id,
+                created_by
+         from payroll_run where id = $2",
+    )
+    .bind(old_run)
+    .bind(january.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into payroll_line (id, run_id, employee_id, brutto_ore, trekkgrunnlag_ore,
+                                   forskuddstrekk_ore, netto_ore, feriepengeavsetning_ore,
+                                   aga_ore, aga_feriepenger_ore)
+         values ($1, $2, $3, 30000000, 30000000, 0, 30000000, 3060000, 0, 0)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(old_run)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    payroll::update_holiday_rate(&pool, company, id, 1250)
+        .await
+        .unwrap();
+    let slip = payroll::payslip(&pool, company, old_run, id).await.unwrap();
+    assert_eq!(slip.holiday_pay_bp, 1020);
+    // March catches up the addition on both January and the stored-rate-less
+    // February line.
+    let march = run(&pool, company, id, 3, "I", Some(10_000_000), 0).await;
+    assert_eq!(
+        march.lines[0].holiday_pay_accrual_ore,
+        1_250_000 + 2 * 690_000
+    );
+}
+
+#[tokio::test]
+async fn the_holiday_rate_edit_stays_inside_the_company_and_the_valid_range() {
+    let Some(pool) = pool().await else { return };
+    let owner = company(&pool).await;
+    let other = company(&pool).await;
+    let id = employee_at_rate(&pool, owner, "15866710020", 1020).await;
+
+    assert!(
+        payroll::update_holiday_rate(&pool, other, id, 1250)
+            .await
+            .is_err()
+    );
+    assert!(
+        payroll::update_holiday_rate(&pool, owner, id, 5001)
+            .await
+            .is_err()
+    );
+    let rate = payroll::list_ansatte(&pool, owner).await.unwrap()[0].holiday_pay_bp;
+    assert_eq!(rate, 1020);
+}
+
+#[tokio::test]
 async fn a_leaver_is_capped_at_the_g_on_the_leaving_date_and_earlier_cuts_are_netted() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;

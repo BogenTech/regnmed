@@ -16,6 +16,7 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | POST | `/companies/{company_id}/employees` | `LONN_SKRIV` |
 | PUT | `/companies/{company_id}/employees/{employee_id}/employment` | `LONN_SKRIV` |
 | PUT | `/companies/{company_id}/employees/{employee_id}/end` | `LONN_SKRIV` |
+| PUT | `/companies/{company_id}/employees/{employee_id}/holiday-rate` | `LONN_SKRIV` |
 | DELETE | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | POST | `/companies/{company_id}/employees/{employee_id}/link` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/employees/{employee_id}/link/history` | `LONN_LES` |

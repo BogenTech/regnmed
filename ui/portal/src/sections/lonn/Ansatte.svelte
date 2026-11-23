@@ -174,6 +174,31 @@
     }
   }
 
+  async function feriesats(a) {
+    const svar = await sporsmal("Feriepengesats for " + a.navn + " (%)", {
+      standard: String((a.feriepenger_krevd_bp ?? a.feriepenger_bp) / 100).replace(".", ","),
+      ok: "Lagre",
+      melding:
+        "Gjelder fra neste lønnskjøring. Får satsen tillegget for arbeidstakere over 60, tar neste " +
+        "kjøring igjen tillegget på det som alt er utbetalt i år.",
+    });
+    if (svar === null) return;
+    const bp = Math.round(parseFloat(svar.replace(",", ".")) * 100);
+    if (!Number.isFinite(bp)) {
+      toast("Skriv satsen som et tall, for eksempel 12,5", false);
+      return;
+    }
+    try {
+      await send("PUT", "/companies/" + companyId + "/employees/" + a.id + "/holiday-rate", {
+        feriepenger_bp: bp,
+      });
+      toast("Feriepengesatsen er lagret", true);
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
   // Koblingen avgjør hvem som leser lønnsslippen, så den fjernes ikke
   // på et feiltrykk.
   async function kobleFra(a) {
@@ -260,7 +285,19 @@
                   ingen trekk
                 {/if}
               </td>
-              <td class="text-right">{prosent(a.feriepenger_bp, 1)}</td>
+              <td class="text-right whitespace-nowrap">
+                {prosent(a.feriepenger_bp, 1)}
+                <button
+                  class="btn btn-ghost btn-xs"
+                  aria-label={"Endre feriepengesats for " + a.navn}
+                  onclick={() => feriesats(a)}
+                >
+                  Endre …
+                </button>
+                {#if a.feriepenger_krevd_bp}
+                  <div class="text-xs text-warning">skal være {prosent(a.feriepenger_krevd_bp, 1)}</div>
+                {/if}
+              </td>
               <td class="text-xs">
                 {#if a.person}
                   <span title={a.person.epost || ""}>{a.person.navn}</span>
