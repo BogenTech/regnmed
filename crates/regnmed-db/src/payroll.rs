@@ -647,6 +647,54 @@ async fn holiday_pay_years(
     Ok(years)
 }
 
+/// Per employee: ordinary pay and the number of months in `year`'s pay periods
+/// before December, and whether a half trekk was already paid in `paid_year`.
+/// Periods rather than payment dates, so December paid in January still
+/// averages its own year. A month with feriepenger is left out: ferietrekk
+/// would make an employee on steady pay look as if December exceeded the
+/// average.
+///
+/// shortcut: ferietrekk taken in another month than the feriepenger stays in
+/// the average, which lowers the exemption; store ferietrekk to separate it.
+async fn december_history(
+    executor: impl sqlx::PgExecutor<'_>,
+    company_id: Uuid,
+    year: i32,
+    paid_year: i32,
+) -> Result<std::collections::HashMap<Uuid, (i64, i64, bool)>> {
+    let rows = sqlx::query(
+        "select l.employee_id,
+                coalesce(sum(l.brutto_ore + l.taxable_allowance_ore) filter (where counted), 0)
+                    ::bigint as earned,
+                count(*) filter (where counted) as months,
+                bool_or(l.halv_trekk and l.forskuddstrekk_ore > 0
+                        and r.utbetalt_dato >= make_date($3, 1, 1)
+                        and r.utbetalt_dato < make_date($3 + 1, 1, 1)) as given
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         cross join lateral (
+             select r.ar = $2 and r.maned < 12 and l.brutto_ore > 0 and l.feriepenger_ore = 0
+                 as counted
+         ) c
+         where r.company_id = $1
+         group by l.employee_id",
+    )
+    .bind(company_id)
+    .bind(year)
+    .bind(paid_year)
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get("employee_id"),
+                (r.get("earned"), r.get("months"), r.get("given")),
+            )
+        })
+        .collect())
+}
+
 async fn account_balance(pool: &PgPool, company_id: Uuid, account: &str) -> Result<i64> {
     let balance: i64 = sqlx::query_scalar(
         "select coalesce(sum(e.amount_ore), 0)::bigint
@@ -971,6 +1019,12 @@ async fn payroll_run(
         .context("ugyldig dato")?;
     let mut cap_warnings = Vec::new();
     let mut holiday_pay_warnings = Vec::new();
+    let december_earlier = if month == 12 {
+        december_history(pool, company_id, year, paid_date.year()).await?
+    } else {
+        Default::default()
+    };
+    let mut december_warnings = Vec::new();
 
     let mut sum = PayrollTotals::default();
     let mut contribution_basis_ore = 0i64;
@@ -1234,6 +1288,16 @@ async fn payroll_run(
         if post.holiday_pay_exempt {
             split = payroll::HolidayPaySplit::default();
         }
+        let december = (month == 12
+            && withholding != Withholding::None
+            && matches!(payroll::counts_all_holiday_pay(&withholding), Ok(false)))
+        .then(|| {
+            let (earned, months, given) = december_earlier
+                .get(&employee.id)
+                .copied()
+                .unwrap_or_default();
+            payroll::december_average(pay_kind, earned, months, given)
+        });
         let calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
@@ -1245,13 +1309,69 @@ async fn payroll_run(
                 paid_earlier_this_year_ore,
                 taxable_allowance_ore: taxable_allowance,
                 tax_free_allowance_ore: tax_free_allowance,
+                december_average_ore: december.and_then(Result::ok),
             },
             // Pay is taxed in the year it is paid, so December's pay paid
-            // in January takes January's tables -- like the aga rate.
+            // in January takes January's tables -- like the aga rate. The
+            // month stays the pay month: the half-month exemption is for
+            // a pay period (skattebetalingsforskriften § 5-7-2 (1)).
             paid_date.year(),
             month,
         )
         .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        let basis_ore = calculation.withholding_basis_ore;
+        const REFUND: &str = "For mye trekk kommer tilbake i skatteoppgjøret.";
+        match december {
+            // Holiday pay that is withheld on is never halved either.
+            Some(Ok(average)) if basis_ore > average.min(gross + taxable_allowance) => {
+                let full_ore = basis_ore - average.min(gross + taxable_allowance);
+                december_warnings.push(if basis_ore == gross + taxable_allowance {
+                    format!(
+                        "{}: {} kr av desemberlønnen er over gjennomsnittsfortjenesten på {} kr \
+                         og er trukket fullt (skattebetalingsforskriften § 5-7-2 fjerde ledd).",
+                        employee.name,
+                        kroner(full_ore),
+                        kroner(average),
+                    )
+                } else {
+                    format!(
+                        "{}: {} kr i desember er trukket fullt: trekkpliktige feriepenger og lønn \
+                         over gjennomsnittsfortjenesten på {} kr (skattebetalingsforskriften \
+                         § 5-7-2 fjerde ledd).",
+                        employee.name,
+                        kroner(full_ore),
+                        kroner(average),
+                    )
+                })
+            }
+            Some(Err(reason)) if basis_ore > 0 => december_warnings.push(match reason {
+                payroll::NoDecemberHalf::HourlyPay => format!(
+                    "{}: timelønn er trukket fullt i desember. Fritaket for timelønn gjelder to \
+                     bestemte uker (skattebetalingsforskriften § 5-7-2 annet ledd), og en \
+                     månedskjøring kan ikke skille dem ut. {REFUND}",
+                    employee.name,
+                ),
+                payroll::NoDecemberHalf::UnknownPayKind => format!(
+                    "{}: regnmed kan ikke se om beløpet er månedslønn, så desember er trukket \
+                     fullt. {REFUND}",
+                    employee.name,
+                ),
+                payroll::NoDecemberHalf::NoEarlierPay => format!(
+                    "{}: regnmed har ingen tidligere lønnsmåned uten feriepenger for {year} å \
+                     regne gjennomsnittsfortjenesten av (skattebetalingsforskriften § 5-7-2 fjerde \
+                     ledd), så desember er trukket fullt. {REFUND}",
+                    employee.name,
+                ),
+                payroll::NoDecemberHalf::AlreadyGiven => format!(
+                    "{}: har allerede fått halvt trekk på en lønn utbetalt i {}. Skattekortet \
+                     regner med ett, så denne desemberlønnen er trukket fullt for å unngå \
+                     restskatt. {REFUND}",
+                    employee.name,
+                    paid_date.year(),
+                ),
+            }),
+            _ => {}
+        }
         let card_withholds = !matches!(
             employee.withholding(),
             Withholding::None | Withholding::TaxFreeCard { .. }
@@ -1557,6 +1677,13 @@ async fn payroll_run(
             earning_year_totals(&mut *tx, company_id, earning_year).await? == year_totals,
             "en annen lønnskjøring ble bokført samtidig — kjør denne på nytt"
         );
+        // The December half was decided from this history.
+        ensure!(
+            month != 12
+                || december_history(&mut *tx, company_id, year, paid_date.year()).await?
+                    == december_earlier,
+            "en annen lønnskjøring ble bokført samtidig — kjør denne på nytt"
+        );
         let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
 
         let run_id = Uuid::new_v4();
@@ -1724,6 +1851,7 @@ async fn payroll_run(
         .chain(frikort_warnings)
         .chain(cap_warnings)
         .chain(holiday_pay_warnings)
+        .chain(december_warnings)
         .collect();
     Ok(PayrollRun {
         id: run_id,

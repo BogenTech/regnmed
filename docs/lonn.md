@@ -175,9 +175,8 @@ vesentlig lengre tidsrom enn månedens lønn (§ 5-10-1 (4)). De trekkes med
 trekkprosenten på tabellkortet (§ 5-10-3), av hele kroner (§ 5-10-4).
 regnmed lagrer den prosenten når skattekortet hentes. Mangler den, nekter
 kjøringen og ber om at kortet hentes på nytt. Beløpene halveres ikke i
-desember: § 5-7-2 (4) dekker slike ytelser bare så langt samlet ytelse ikke
-overstiger gjennomsnittsfortjenesten, som regnmed ikke beregner, så
-kjøringen velger siden som ikke gir den ansatte restskatt.
+desember: det halve trekket gjelder ordinær lønn innenfor
+gjennomsnittsfortjenesten (se «Hva det halve trekket i desember dekker»).
 
 **Unntak den som kjører lønn må merke.** Feriepenger ved dødsfall
 (§ 5-7-1 (1) d) og feriepenger som etter avtale utbetales regelmessig med
@@ -189,6 +188,66 @@ trekker i feriepenger ved fratreden.
 **Ikke bygget:** valget i § 5-7-1 (2) om å gi trekkfritaket som én vanlig
 månedslønn. regnmed følger første ledd. A-meldingen er uendret: feriepenger
 rapporteres som én trekkpliktig `feriepenger`-linje uansett.
+
+### Hva det halve trekket i desember dekker
+
+Skattebetalingsforskriften § 5-7-2 gir ikke «halv skatt på alt som
+utbetales i desember». Fritaket er avgrenset, og der forskriften og
+Skattebetalingshåndboken tier, tar regnmed den siden som ikke kan gi den
+ansatte restskatt. For mye trekk kommer tilbake i skatteoppgjøret; for lite
+blir en regning. Kjøringen sier fra med en advarsel per ansatt hver gang
+desember ikke får fullt halvt trekk.
+
+| Tilfelle | Hva kjøringen gjør | Grunnlag |
+| --- | --- | --- |
+| Månedslønn innenfor gjennomsnittet | Halvt trekk | § 5-7-2 første ledd |
+| Bonus eller tillegg som løfter måneden over gjennomsnittet | Halvt trekk opp til gjennomsnittet, fullt på resten | § 5-7-2 fjerde ledd |
+| Timelønn i en månedskjøring | Fullt trekk | § 5-7-2 annet ledd fritar to bestemte uker. **Vårt valg** |
+| Beløp der kjøringen ikke kan se lønnsformen | Fullt trekk | **Vårt valg** |
+| Ingen tidligere lønnsmåned uten feriepenger i regnmed | Fullt trekk | Fjerde ledd krever et gjennomsnitt. **Vårt valg** |
+| Andre halve trekk i samme utbetalingsår | Fullt trekk | Kildene er tause. **Vårt valg** |
+
+**Gjennomsnittet.** Fjerde ledd sier at fritaket gjelder «så langt den
+samlede ytelsen ikke overstiger arbeidstakerens gjennomsnittsfortjeneste hos
+arbeidsgiveren i denne del av inntektsåret», men ikke hvordan det regnes.
+regnmed tar ordinær lønn og trekkpliktig godtgjørelse for årets lønnsperioder
+før desember og deler på antall slike måneder, rundet ned. To valg er våre:
+
+- **Lønnsperioder, ikke utbetalingsdatoer**, så desemberlønn utbetalt i januar
+  måles mot sitt eget år.
+- **Måneder med feriepenger telles ikke.** Ferietrekket ville ellers gjort at
+  en ansatt med helt jevn lønn så ut til å ligge over sitt eget gjennomsnitt
+  hver desember. Tas ferietrekket i en annen måned enn feriepengene, kan
+  kjøringen ikke se det. Da blir snittet lavere og fritaket mindre, som er
+  den sikre siden, og advarselen viser beløpet.
+
+Eksempel: 50 000 kr i lønn og 100 000 kr i bonus på et kort med 35 %, med
+50 000 kr i gjennomsnitt. 50 000 kr trekkes med 17,5 % og 100 000 kr med 35 %,
+til sammen 43 750 kr. Tidligere ble hele beløpet halvert til 26 250 kr.
+Skattebetalingshåndboken beskriver ikke regnestykket. Simployer regner
+gjennomsnittet på tilleggene alene, mens forskriften sier «samlede ytelsen».
+Med jevn grunnlønn gir de to samme svar, og ved en lønnsøkning gir vår lesing
+mindre fritak, altså den sikre siden.
+
+På **tabellkort** er fritaket halvparten av tabelltrekket på beløpet innenfor
+gjennomsnittet: tabelltrekket på hele måneden minus halve tabelltrekket på
+gjennomsnittet. Forskriften regner ikke dette ut. Tabellen er progressiv, så
+regnmed lar hele beløpet slå ut i trekket og trekker bare fra den halvparten
+en vanlig måned ville fått.
+
+**Timelønn.** Annet ledd fritar «to uker i siste halvdel av november eller
+siste uke i november og første uke i desember». Ingen kilde sier hva en
+månedskjøring av timelønn skal gjøre. Halv måned er ikke to uker, og den ene
+av de to ukene ligger i novemberkjøringen, som allerede er trukket. regnmed
+trekker derfor fullt og sier fra. Det betyr at timelønnede ikke får fritaket
+utbetalt før jul, men får det igjen i skatteoppgjøret.
+
+**To halve trekk i samme år.** Flyttes lønnsdagen over nyttår, kan to
+desemberlønner utbetales i samme inntektsår (desember 2026 i januar 2027 og
+desember 2027 i desember 2027). Forskriften tar ikke stilling til det.
+Skattekortet er regnet for ett halvt trekk per år, så den andre trekkes fullt.
+
+Alt dette er vår lesing av forskriften og bør bekreftes med Skatteetaten.
 
 ## Satsene er data, ikke kode
 
@@ -348,10 +407,9 @@ periode enn den lønnen betales ut for» skal bruke kortets prosent. Den nevner
 ikke dette tillegget, og vi legger den særskilte forskriftsteksten til grunn.
 Ingen kilde sier det uttrykkelig, så punktet bør bekreftes av Skatteetaten.
 
-**Desember.** Halvt trekk gjelder den ordinære lønnen, ikke tillegget. Kildene
-omtaler ikke tillegget her. § 5-7-2 fjerde ledd tar med tilleggsytelser bare så
-langt den samlede ytelsen ikke overstiger det ordinære, og regnmed velger siden
-som ikke gir den ansatte restskatt.
+**Desember.** Halvt trekk gjelder den ordinære lønnen innenfor
+gjennomsnittsfortjenesten, ikke tillegget. Kildene omtaler ikke tillegget her,
+så regnmed velger siden som ikke gir den ansatte restskatt.
 
 **A-meldingen** har én `feriepenger`-linje med hele beløpet, alltid trekkpliktig.
 Skatteetatens veiledning har ingen egen linje for tillegget. Det som trekkes,
@@ -390,7 +448,8 @@ gjøre de samme operasjonene i samme rekkefølge og runde likt (Javas
 I lønnskjøringen: månedstabellen, trekkgrunnlaget i hele kroner (øre
 under en krone flytter aldri trekket over neste 100-kronerstrinn), og
 **halvt tabelltrekk i desember** — som for prosenttrekk, fordi
-10,5-månederstabellene er regnet for det. Feriepenger er trekkfrie på
+10,5-månederstabellene er regnet for det, og med samme avgrensning (se
+«Hva det halve trekket i desember dekker»). Feriepenger er trekkfrie på
 samme vilkår som for prosentkort; det som faller utenfor, trekkes med
 kortets trekkprosent (se «Feriepenger det likevel skal trekkes i»).
 Tillegget for arbeidstakere over 60 år går derimot inn i månedens grunnlag
@@ -1228,7 +1287,10 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
   reduserer gjelden i stedet for å bli kostnad, at sone V er nullsats,
   at samme måned ikke kan kjøres to ganger, at kjøringer og identitet
   ikke kan endres i ettertid, og at listen viser fødselsdato og ikke
-  fødselsnummer.
+  fødselsnummer. Desember: at bonus bare halveres opp til gjennomsnittet,
+  at en feriepengemåned ikke trekker snittet ned, at timelønn og en ansatt
+  uten tidligere lønn trekkes fullt med advarsel, og at samme utbetalingsår
+  ikke får to halve trekk.
 - Timelønn: at beløpet regnes fra minutter, at en ULÅST måned nektes,
   at kjøringen går etter låsing og gir riktig brutto og trekk, og at en
   ansatt uten portalbrukerkobling gir en tydelig feil framfor null timer.

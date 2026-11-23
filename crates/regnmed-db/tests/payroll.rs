@@ -1082,8 +1082,9 @@ async fn only_the_last_payday_before_the_end_date_is_a_leaving_payout() {
         .unwrap();
     let december = run_in(&pool, company, id, (2026, 12), 1_000_000, 1_122_000).await;
     assert_eq!(december.lines[0].holiday_pay_earning_year_ore, 1_122_000);
-    // Half trekk on the pay, the card's full 35 % on the holiday pay.
-    assert_eq!(december.sum.withholding_ore, 175_000 + 392_700);
+    // The run cannot see this pay's kind, so § 5-7-2 gives no half: the card's
+    // full 35 % on the pay and on the holiday pay.
+    assert_eq!(december.sum.withholding_ore, 350_000 + 392_700);
 }
 
 #[tokio::test]
@@ -1122,17 +1123,40 @@ async fn december_withholds_half() {
     let company = company(&pool).await;
     let a = employee(&pool, company, "25927898821", "Nils Desember", 5_000_000).await;
 
-    let run = payroll::run_payroll(
-        &pool,
+    run_month(&pool, company, a, 2026, 11, date(2026, 11, 15), None, 0).await;
+    let run = run_month(&pool, company, a, 2026, 12, date(2026, 12, 15), None, 0).await;
+    assert_eq!(run.sum.withholding_ore, 875_000, "halv skatt i desember");
+    assert!(run.lines[0].calculation.half_withholding);
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
+    assert!(
+        !run.warnings.iter().any(|w| w.contains("5-7-2")),
+        "{:?}",
+        run.warnings
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_month(
+    pool: &PgPool,
+    company: Uuid,
+    employee_id: Uuid,
+    year: i32,
+    month: u32,
+    paid: NaiveDate,
+    gross_ore: Option<i64>,
+    holiday_pay_ore: i64,
+) -> payroll::PayrollRun {
+    payroll::run_payroll(
+        pool,
         company,
-        2026,
-        12,
-        date(2026, 12, 15),
+        year,
+        month,
+        paid,
         "I",
         &[PayrollEntry {
-            employee_id: a,
-            gross_ore: None,
-            holiday_pay_ore: 0,
+            employee_id,
+            gross_ore,
+            holiday_pay_ore,
             holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
@@ -1140,9 +1164,120 @@ async fn december_withholds_half() {
         "Test",
     )
     .await
+    .unwrap()
+}
+
+/// § 5-7-2 (4): a bonus in December is halved only up to average earnings.
+/// A June with feriepenger and ferietrekk does not pull the average down.
+#[tokio::test]
+async fn december_halves_only_up_to_average_earnings() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "25927898821", "Bo Nus", 5_000_000).await;
+
+    run_month(&pool, company, a, 2026, 5, date(2026, 5, 15), None, 0).await;
+    let june = date(2026, 6, 15);
+    run_month(&pool, company, a, 2026, 6, june, Some(1_000_000), 100_000).await;
+    run_month(&pool, company, a, 2026, 11, date(2026, 11, 15), None, 0).await;
+
+    let run = run_month(
+        &pool,
+        company,
+        a,
+        2026,
+        12,
+        date(2026, 12, 15),
+        Some(15_000_000),
+        0,
+    )
+    .await;
+    assert_eq!(run.sum.withholding_ore, 875_000 + 3_500_000);
+    assert!(
+        run.warnings.iter().any(|w| w.contains("fjerde ledd")),
+        "{:?}",
+        run.warnings
+    );
+}
+
+/// § 5-7-2 (2) exempts two specific weeks, which a monthly run cannot
+/// separate, so hourly pay is withheld in full and the run says why.
+#[tokio::test]
+async fn hourly_pay_is_withheld_in_full_in_december() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = payroll::create_employee(
+        &pool,
+        company,
+        &NewEmployee {
+            nin: "26829398612".into(),
+            name: "Tim Lønn".into(),
+            stilling: None,
+            employed_from: date(2025, 1, 1),
+            monthly_salary_ore: None,
+            hourly_wage_ore: Some(45_000),
+            withholding_type: "prosent".into(),
+            withholding_percent_bp: Some(3500),
+            withholding_table: None,
+            holiday_pay_bp: 1020,
+            bank_account: None,
+            note: None,
+            details: Default::default(),
+        },
+        "Test",
+    )
+    .await
     .unwrap();
-    assert_eq!(run.sum.withholding_ore, 875_000, "halv skatt i desember");
-    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
+    let nov = date(2026, 11, 15);
+    run_month(&pool, company, a, 2026, 11, nov, Some(4_000_000), 0).await;
+    let dec = date(2026, 12, 15);
+    let run = run_month(&pool, company, a, 2026, 12, dec, Some(4_000_000), 0).await;
+    assert_eq!(run.sum.withholding_ore, 1_400_000);
+    assert!(!run.lines[0].calculation.half_withholding);
+    assert!(
+        run.warnings.iter().any(|w| w.contains("annet ledd")),
+        "{:?}",
+        run.warnings
+    );
+}
+
+#[tokio::test]
+async fn december_without_earlier_pay_is_withheld_in_full() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "25927898821", "Ny Ansatt", 5_000_000).await;
+    let run = run_month(&pool, company, a, 2026, 12, date(2026, 12, 15), None, 0).await;
+    assert_eq!(run.sum.withholding_ore, 1_750_000);
+    assert!(
+        run.warnings
+            .iter()
+            .any(|w| w.contains("ingen tidligere lønnsmåned")),
+        "{:?}",
+        run.warnings
+    );
+}
+
+/// Payday moved across New Year: December 2026 paid in January 2027 keeps
+/// its half and averages 2026, but December 2027 paid in December 2027
+/// would be a second half in one income year.
+#[tokio::test]
+async fn one_payment_year_gets_one_december_half() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let a = employee(&pool, company, "25927898821", "Flytt Lønnsdag", 5_000_000).await;
+
+    run_month(&pool, company, a, 2026, 11, date(2026, 11, 15), None, 0).await;
+    let first = run_month(&pool, company, a, 2026, 12, date(2027, 1, 15), None, 0).await;
+    assert_eq!(first.sum.withholding_ore, 875_000);
+
+    run_month(&pool, company, a, 2027, 11, date(2027, 11, 15), None, 0).await;
+    let second = run_month(&pool, company, a, 2027, 12, date(2027, 12, 15), None, 0).await;
+    assert_eq!(second.sum.withholding_ore, 1_750_000);
+    assert!(!second.lines[0].calculation.half_withholding);
+    assert!(
+        second.warnings.iter().any(|w| w.contains("allerede fått")),
+        "{:?}",
+        second.warnings
+    );
 }
 
 #[tokio::test]
