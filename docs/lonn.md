@@ -840,6 +840,17 @@ inneværende måned når ingen er kjørt), og året kan settes til i fjor,
 så desemberlønnen kan kjøres i januar. Allerede kjørte måneder er
 deaktivert i velgeren, så den vanligste feilen ikke kan forsøkes.
 
+**Sonen velges uttrykkelig ved selskapets første kjøring.** Portalen
+forhåndsvelger ingen sone, og forhåndsvisningen er sperret til noen har
+valgt en. Senere kjøringer arver sonen fra siste kjøring. Grunnen er at
+en forhåndsvalgt sone I (14,1 %) ville gitt for høy arbeidsgiveravgift
+for en virksomhet i for eksempel sone IV (5,1 %), og feilen ville fulgt
+med inn i det bokførte bilaget og a-meldingen, der den bare kan rettes
+med et reverserende bilag og en ny kjøring. API-et har heller ingen
+standardsone: mangler `sone`, svarer det 422, og en tom eller ukjent
+sone gir 400. Regnmed slår ikke opp sonen fra kommunen. Et slikt forslag
+ville kreve et datert og kildebelagt register, slik satsregisteret er.
+
 **Ingenting bokføres uten forhåndsvisning.** «Se hva som bokføres»
 sender skjemaet til `POST …/payroll?preview=true`, som regner ut
 kjøringen nøyaktig som den bokføres — samme satser, samme trekk, samme
