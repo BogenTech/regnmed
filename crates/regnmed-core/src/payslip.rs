@@ -284,7 +284,8 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         8.0,
         Font::Bold,
-        &format!("HITTIL I {}", input.year),
+        // The figures below count by payment year, not the pay month's.
+        &format!("HITTIL I {}", input.paid_date.format("%Y")),
     );
     ly += 14.0;
     for (text, amount) in [
@@ -385,6 +386,16 @@ mod tests {
         desember.half_withholding = true;
         let text = String::from_utf8_lossy(&render_payslip(&desember)).to_string();
         assert!(text.contains("Halvt forskuddstrekk"), "{text}");
+    }
+
+    #[test]
+    fn the_year_to_date_heading_names_the_payment_year() {
+        let mut december = input();
+        december.month = 12;
+        december.paid_date = date(2027, 1, 15);
+        let text = String::from_utf8_lossy(&render_payslip(&december)).to_string();
+        assert!(text.contains("HITTIL I 2027"), "{text}");
+        assert!(text.contains("2026"), "the pay period stays: {text}");
     }
 
     /// The fødselsnummer must never end up in a document that travels.

@@ -1018,7 +1018,9 @@ async fn payroll_run(
                 tax_free_allowance_ore: tax_free_allowance,
             },
             // Pay is taxed in the year it is paid, so December's pay paid
-            // in January takes January's tables -- like the aga rate.
+            // in January takes January's tables -- like the aga rate. The
+            // month stays the pay month: the half-month exemption is for
+            // a pay period (skattebetalingsforskriften § 5-7-2 (1)).
             paid_date.year(),
             month,
         )
@@ -1669,8 +1671,9 @@ pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, year: i32, month: u32)
 /// Builds the payslip for one employee in one run.
 ///
 /// Rendered on demand rather than stored: the payroll line is
-/// insert-only, so the same line yields the same slip forever — and not
-/// storing it means one fewer copy of personal data to protect.
+/// insert-only, so the slip's own figures never change — and not storing
+/// it means one fewer copy of personal data to protect. The year-to-date
+/// figures are summed from the runs each time it is rendered.
 pub async fn payslip(
     pool: &PgPool,
     company_id: Uuid,
@@ -1707,18 +1710,20 @@ pub async fn payslip(
     let gross: i64 = row.get("brutto_ore");
     let holiday_pay: i64 = row.get("feriepenger_ore");
 
-    // Year to date, through this run.
+    // Year to date through this run, by PAYMENT year, like the tax tables
+    // and the holiday pay basis (ferieloven § 10 nr. 1).
     let year_to_date = sqlx::query(
         "select coalesce(sum(l.brutto_ore + l.feriepenger_ore + l.taxable_allowance_ore), 0)::bigint as brutto,
                 coalesce(sum(l.forskuddstrekk_ore), 0)::bigint as trekk,
                 coalesce(sum(l.feriepengeavsetning_ore), 0)::bigint as feriepenger
          from payroll_line l
          join payroll_run r on r.id = l.run_id
-         where r.company_id = $1 and r.ar = $2 and l.employee_id = $3
-           and r.maned <= (select maned from payroll_run where id = $4)",
+         join payroll_run slip on slip.id = $3
+         where r.company_id = $1 and l.employee_id = $2
+           and r.utbetalt_dato >= date_trunc('year', slip.utbetalt_dato)::date
+           and (r.utbetalt_dato, r.ar, r.maned) <= (slip.utbetalt_dato, slip.ar, slip.maned)",
     )
     .bind(company_id)
-    .bind(year)
     .bind(employee_id)
     .bind(run_id)
     .fetch_one(pool)
