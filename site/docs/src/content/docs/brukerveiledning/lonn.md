@@ -76,6 +76,7 @@ Hvis selskapet ble opprettet før 11. november 2026 og mangler noen av lønnskon
 - **Prosenttrekk** fra skattekortet.
 - **Tabelltrekk** regnes med Skatteetatens egen trekkrutine, sjekket mot hele den publiserte tabellfilen for 2026. Et år uten innlagte konstanter stopper kjøringen i stedet for å bruke fjorårets.
 - **Feriepenger er trekkfrie** i utbetalingsåret, og det trekkes halv skatt i desember. Begge deler gjelder bare kort over 10,5 måneder. Kort over 12 måneder trekker fullt hver måned.
+- **Halv skatt i desember gjelder månedslønn opp til den ansattes gjennomsnitt tidligere i året.** Bonus over gjennomsnittet trekkes fullt. Timelønn, en ansatt uten tidligere lønn i regnmed og et andre halvt trekk i samme utbetalingsår trekkes også fullt, og kjøringen sier fra. For mye trekk kommer tilbake i skatteoppgjøret.
 - Trekket **rundes ned til hele kroner**, siden a-meldingen tar hele kroner.
 
 Lønnsslippen sier hvordan trekket ble regnet, for eksempel «35,00 %» eller «tabell 8000».

@@ -90,7 +90,7 @@ pub struct PayslipInput {
     pub ytd_holiday_pay_ore: i64,
 }
 
-fn kr(ore: i64) -> String {
+pub(crate) fn kr(ore: i64) -> String {
     let raw = Ore(ore).to_string();
     let (heltall, rest) = raw.split_once(',').expect("Ore always has decimals");
     let (sign, digits) = heltall
