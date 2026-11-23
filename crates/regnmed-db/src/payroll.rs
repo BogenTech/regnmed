@@ -446,6 +446,9 @@ pub struct Lonnslinje {
     pub name: String,
     pub calculation: PayrollCalculation,
     pub holiday_pay_accrual_ore: i64,
+    /// What the 6 G cap took off the accrual in this run (ferieloven § 10
+    /// nr. 3). Negative when a higher G gives some of it back.
+    pub holiday_pay_cap_cut_ore: i64,
     /// This run's change to the accrued aga on the employee's unpaid
     /// feriepenger — positive when new feriepenger were earned, negative
     /// when they were paid out.
@@ -491,6 +494,35 @@ async fn feriepengehistorikk(
                 },
             )
         })
+        .collect())
+}
+
+/// Per employee: the pay already paid out in the earning year and what the
+/// 6 G cap has already cut from it. Ferieloven § 10 nr. 1 counts pay by when
+/// it was PAID, so December's pay paid in January belongs to January's year.
+async fn earning_year_totals(
+    pool: &PgPool,
+    company_id: Uuid,
+    earning_year: i32,
+) -> Result<std::collections::HashMap<Uuid, (i64, i64)>> {
+    let rows = sqlx::query(
+        "select l.employee_id,
+                coalesce(sum(l.brutto_ore), 0)::bigint as basis,
+                coalesce(sum(l.holiday_pay_cap_cut_ore), 0)::bigint as cut
+         from payroll_line l
+         join payroll_run r on r.id = l.run_id
+         where r.company_id = $1
+           and r.utbetalt_dato >= make_date($2, 1, 1)
+           and r.utbetalt_dato < make_date($2 + 1, 1, 1)
+         group by l.employee_id",
+    )
+    .bind(company_id)
+    .bind(earning_year)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| (r.get("employee_id"), (r.get("basis"), r.get("cut"))))
         .collect())
 }
 
@@ -807,6 +839,11 @@ async fn payroll_run(
         .context("ugyldig måned")?;
 
     let history = feriepengehistorikk(pool, company_id).await?;
+    let earning_year = paid_date.year();
+    // shortcut: simultaneous runs miss each other's pay here; the next run
+    // corrects the cut, and runs are a person's deliberate monthly act.
+    let year_totals = earning_year_totals(pool, company_id, earning_year).await?;
+    let mut cap_warnings = Vec::new();
 
     let mut sum = PayrollTotals::default();
     let mut contribution_basis_ore = 0i64;
@@ -947,7 +984,55 @@ async fn payroll_run(
 
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
-        let avsetning = payroll::holiday_pay_accrual(gross, employee.holiday_pay_bp as i64);
+        let holiday_rate = employee.holiday_pay_bp as i64;
+        // The cut is a target for the whole earning year minus what earlier
+        // lines already took, so a new G in May corrects itself on the next
+        // run and no posted line is touched.
+        let cap_cut = if employee
+            .birth_date
+            .is_some_and(|b| payroll::has_over_60_addition(holiday_rate, b.year(), earning_year))
+        {
+            let g_date = payroll::basic_amount_date(earning_year, employee.employed_to);
+            let g =
+                regnmed_core::rates::value_on(&alle_satser, payroll::BASIC_AMOUNT_DOMAIN, g_date)
+                    .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{}",
+                        payroll::PayrollError::MissingRate(
+                            payroll::BASIC_AMOUNT_DOMAIN.into(),
+                            g_date
+                        )
+                    )
+                })?;
+            let (basis_before, cut_before) =
+                year_totals.get(&employee.id).copied().unwrap_or_default();
+            let cut = payroll::over_60_cap_cut(basis_before + gross, g) - cut_before;
+            if cut > 0 {
+                cap_warnings.push(format!(
+                    "{}: tillegget på 2,3 prosentpoeng for arbeidstakere over 60 er begrenset \
+                     til 6G ({} kr), jf. ferieloven § 10 nr. 3. Gir tariffavtalen eller \
+                     arbeidsavtalen høyere grunnlag, må {} kr avsettes for hånd.",
+                    employee.name,
+                    kroner(6 * g),
+                    kroner(cut),
+                ));
+                if regnmed_core::rates::stale_domains(&alle_satser, paid_date)
+                    .iter()
+                    .any(|s| s.domain == payroll::BASIC_AMOUNT_DOMAIN)
+                {
+                    cap_warnings.push(format!(
+                        "{}: grunnbeløpet i satsregisteret er utdatert, så taket på 6G kan være \
+                         for lavt. Registrer gjeldende grunnbeløp, så retter neste kjøring \
+                         avsetningen.",
+                        employee.name,
+                    ));
+                }
+            }
+            cut
+        } else {
+            0
+        };
+        let avsetning = payroll::holiday_pay_accrual(gross, holiday_rate) - cap_cut;
         // The avgift falls on what is actually paid out, and is computed
         // once on the run's whole basis below.
         contribution_basis_ore += gross + post.holiday_pay_ore + taxable_allowance;
@@ -976,6 +1061,7 @@ async fn payroll_run(
             name: employee.name.clone(),
             calculation,
             holiday_pay_accrual_ore: avsetning,
+            holiday_pay_cap_cut_ore: cap_cut,
             employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
             pay_kind,
         });
@@ -1256,8 +1342,9 @@ async fn payroll_run(
                  (id, run_id, employee_id, brutto_ore, feriepenger_ore,
                   trekkgrunnlag_ore, forskuddstrekk_ore, netto_ore,
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
-                  pay_kind, withholding_method, allowance_ore, taxable_allowance_ore)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
+                  pay_kind, withholding_method, allowance_ore, taxable_allowance_ore,
+                  holiday_pay_cap_cut_ore)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
             )
             .bind(Uuid::new_v4())
             .bind(run_id)
@@ -1285,6 +1372,7 @@ async fn payroll_run(
             .bind(&b.method)
             .bind(b.allowance_ore)
             .bind(b.taxable_allowance_ore)
+            .bind(l.holiday_pay_cap_cut_ore)
             .execute(&mut *tx)
             .await?;
         }
@@ -1370,6 +1458,7 @@ async fn payroll_run(
                 .await?,
         )
         .chain(frikort_warnings)
+        .chain(cap_warnings)
         .collect();
     Ok(PayrollRun {
         id: run_id,
@@ -1514,6 +1603,7 @@ pub async fn payslip(
                 l.brutto_ore, l.feriepenger_ore, l.trekkgrunnlag_ore,
                 l.forskuddstrekk_ore, l.netto_ore, l.feriepengeavsetning_ore,
                 l.halv_trekk, l.withholding_method, l.allowance_ore, l.taxable_allowance_ore,
+                l.holiday_pay_cap_cut_ore,
                 e.navn, e.stilling, e.fodselsnummer, e.trekk_type,
                 e.trekk_prosent_bp, e.feriepenger_bp,
                 c.name as selskap, c.orgnr, c.address
@@ -1594,6 +1684,7 @@ pub async fn payslip(
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
         holiday_pay_bp: row.get::<i32, _>("feriepenger_bp") as i64,
+        holiday_pay_cap_cut_ore: row.get("holiday_pay_cap_cut_ore"),
         year_to_date_gross_ore: year_to_date.get("brutto"),
         year_to_date_withholding_ore: year_to_date.get("trekk"),
         ytd_holiday_pay_ore: year_to_date.get("feriepenger"),

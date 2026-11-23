@@ -213,8 +213,9 @@
     <p class="mt-2">
       Identiteten (fødselsnummeret) er permanent og vises ikke her — listen viser
       <b>fødselsdato</b>, som er nok til å kjenne igjen en ansatt. Feriepengesatsen står per ansatt
-      fordi den er et faktum om arbeidsforholdet: 10,2 % etter ferieloven §10, 12,5 % fra året man
-      fyller 60, høyere på tariff. <b>Portalbruker</b>-kolonnen styrer selvbetjeningen: den koblede
+      fordi den er et faktum om arbeidsforholdet: 10,2 % etter ferieloven §10, 12,5 % fra
+      opptjeningsåret man fyller 59 (tillegget på 2,3 prosentpoeng bare opp til 6G), høyere på
+      tariff. <b>Portalbruker</b>-kolonnen styrer selvbetjeningen: den koblede
       brukeren ser sin egen lønnsslipp, og timelønn hentes fra dennes timeføring. Tryggest er å
       invitere på e-post — da kobler den ansatte seg selv ved å logge inn.
     </p>

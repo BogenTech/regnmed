@@ -342,12 +342,48 @@ pub fn employer_contribution_accrual_target(holiday_pay_owed_ore: i64, rate_bp: 
 
 /// Feriepengeavsetning for the year's earnings (ferieloven §10).
 ///
-/// The rate is data: 10,2 % by law, 12,5 % from the year the employee
-/// turns 60 (§10 nr. 3 adds 2,3 prosentpoeng), and tariff agreements
-/// commonly raise it to 12 % / 14,3 % for five weeks' holiday. Which
-/// one applies is the caller's decision, recorded per employee.
+/// The rate is data: 10,2 % by law, 12,5 % from the earning year before
+/// the holiday year the employee turns 60 (§10 nr. 3 adds 2,3
+/// prosentpoeng), and tariff agreements commonly raise it to 12 % / 14,3 %
+/// for five weeks' holiday. Which one applies is the caller's decision,
+/// recorded per employee. Above 6 G the caller subtracts
+/// [`over_60_cap_cut`].
 pub fn holiday_pay_accrual(basis_ore: i64, rate_bp: i64) -> i64 {
     bp_of(basis_ore, rate_bp)
+}
+
+/// The satsregister domain holding folketrygdens grunnbeløp, in øre.
+pub const BASIC_AMOUNT_DOMAIN: &str = "folketrygdens_grunnbelop";
+
+/// Ferieloven § 10 nr. 3 første ledd.
+const OVER_60_ADDITION_BP: i64 = 230;
+
+/// Whether the employee's rate carries the statutory over-60 addition in
+/// this earning year. Someone turning 60 in holiday year Y earns it in Y-1,
+/// the year they turn 59. Any other rate is an agreement whose parts we
+/// cannot see, so the cap is not applied to it.
+pub fn has_over_60_addition(rate_bp: i64, birth_year: i32, earning_year: i32) -> bool {
+    matches!(rate_bp, 1250 | 1430) && earning_year - birth_year >= 59
+}
+
+/// The date whose G caps the addition: 31 December of the earning year, or
+/// the leaving date for someone who leaves during it (§ 10 nr. 3 andre ledd).
+pub fn basic_amount_date(earning_year: i32, employed_to: Option<NaiveDate>) -> NaiveDate {
+    use chrono::Datelike;
+    employed_to
+        .filter(|d| d.year() == earning_year)
+        .or_else(|| NaiveDate::from_ymd_opt(earning_year, 12, 31))
+        .expect("31 December exists in every year a payment date can have")
+}
+
+/// How much of the addition the 6 G cap removes from the earning year's
+/// basis so far. Only the 2,3 points stop at 6 G: the ordinary rate under
+/// § 10 nr. 2 or a tariff agreement still runs on all pay.
+pub fn over_60_cap_cut(earning_year_basis_ore: i64, basic_amount_ore: i64) -> i64 {
+    bp_of(
+        (earning_year_basis_ore - 6 * basic_amount_ore).max(0),
+        OVER_60_ADDITION_BP,
+    )
 }
 
 /// What a month's payroll costs and owes, per employee, summed.
@@ -650,10 +686,56 @@ mod tests {
     fn holiday_pay_by_ferieloven_and_by_tariff() {
         // §10: 10,2 % of the grunnlag.
         assert_eq!(holiday_pay_accrual(50_000_000, 1020), 5_100_000);
-        // From the year the employee turns 60: +2,3 percentage points.
+        // From the earning year before turning 60: +2,3 percentage points.
         assert_eq!(holiday_pay_accrual(50_000_000, 1250), 6_250_000);
         // Tariff agreement, five weeks.
         assert_eq!(holiday_pay_accrual(50_000_000, 1200), 6_000_000);
+    }
+
+    #[test]
+    fn the_over_60_addition_stops_at_6g_and_the_ordinary_rate_does_not() {
+        const G: i64 = 13_654_900;
+        const SIX_G: i64 = 6 * G; // 819 294 kr
+        let accrual = |basis, rate| holiday_pay_accrual(basis, rate) - over_60_cap_cut(basis, G);
+
+        // Below and at 6 G: the whole raised rate.
+        assert_eq!(accrual(SIX_G - 100, 1250), bp_of(SIX_G - 100, 1250));
+        assert_eq!(over_60_cap_cut(SIX_G, G), 0);
+        assert_eq!(accrual(SIX_G, 1250), bp_of(SIX_G, 1250));
+        // Above: 10,2 % of 1 000 000 kr + 2,3 % of 819 294 kr.
+        assert_eq!(accrual(100_000_000, 1250), 10_200_000 + 1_884_376);
+        // Tariff: 12 % of all pay + the same capped addition.
+        assert_eq!(accrual(100_000_000, 1430), 12_000_000 + 1_884_376);
+    }
+
+    #[test]
+    fn the_addition_starts_in_the_earning_year_before_the_60th_birthday_year() {
+        // Turns 60 in holiday year 2027, so 2026 pay carries the addition.
+        assert!(!has_over_60_addition(1250, 1967, 2025));
+        assert!(has_over_60_addition(1250, 1967, 2026));
+        assert!(has_over_60_addition(1430, 1967, 2026));
+        // 12 % has no addition to cap, at any age.
+        assert!(!has_over_60_addition(1200, 1950, 2026));
+        assert!(!has_over_60_addition(1020, 1950, 2026));
+    }
+
+    #[test]
+    fn g_is_taken_at_year_end_or_on_leaving_during_the_earning_year() {
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+        assert_eq!(basic_amount_date(2026, None), d(2026, 12, 31));
+        assert_eq!(
+            basic_amount_date(2026, Some(d(2026, 3, 31))),
+            d(2026, 3, 31)
+        );
+        // Left in another year: did not leave "i opptjeningsåret".
+        assert_eq!(
+            basic_amount_date(2026, Some(d(2025, 12, 31))),
+            d(2026, 12, 31)
+        );
+        assert_eq!(
+            basic_amount_date(2026, Some(d(2027, 1, 31))),
+            d(2026, 12, 31)
+        );
     }
 
     #[test]

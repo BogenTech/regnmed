@@ -82,6 +82,8 @@ pub struct PayslipInput {
     /// not money paid now, so it is stated apart from the total.
     pub holiday_pay_accrual_ore: i64,
     pub holiday_pay_bp: i64,
+    /// What the 6 G cap took off this month's accrual (ferieloven § 10 nr. 3).
+    pub holiday_pay_cap_cut_ore: i64,
     /// Year to date, through this run.
     pub year_to_date_gross_ore: i64,
     pub year_to_date_withholding_ore: i64,
@@ -250,10 +252,17 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly,
         9.0,
         Font::Regular,
-        &format!(
-            "Feriepenger ({} av bruttolønn) — utbetales neste år",
-            percent(input.holiday_pay_bp)
-        ),
+        &if input.holiday_pay_cap_cut_ore == 0 {
+            format!(
+                "Feriepenger ({} av bruttolønn) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
+        } else {
+            format!(
+                "Feriepenger ({}, tillegget på 2,3 poeng bare opp til 6G) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
+        },
     );
     pdf.text_right(
         RIGHT,
@@ -318,6 +327,7 @@ mod tests {
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
             holiday_pay_bp: 1020,
+            holiday_pay_cap_cut_ore: 0,
             year_to_date_gross_ore: 15_000_000,
             year_to_date_withholding_ore: 5_250_000,
             ytd_holiday_pay_ore: 1_530_000,
