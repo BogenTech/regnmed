@@ -153,7 +153,9 @@ en senere utbetaling samme år ikke kan telle de samme feriepengene to ganger.
 fratreden når sluttdatoen ligger før neste månedlige lønningsdag, fordi
 feriepengene forfaller siste vanlige lønningsdag før fratreden (ferieloven
 § 11 nr. 3). Oppsigelse til oktober gjør ikke juniutbetalingen til en
-sluttutbetaling, mens sluttdato 5. januar gjør 20. desember til det.
+sluttutbetaling, mens sluttdato 5. januar gjør 20. desember til det. Den som
+betaler siste dag i måneden, har neste lønningsdag siste dag i neste måned,
+så 28. februar følges av 31. mars.
 
 **En åpningsbalanse er usynlig i lønnshistorikken.** Derfor regnes et beløp
 over det tidligere år skylder, som årets feriepenger *bare* for den som
@@ -172,8 +174,10 @@ trukket for lite. Forskudd må derfor trekkes for hånd.
 disse beløpene ikke gå gjennom tabellen, siden de er opptjent over et
 vesentlig lengre tidsrom enn månedens lønn (§ 5-10-1 (4)). De trekkes med
 trekkprosenten på tabellkortet (§ 5-10-3), av hele kroner (§ 5-10-4).
-regnmed lagrer den prosenten når skattekortet hentes. Mangler den, nekter
-kjøringen og ber om at kortet hentes på nytt. Beløpene halveres ikke i
+regnmed lagrer den prosenten når skattekortet hentes, og migration 0107
+henter den fra kort som allerede er lagret. Mangler den, nekter kjøringen og
+ber om at kortet hentes på nytt; den kan ennå ikke føres inn for hånd.
+Beløpene halveres ikke i
 desember: § 5-7-2 (4) dekker slike ytelser bare så langt samlet ytelse ikke
 overstiger gjennomsnittsfortjenesten, som regnmed ikke beregner, så
 kjøringen velger siden som ikke gir den ansatte restskatt.
@@ -183,7 +187,11 @@ kjøringen velger siden som ikke gir den ansatte restskatt.
 lønnen (§ 5-7-1 (1) c) er trekkfrie også i opptjeningsåret. regnmed vet ikke
 hvorfor et arbeidsforhold endte, så skjemaet har en avhuking for ansatte med
 sluttdato (`feriepenger_trekkfri` i API-et). Kjøringen minner om den når den
-trekker i feriepenger ved fratreden.
+trekker i feriepenger ved fratreden. Merkingen fjerner trekk, så den lagres på
+lønnslinjen (`holiday_pay_exempt`, migration 0107) og står i trekkmåten på
+lønnsslippen. En merket utbetaling regnes som oppgjør av årets egne
+feriepenger, så den ikke ser ubetalt ut neste år. På kort over 12 måneder og
+frikort har merkingen ingen virkning, og kjøringen sier fra.
 
 **Ikke bygget:** valget i § 5-7-1 (2) om å gi trekkfritaket som én vanlig
 månedslønn. regnmed følger første ledd. A-meldingen er uendret: feriepenger
@@ -1037,6 +1045,11 @@ til neste måned.
 
 Ansatte med timesats og uten månedslønn starter med «Fra låste timer»
 krysset av; serveren nekter hvis måneden ikke er låst.
+
+Skjemaet viser alle som var ansatt i den valgte måneden, også etter
+sluttdatoen, slik at et sluttoppgjør kan kjøres. Den som alt har sluttet,
+står uten hake og med 0 kr i brutto, så en vanlig kjøring aldri betaler
+vedkommende ved et uhell. Det som er skrevet inn, beholdes når måneden endres.
 
 **Lønnskjøringer og a-melding** viser hver kjøring med brutto,
 **utbetalte feriepenger**, trekk, kjøregodtgjørelse, netto og

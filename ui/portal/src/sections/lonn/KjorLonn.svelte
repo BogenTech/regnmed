@@ -28,27 +28,33 @@
   let kjort = $derived(
     new Set(kjoringer.filter((k) => k.ar === year).map((k) => k.maned)),
   );
-  // Everyone employed in the month, so a final settlement can run after the end date.
-  let manedStart = $derived(`${year}-${String(maned).padStart(2, "0")}-01`);
-  let aktive = $derived(ansatte.filter((a) => !a.ansatt_til || a.ansatt_til >= manedStart));
 
   const krTekst = (ore) => (ore == null ? "" : (ore / 100).toFixed(2).replace(".", ","));
 
+  // One line per employee, so changing the period keeps what was typed.
   let linjer = $state([]);
   $effect(() => {
-    linjer = aktive.map((a) => ({
-      employee_id: a.id,
-      navn: a.navn,
-      brutto: krTekst(a.manedslonn_ore),
-      fp: "",
-      slutter: !!a.ansatt_til,
-      fp_trekkfri: false,
-      timelonn: !!a.timelonn_ore,
-      // Paid by the hour only: the hours are the pay, so start there.
-      fra_timer: !!a.timelonn_ore && a.manedslonn_ore == null,
-      med: true,
-    }));
+    linjer = ansatte.map((a) => {
+      // A final settlement is a deliberate choice: nothing is due by default.
+      const hasLeft = !!a.ansatt_til && a.ansatt_til < iDag;
+      return {
+        employee_id: a.id,
+        navn: a.navn,
+        endDate: a.ansatt_til,
+        brutto: hasLeft ? "0,00" : krTekst(a.manedslonn_ore),
+        fp: "",
+        canMarkExempt: !!a.ansatt_til && !a.trekk_12_maneder,
+        holidayPayExempt: false,
+        timelonn: !!a.timelonn_ore,
+        // Paid by the hour only: the hours are the pay, so start there.
+        fra_timer: !!a.timelonn_ore && a.manedslonn_ore == null,
+        med: !hasLeft,
+      };
+    });
   });
+  // Everyone employed in the month, so a final settlement can run after the end date.
+  let monthStart = $derived(`${year}-${String(maned).padStart(2, "0")}-01`);
+  let aktive = $derived(linjer.filter((l) => !l.endDate || l.endDate >= monthStart));
 
   function foresporsel() {
     return {
@@ -56,7 +62,7 @@
       maned,
       utbetalt_dato: dato,
       sone,
-      linjer: linjer
+      linjer: aktive
         .filter((l) => l.med)
         .map((l) => ({
           employee_id: l.employee_id,
@@ -64,7 +70,7 @@
           // regner det fra de låste timene.
           brutto_ore: l.fra_timer ? null : l.brutto.trim() ? parseKr(l.brutto.trim()) : null,
           feriepenger_ore: l.fp.trim() ? parseKr(l.fp.trim()) : 0,
-          feriepenger_trekkfri: l.slutter && l.fp_trekkfri,
+          feriepenger_trekkfri: l.canMarkExempt && l.holidayPayExempt,
           fra_timer: l.fra_timer,
         })),
     };
@@ -72,7 +78,7 @@
 
   // The form as text: a preview is valid only while this is unchanged.
   let skjemaNokkel = $derived(
-    JSON.stringify([year, maned, dato, sone, linjer.map((l) => [l.brutto, l.fp, l.fp_trekkfri, l.fra_timer, l.med])]),
+    JSON.stringify([year, maned, dato, sone, aktive.map((l) => [l.employee_id, l.brutto, l.fp, l.holidayPayExempt, l.fra_timer, l.med])]),
   );
   let forhand = $state(null); // { nokkel, svar }
   let gyldig = $derived(forhand && forhand.nokkel === skjemaNokkel);
@@ -207,7 +213,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each linjer as l (l.employee_id)}
+          {#each aktive as l (l.employee_id)}
             <tr class={l.med ? "" : "opacity-50"}>
               <td>
                 <input
@@ -236,9 +242,9 @@
                   disabled={!l.med}
                   bind:value={l.fp}
                 />
-                {#if l.slutter && l.fp.trim()}
+                {#if l.canMarkExempt && l.fp.trim()}
                   <label class="label cursor-pointer justify-start gap-2 text-xs mt-1">
-                    <input type="checkbox" class="checkbox checkbox-xs" bind:checked={l.fp_trekkfri} />
+                    <input type="checkbox" class="checkbox checkbox-xs" bind:checked={l.holidayPayExempt} />
                     Trekkfri: dødsfall eller løpende utbetaling
                   </label>
                 {/if}

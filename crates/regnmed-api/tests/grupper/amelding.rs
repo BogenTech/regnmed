@@ -273,6 +273,54 @@ async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
 }
 
 #[tokio::test]
+async fn the_api_honours_the_exempt_mark_on_a_leaving_payout() {
+    let Some(f) = setup(None).await else { return };
+    let company = f.submissions.split('/').nth(2).unwrap();
+    let (code, listed) = call(
+        &f.state,
+        "GET",
+        &format!("/companies/{company}/employees"),
+        &f.admin,
+        "",
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{listed}");
+    let employee = listed["ansatte"][0]["id"].as_str().unwrap();
+    let (code, ended) = call(
+        &f.state,
+        "PUT",
+        &format!("/companies/{company}/employees/{employee}/end"),
+        &f.admin,
+        r#"{"ansatt_til":"2026-04-30"}"#,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{ended}");
+
+    // March and April each accrue 4 080 kr, all paid out in the earning year.
+    let preview = |exempt: bool| {
+        serde_json::json!({
+            "ar": 2026, "maned": 4, "utbetalt_dato": "2026-04-25", "sone": "I",
+            "linjer": [{
+                "employee_id": employee,
+                "feriepenger_ore": 816_000,
+                "feriepenger_trekkfri": exempt,
+            }],
+        })
+        .to_string()
+    };
+    let uri = format!("/companies/{company}/payroll?preview=true");
+    let (code, withheld) = call(&f.state, "POST", &uri, &f.admin, &preview(false)).await;
+    assert_eq!(code, StatusCode::OK, "{withheld}");
+    assert_eq!(withheld["linjer"][0]["forskuddstrekk_ore"], 1_685_600);
+    assert_eq!(withheld["linjer"][0]["feriepenger_trekkfri"], false);
+
+    let (code, exempt) = call(&f.state, "POST", &uri, &f.admin, &preview(true)).await;
+    assert_eq!(code, StatusCode::OK, "{exempt}");
+    assert_eq!(exempt["linjer"][0]["forskuddstrekk_ore"], 1_400_000);
+    assert_eq!(exempt["linjer"][0]["feriepenger_trekkfri"], true);
+}
+
+#[tokio::test]
 async fn an_amelding_is_sent_once_retried_unchanged_and_its_feedback_stored() {
     let Some(Fixture {
         state,

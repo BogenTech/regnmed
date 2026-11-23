@@ -811,6 +811,87 @@ async fn a_table_card_withholds_holiday_pay_at_its_printed_percentage() {
 }
 
 #[tokio::test]
+async fn an_exempt_mark_is_recorded_and_shown_on_the_payslip() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = employee_at_rate(&pool, company, "08888797336", 1020).await;
+    run_in(&pool, company, id, (2026, 3), 10_000_000, 0).await;
+    payroll::end_employment(&pool, company, id, Some(date(2026, 4, 30)))
+        .await
+        .unwrap();
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        4,
+        date(2026, 4, 20),
+        "I",
+        &holiday_entry(id, 1_000_000, 1_122_000, true),
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(run.sum.withholding_ore, 350_000);
+    let stored: bool =
+        sqlx::query_scalar("select holiday_pay_exempt from payroll_line where run_id = $1")
+            .bind(run.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(stored);
+    let slip = payroll::payslip(&pool, company, run.id, id).await.unwrap();
+    assert_eq!(
+        slip.withholding_method.as_deref(),
+        Some("35,00 %, feriepenger merket trekkfrie")
+    );
+}
+
+#[tokio::test]
+async fn an_exempt_mark_has_no_effect_on_a_twelve_month_card() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    let id = payroll::create_employee(
+        &pool,
+        company,
+        &NewEmployee {
+            nin: "15929998666".into(),
+            name: "Tolv Måneder".into(),
+            stilling: None,
+            employed_from: date(2025, 1, 1),
+            monthly_salary_ore: None,
+            hourly_wage_ore: None,
+            withholding_type: "tabell".into(),
+            withholding_percent_bp: None,
+            withholding_table: Some(7350),
+            holiday_pay_bp: 1020,
+            bank_account: None,
+            note: None,
+            details: Default::default(),
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    payroll::end_employment(&pool, company, id, Some(date(2026, 4, 30)))
+        .await
+        .unwrap();
+    let preview = |exempt| {
+        let entry = holiday_entry(id, 1_000_000, 500_000, exempt);
+        let pool = pool.clone();
+        async move {
+            payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 20), "I", &entry)
+                .await
+                .unwrap()
+        }
+    };
+    let (plain, marked) = (preview(false).await, preview(true).await);
+    assert_eq!(marked.sum.withholding_ore, plain.sum.withholding_ore);
+    assert!(!marked.lines[0].holiday_pay_exempt);
+    assert!(marked.warnings.iter().any(|w| w.contains("ingen virkning")));
+    assert!(!plain.warnings.iter().any(|w| w.contains("merkes som")));
+}
+
+#[tokio::test]
 async fn only_the_last_payday_before_the_end_date_is_a_leaving_payout() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
