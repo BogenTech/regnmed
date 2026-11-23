@@ -3,6 +3,7 @@
 //! - GET/POST /companies/{id}/employees             employee register
 //! - PUT  /companies/{id}/employees/{eid}/employment  arbeidsforhold for the a-melding
 //! - PUT  /companies/{id}/employees/{eid}/end         the employment's last day (sluttdato)
+//! - PUT  /companies/{id}/employees/{eid}/holiday-rate  the holiday pay rate from the next run
 //! - GET/POST /companies/{id}/payroll               payroll runs
 //! - GET  /companies/{id}/payroll/{rid}/slip/{eid}  payslip (PDF)
 //! - GET  /companies/{id}/payroll/{rid}/amelding     a-melding preview / XML
@@ -20,6 +21,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
+use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -31,6 +33,7 @@ use crate::herding::{Vis, file_response};
 use regnmed_db::amelding_submission::Source;
 
 fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
+    let year = chrono::Utc::now().year();
     json!({
         "id": a.id,
         "navn": a.name,
@@ -47,6 +50,13 @@ fn employee_json(a: &regnmed_db::payroll::Employee) -> serde_json::Value {
         "trekk_12_maneder": a.withholding_twelve_months,
         "frikort_grense_ore": a.tax_free_card_limit_ore,
         "feriepenger_bp": a.holiday_pay_bp,
+        // The rate ferieloven § 10 nr. 3 calls for this year, when a current
+        // employee's rate lacks the over-60 addition.
+        "feriepenger_krevd_bp": a.birth_date
+            .filter(|_| a.employed_to.is_none_or(|end| end.year() >= year))
+            .and_then(|b| {
+                regnmed_core::payroll::over_60_rate_due(a.holiday_pay_bp as i64, b.year(), year)
+            }),
         "bank_account": a.bank_account,
         "note": a.note,
         // The arbeidsforhold facts the a-melding requires (0073), and
@@ -150,8 +160,8 @@ pub struct CreateEmployeeRequest {
     withholding_percent_bp: Option<i32>,
     #[serde(rename = "trekk_tabell")]
     withholding_table: Option<i32>,
-    /// Ferieloven §10: 1020 as a minimum, 1250 from the year the
-    /// employee turns 60, higher on tariff.
+    /// Ferieloven §10: 1020 as a minimum, 1250 from the earning year the
+    /// employee turns 59, higher on tariff.
     #[serde(default = "lovens_minimum")]
     #[serde(rename = "feriepenger_bp")]
     holiday_pay_bp: i32,
@@ -242,6 +252,31 @@ pub async fn end_employment(
     regnmed_db::payroll::end_employment(&state.pool, company_id, employee_id, request.end)
         .await
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    Ok(Json(json!({ "updated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct HolidayRateRequest {
+    #[serde(rename = "feriepenger_bp")]
+    holiday_pay_bp: i32,
+}
+
+/// Changes the holiday pay rate from the next run (docs/lonn.md).
+pub async fn update_holiday_rate(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path((company_id, employee_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<HolidayRateRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
+    regnmed_db::payroll::update_holiday_rate(
+        &state.pool,
+        company_id,
+        employee_id,
+        request.holiday_pay_bp,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     Ok(Json(json!({ "updated": true })))
 }
 

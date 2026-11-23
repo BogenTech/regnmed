@@ -257,6 +257,11 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
                 "Feriepenger ({} av bruttolønn) — utbetales neste år",
                 percent(input.holiday_pay_bp)
             )
+        } else if input.holiday_pay_cap_cut_ore < 0 {
+            format!(
+                "Feriepenger ({}, rettet for hele opptjeningsåret) — utbetales neste år",
+                percent(input.holiday_pay_bp)
+            )
         } else {
             format!(
                 "Feriepenger ({}, tillegget på 2,3 poeng bare opp til 6G) — utbetales neste år",

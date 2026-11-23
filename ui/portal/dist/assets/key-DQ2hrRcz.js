@@ -1,0 +1,1 @@
+import{aq as s,ar as c}from"./index-DnKJcN4s.js";const k=Symbol("NaN");function N(r,e,n){var o=new c(r);s(()=>{var a=e();a!==a&&(a=k),o.ensure(a,n)})}export{N as k};

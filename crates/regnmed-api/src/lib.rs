@@ -807,6 +807,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(payroll::end_employment),
         )
         .route(
+            "/companies/{company_id}/employees/{employee_id}/holiday-rate",
+            axum::routing::put(payroll::update_holiday_rate),
+        )
+        .route(
             "/companies/{company_id}/employees/{employee_id}/link",
             axum::routing::post(payroll::link_employee).delete(payroll::unlink_employee),
         )

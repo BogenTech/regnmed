@@ -710,6 +710,21 @@ async fn payroll_is_not_general_reading() {
             StatusCode::FORBIDDEN,
             "{name} skulle ikke fått endre arbeidsforholdet"
         );
+        assert_eq!(
+            status(
+                &state,
+                "PUT",
+                &format!(
+                    "/companies/{company}/employees/{}/holiday-rate",
+                    Uuid::new_v4()
+                ),
+                token,
+                r#"{"feriepenger_bp":1250}"#,
+            )
+            .await,
+            StatusCode::FORBIDDEN,
+            "{name} skulle ikke fått endre feriepengesatsen"
+        );
     }
     // The a-melding carries every employee's fødselsnummer, so it needs
     // LONN_KJOR — the revisor READS lønn but does not get the file.

@@ -363,8 +363,11 @@ const OVER_60_ADDITION_BP: i64 = 230;
 /// the year they turn 59. Any other rate is an agreement whose parts we
 /// cannot see, so the cap is not applied to it.
 pub fn has_over_60_addition(rate_bp: i64, birth_year: i32, earning_year: i32) -> bool {
-    matches!(rate_bp, 1250 | 1430) && earning_year - birth_year >= 59
+    RATES_WITH_OVER_60_ADDITION.contains(&rate_bp) && earning_year - birth_year >= 59
 }
+
+/// The ordinary rates plus the 2,3 points.
+pub const RATES_WITH_OVER_60_ADDITION: [i64; 2] = [1250, 1430];
 
 /// The date whose G caps the addition: 31 December of the earning year, or
 /// the leaving date for someone who leaves during it (§ 10 nr. 3 andre ledd).
@@ -384,6 +387,23 @@ pub fn over_60_cap_cut(earning_year_basis_ore: i64, basic_amount_ore: i64) -> i6
         (earning_year_basis_ore - 6 * basic_amount_ore).max(0),
         OVER_60_ADDITION_BP,
     )
+}
+
+/// The ordinary rates: 10,2 % by law and 12 % on tariff. Any other rate is an
+/// agreement whose parts we cannot see.
+pub const RATES_WITHOUT_OVER_60_ADDITION: [i64; 2] = [1020, 1200];
+
+/// The rate the employee should be on when an ordinary rate is missing the
+/// addition in this earning year (ferieloven § 10 nr. 3).
+pub fn over_60_rate_due(rate_bp: i64, birth_year: i32, earning_year: i32) -> Option<i64> {
+    (earning_year - birth_year >= 59 && RATES_WITHOUT_OVER_60_ADDITION.contains(&rate_bp))
+        .then_some(rate_bp + OVER_60_ADDITION_BP)
+}
+
+/// The addition owed on pay accrued at an ordinary rate earlier in the
+/// earning year. The right covers the whole year, so a raise catches it up.
+pub fn over_60_catch_up(basis_without_addition_ore: i64) -> i64 {
+    bp_of(basis_without_addition_ore, OVER_60_ADDITION_BP)
 }
 
 /// What a month's payroll costs and owes, per employee, summed.
@@ -717,6 +737,17 @@ mod tests {
         // 12 % has no addition to cap, at any age.
         assert!(!has_over_60_addition(1200, 1950, 2026));
         assert!(!has_over_60_addition(1020, 1950, 2026));
+    }
+
+    #[test]
+    fn an_ordinary_rate_is_due_the_addition_from_the_year_the_employee_turns_59() {
+        assert_eq!(over_60_rate_due(1020, 1968, 2026), None);
+        assert_eq!(over_60_rate_due(1020, 1967, 2026), Some(1250));
+        assert_eq!(over_60_rate_due(1200, 1950, 2026), Some(1430));
+        // Already carries it, or an agreement we cannot read.
+        assert_eq!(over_60_rate_due(1250, 1967, 2026), None);
+        assert_eq!(over_60_rate_due(1430, 1967, 2026), None);
+        assert_eq!(over_60_rate_due(1300, 1967, 2026), None);
     }
 
     #[test]

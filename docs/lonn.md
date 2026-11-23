@@ -154,7 +154,36 @@ Lovavdelingen legger det samme til grunn i sin uttalelse 23. mai 2009
 (sak 200902697): den forhøyede satsen beregnes av grunnlaget tjent opp året
 før. Den som fyller 60 i 2027 skal derfor ha tillegget på lønn utbetalt i
 2026, året vedkommende fyller 59. Satsen velges fortsatt per ansatt, og
-regnmed hever den ikke av seg selv.
+regnmed hever den ikke av seg selv. Står den ansatte på 10,2 % eller 12 % fra
+det året, viser ansattlisten satsen som kreves (12,5 % eller 14,3 %), og hver
+kjøring advarer til satsen er endret.
+
+**Når satsen endres.** Satsen endres under Ansatte
+(`PUT …/employees/{eid}/holiday-rate`, `LONN_SKRIV`) og gjelder fra neste
+kjøring. Hver lønnslinje lagrer satsen den ble avsatt med
+(`payroll_line.holiday_pay_bp`, migration 0105), så en lønnsslipp viser alltid
+satsen som faktisk ble brukt. Linjer fra før migrasjonen endres ikke. De leser
+satsen den ansatte hadde da migrasjonen kjørte, som var den eneste satsen de
+kunne ha fått.
+
+Tillegget gjelder hele opptjeningsåret. Heves satsen fra 10,2 % til 12,5 %
+eller fra 12 % til 14,3 % midt i året, tar **første kjøring etter endringen
+igjen** 2,3 % av lønnen som alt er utbetalt i året, og kjøringen sier fra med
+beløpet. Den lønnen teller også mot 6 G. Etter året er tillegget dermed
+2,3 % av det laveste av årets grunnlag og 6 G, uansett når satsen ble hevet.
+Eksempel: 300 000 kr utbetalt på 10,2 %, så 600 000 kr på 12,5 %, gir
+91 800 kr + 2,3 % av 819 294 kr = 110 643,76 kr.
+
+Lønn på en annen avtalt sats, for eksempel 13 %, teller verken mot 6 G eller
+gir etterbetaling, siden regnmed ikke kan se om den satsen allerede rommer
+tillegget. To kjøringer samtidig kan ikke begge ta igjen det samme beløpet: den
+som kommer sist nektes og kjøres på nytt.
+
+Andre endringer virker bare framover: en overgang fra 10,2 % til 12 % etter
+ny tariffavtale tar ikke igjen noe, og en senket sats endrer ikke det som alt
+er avsatt. Et **tidligere** opptjeningsår med for lav sats rettes ikke
+automatisk, fordi det året kan være utbetalt og innrapportert. Advarselen sier
+fra, og differansen må føres for hånd.
 
 **Hvilken G.** Grunnbeløpet per 31. desember i opptjeningsåret, eller på
 fratredelsestidspunktet for den som slutter i opptjeningsåret (§ 10 nr. 3
@@ -390,6 +419,7 @@ listingen.
 | Metode | Sti |
 | --- | --- |
 | GET/POST | `/companies/{id}/employees` |
+| PUT | `/companies/{id}/employees/{eid}/holiday-rate` (feriepengesats fra neste kjøring) |
 | POST/DELETE | `/companies/{id}/employees/{eid}/link` (koble/koble fra portalbruker) |
 | GET | `/companies/{id}/employees/{eid}/link/history` |
 | GET/POST | `/companies/{id}/payroll` (`?preview=true`: beregn uten å bokføre) |
@@ -939,6 +969,12 @@ utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
 
+- Endret feriepengesats (`crates/regnmed-db/tests/payroll.rs`, ekte
+  Postgres): at kjøringen advarer når tillegget mangler, at en hevet sats
+  tar igjen tillegget nøyaktig én gang også når to kjøringer går samtidig,
+  at året ender på 10,2 % + 2,3 % av 6 G, at avtalte satser ikke bruker opp
+  taket, at gamle lønnsslipper beholder satsen sin, og at endringen holder
+  seg innenfor selskapet. Tilgangsvakten er festet i `grupper/access.rs`.
 - Skattekortene: `regnmed-gov::tax_card` leser det EKTE svaret fra
   testmiljøet og fester beslutningen for hver korttype (prosent, tabell,
   frikort med og uten grense, kildeskatt, uten kort), og at prosenten
