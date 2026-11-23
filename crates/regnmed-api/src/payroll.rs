@@ -879,6 +879,7 @@ pub async fn run_payroll(
             "navn": l.name,
             "brutto_ore": l.calculation.gross_ore,
             "feriepenger_ore": l.calculation.holiday_pay_ore,
+            "feriepenger_trekkfri": l.holiday_pay_exempt,
             "forskuddstrekk_ore": l.calculation.withholding_ore,
             "kjoregodtgjorelse_ore": l.calculation.allowance_ore,
             "netto_ore": l.calculation.net_ore,

@@ -484,6 +484,8 @@ pub struct Lonnslinje {
     pub holiday_pay_cap_cut_ore: i64,
     /// The payout's part that is this year's holiday pay, paid on leaving.
     pub holiday_pay_earning_year_ore: i64,
+    /// The operator marked this payout exempt, and the card honours it.
+    pub holiday_pay_exempt: bool,
     /// This run's change to the accrued aga on the employee's unpaid
     /// feriepenger — positive when new feriepenger were earned, negative
     /// when they were paid out.
@@ -595,7 +597,9 @@ async fn holiday_pay_years(
                 sum(l.brutto_ore)::bigint as basis,
                 sum(l.feriepengeavsetning_ore)::bigint as accrued,
                 sum(l.feriepenger_ore)::bigint as paid,
-                sum(l.holiday_pay_earning_year_ore)::bigint as earning_year
+                sum(l.holiday_pay_earning_year_ore
+                    + case when l.holiday_pay_exempt then l.feriepenger_ore else 0 end
+                )::bigint as own_year
          from payroll_line l
          join payroll_run r on r.id = l.run_id
          join employee e on e.id = l.employee_id
@@ -630,7 +634,7 @@ async fn holiday_pay_years(
         let y = &mut employee_years[index];
         y.accrued_ore += accrued;
         y.paid_ore += r.get::<i64, _>("paid");
-        y.earning_year_withheld_ore += r.get::<i64, _>("earning_year");
+        y.own_year_paid_ore += r.get::<i64, _>("own_year");
         y.exempt_ceiling_ore +=
             payroll::holiday_pay_exempt_ceiling(r.get("basis"), accrued, over_60);
         match payroll::over_60_supplement_accrued(
@@ -1014,9 +1018,7 @@ async fn payroll_run(
     // later run corrects it; take a company lock if runs ever become jobs.
     let holiday_years = holiday_pay_years(pool, company_id, &employees).await?;
     // Ferieloven § 11 nr. 3: due on the last ordinary payday before leaving.
-    let next_payday = paid_date
-        .checked_add_months(chrono::Months::new(1))
-        .context("ugyldig dato")?;
+    let next_payday = payroll::next_monthly_payday(paid_date).context("ugyldig dato")?;
     let mut cap_warnings = Vec::new();
     let mut holiday_pay_warnings = Vec::new();
     let december_earlier = if month == 12 {
@@ -1147,6 +1149,18 @@ async fn payroll_run(
         mileage.extend(claims);
         travel.extend(trips);
 
+        let withholding = employee.withholding();
+        let december = (month == 12
+            && withholding != Withholding::None
+            && matches!(payroll::counts_all_holiday_pay(&withholding), Ok(false)))
+        .then(|| {
+            let (earned, months, given) = december_earlier
+                .get(&employee.id)
+                .copied()
+                .unwrap_or_default();
+            payroll::december_average(pay_kind, earned, months, given)
+        });
+
         // The feriepenger base is what is paid out as pay; feriepenger
         // do not earn new feriepenger.
         let holiday_rate = employee.holiday_pay_bp as i64;
@@ -1227,6 +1241,11 @@ async fn payroll_run(
         let avsetning = payroll::holiday_pay_accrual(gross, holiday_rate) - cap_cut;
 
         let leaving = employee.employed_to.is_some_and(|d| d < next_payday);
+        let card_counts_all = payroll::counts_all_holiday_pay(&withholding)
+            .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        // A 12-month card and a frikort withhold on all holiday pay, so the
+        // mark would state an exemption the run does not apply.
+        let exempt = post.holiday_pay_exempt && post.holiday_pay_ore > 0 && !card_counts_all;
         let mut split = payroll::split_holiday_pay(
             holiday_years
                 .get(&employee.id)
@@ -1238,20 +1257,13 @@ async fn payroll_run(
         );
         // Only a card that exempts holiday pay needs the supplement; on the
         // others a stated value is still checked.
-        let withholding = employee.withholding();
-        let exempts_holiday_pay = !matches!(withholding, Withholding::None)
-            && !payroll::counts_all_holiday_pay(&withholding)
-                .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        let exempts_holiday_pay = withholding != Withholding::None && !card_counts_all;
         // § 5-6-1 (1) b has no exception, so a payment marked exempt under
         // § 5-7-1 (1) c or d still withholds on the supplement. This year's
         // part is otherwise already withheld on in full.
         let not_withheld = split.prior_year_ore
             + split.unexplained_ore
-            + if post.holiday_pay_exempt {
-                split.earning_year_ore
-            } else {
-                0
-            };
+            + if exempt { split.earning_year_ore } else { 0 };
         let supplement = payroll::over_60_supplement_paid(
             not_withheld,
             if exempts_holiday_pay {
@@ -1269,7 +1281,7 @@ async fn payroll_run(
         )
         .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
         let supplement = if exempts_holiday_pay { supplement } else { 0 };
-        if post.holiday_pay_exempt && supplement > 0 {
+        if exempt && supplement > 0 {
             holiday_pay_warnings.push(format!(
                 "{}: det trekkes skatt av {} kr selv om utbetalingen er merket trekkfri, fordi \
                  tillegget for arbeidstakere over 60 år er trekkpliktig \
@@ -1285,20 +1297,10 @@ async fn payroll_run(
         // above the limit paid in parts can be over-withheld until the
         // skatteoppgjør; store the supplement per line if that shows up.
         split.excess_ore = (split.excess_ore - supplement).max(0);
-        if post.holiday_pay_exempt {
+        if exempt {
             split = payroll::HolidayPaySplit::default();
         }
-        let december = (month == 12
-            && withholding != Withholding::None
-            && matches!(payroll::counts_all_holiday_pay(&withholding), Ok(false)))
-        .then(|| {
-            let (earned, months, given) = december_earlier
-                .get(&employee.id)
-                .copied()
-                .unwrap_or_default();
-            payroll::december_average(pay_kind, earned, months, given)
-        });
-        let calculation = payroll::calculate(
+        let mut calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
@@ -1319,35 +1321,18 @@ async fn payroll_run(
             month,
         )
         .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
-        let basis_ore = calculation.withholding_basis_ore;
+        // Ordinary pay only: holiday pay outside the exemption is never halved.
+        let basis_ore = calculation.withholding_basis_ore - split.card_percent_ore() - supplement;
         const REFUND: &str = "For mye trekk kommer tilbake i skatteoppgjøret.";
         match december {
-            // Holiday pay that is withheld on is never halved either.
-            Some(Ok(average)) if basis_ore > average.min(gross + taxable_allowance) => {
-                let full_ore = basis_ore - average.min(gross + taxable_allowance);
-                december_warnings.push(if basis_ore == gross + taxable_allowance {
-                    format!(
-                        "{}: {} kr av desemberlønnen er over gjennomsnittsfortjenesten på {} kr \
-                         og er trukket fullt (skattebetalingsforskriften § 5-7-2 fjerde ledd).",
-                        employee.name,
-                        kroner(full_ore),
-                        kroner(average),
-                    )
-                } else {
-                    format!(
-                        "{}: {} kr i desember er trukket fullt: trekkpliktige feriepenger og lønn \
-                         over gjennomsnittsfortjenesten på {} kr (skattebetalingsforskriften \
-                         § 5-7-2 fjerde ledd).",
-                        employee.name,
-                        kroner(full_ore),
-                        kroner(average),
-                    )
-                })
-            }
-            // Withheld holiday pay is never halved, so with no pay there is
-            // nothing the reason could explain.
-            Some(Err(reason)) if gross + taxable_allowance > 0 => {
-                december_warnings.push(match reason {
+            Some(Ok(average)) if basis_ore > average => december_warnings.push(format!(
+                "{}: {} kr av desemberlønnen er over gjennomsnittsfortjenesten på {} kr og er \
+                 trukket fullt (skattebetalingsforskriften § 5-7-2 fjerde ledd).",
+                employee.name,
+                kroner(basis_ore - average),
+                kroner(average),
+            )),
+            Some(Err(reason)) if basis_ore > 0 => december_warnings.push(match reason {
                 payroll::NoDecemberHalf::HourlyPay => format!(
                     "{}: timelønn er trukket fullt i desember. Fritaket for timelønn gjelder to \
                      bestemte uker (skattebetalingsforskriften § 5-7-2 annet ledd), og en \
@@ -1372,19 +1357,38 @@ async fn payroll_run(
                     employee.name,
                     paid_date.year(),
                 ),
-                })
-            }
+            }),
             _ => {}
+        }
+        if exempt {
+            // On the stored line and the payslip, so the claim stays visible.
+            calculation.method.push_str(if supplement > 0 {
+                ", feriepenger merket trekkfrie unntatt tillegget over 60 år"
+            } else {
+                ", feriepenger merket trekkfrie"
+            });
+        }
+        if post.holiday_pay_exempt && post.holiday_pay_ore > 0 && card_counts_all {
+            holiday_pay_warnings.push(format!(
+                "{}: skattekortet gir trekk i alle feriepenger, så merkingen som trekkfri har \
+                 ingen virkning.",
+                employee.name,
+            ));
         }
         let card_withholds = !matches!(
             employee.withholding(),
             Withholding::None | Withholding::TaxFreeCard { .. }
         );
         if card_withholds && split.earning_year_ore > 0 {
+            let exception = if card_counts_all {
+                ""
+            } else {
+                " Gjelder utbetalingen dødsfall eller løpende utbetaling etter avtale, skal den \
+                 merkes som trekkfri."
+            };
             holiday_pay_warnings.push(format!(
                 "{}: {} kr av feriepengene er opptjent i år og utbetalt ved fratreden, så det \
-                 trekkes skatt av dem (skattebetalingsforskriften § 5-6-1). Gjelder utbetalingen \
-                 dødsfall eller løpende utbetaling etter avtale, skal den merkes som trekkfri.",
+                 trekkes skatt av dem (skattebetalingsforskriften § 5-6-1).{exception}",
                 employee.name,
                 kroner(split.earning_year_ore),
             ));
@@ -1437,6 +1441,7 @@ async fn payroll_run(
             holiday_pay_bp: employee.holiday_pay_bp,
             holiday_pay_cap_cut_ore: cap_cut,
             holiday_pay_earning_year_ore: split.earning_year_ore,
+            holiday_pay_exempt: exempt,
             employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
             pay_kind,
         });
@@ -1736,8 +1741,8 @@ async fn payroll_run(
                   feriepengeavsetning_ore, aga_ore, aga_feriepenger_ore, halv_trekk,
                   pay_kind, withholding_method, allowance_ore, taxable_allowance_ore,
                   holiday_pay_cap_cut_ore, holiday_pay_bp,
-                  holiday_pay_earning_year_ore)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
+                  holiday_pay_earning_year_ore, holiday_pay_exempt)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)",
             )
             .bind(Uuid::new_v4())
             .bind(run_id)
@@ -1768,6 +1773,7 @@ async fn payroll_run(
             .bind(l.holiday_pay_cap_cut_ore)
             .bind(l.holiday_pay_bp)
             .bind(l.holiday_pay_earning_year_ore)
+            .bind(l.holiday_pay_exempt)
             .execute(&mut *tx)
             .await?;
         }
