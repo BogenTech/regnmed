@@ -254,9 +254,14 @@ først, og den står i registeret over kall til myndighetene
 av Skatteetatens publiserte testpersoner for et syntetisk selskap (`BR29541`,
 skattekort-id 340079). Kortet på 38 % over 10,5 måneder ble lagret og satt på
 den ansatte. Forhåndsvisningen av en lønn på 40 000 kr trakk 15 200 kr i
-november og 7 600 kr (halv skatt) i desember. Ingen lønnskjøring ble bokført,
-så dette kortet er ikke prøvd gjennom en bokført kjøring og en a-melding. Andre
-korttyper er ikke satt på en ansatt fra deployet test.
+november og 7 600 kr (halv skatt) i desember.
+
+Samme dag gikk kortet hele veien i et annet syntetisk selskap (`BR29563`). En
+bokført novemberlønn på 40 000 kr i sone IV førte 15 200 kr på konto 2600, og
+hash-kjeden ble verifisert. A-meldingen ble sendt fra test, og Skatteetaten svarte
+`mottatt` uten avvik, med 15 200 kr i forskuddstrekk og 2 040 kr i
+arbeidsgiveravgift. Halv skatt i desember er bare prøvd i forhåndsvisningen, og
+andre korttyper er ikke satt på en ansatt fra deployet test.
 
 Ikke bygget ennå: endringsbestillinger (`HENT_KUN_ENDRING`) og varsel
 ved endring — i dag hentes kortet på nytt med knappen — og bestillinger
