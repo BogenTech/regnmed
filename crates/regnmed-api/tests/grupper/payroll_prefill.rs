@@ -167,7 +167,8 @@ async fn withholding_set_by_hand_is_validated_and_leaves_a_trail() {
     // A table the routine does not know is refused at registration too.
     let new = |table: i32| {
         json!({"fodselsnummer": "20857597940", "navn": "Tabell", "ansatt_fra": "2026-01-01",
-               "manedslonn_ore": 4_000_000, "trekk_type": "tabell", "trekk_tabell": table})
+               "manedslonn_ore": 4_000_000, "trekk_type": "tabell", "trekk_tabell": table,
+               "trekk_prosent_bp": 0})
     };
     let (status, body) = send(&state, &token, "POST", &base, new(99_999)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -179,6 +180,11 @@ async fn withholding_set_by_hand_is_validated_and_leaves_a_trail() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let id = body["employee_id"].as_str().unwrap();
     let uri = format!("{base}/{id}/withholding");
+    let (_, list) = call(&state, &token, &base).await;
+    assert!(
+        list["ansatte"][0]["trekk_prosent_bp"].is_null(),
+        "a table's percent only comes from its card: {list}"
+    );
 
     for (bad, why) in [
         (

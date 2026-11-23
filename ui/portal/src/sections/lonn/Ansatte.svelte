@@ -146,8 +146,8 @@
     }
   }
 
-  // A failed fetch leaves the statutory 50 % in place and says so.
-  async function fetchTaxCard(employeeId, name) {
+  // A failed fetch leaves the withholding as it was and says what that is.
+  async function fetchTaxCard(employeeId, name, kept = "står med 50 % trekk") {
     const year = new Date().getFullYear();
     try {
       const b = await post(
@@ -169,7 +169,7 @@
         );
       }
     } catch (error) {
-      toast(name + " står med 50 % trekk fordi skattekortet ikke ble hentet: " + error.message, false);
+      toast(name + " " + kept + " fordi skattekortet ikke ble hentet: " + error.message, false);
     }
   }
 
@@ -195,16 +195,22 @@
     }
   }
 
+  // Another employee's editor may have been opened while a request ran.
+  function closeWithholding(id) {
+    if (editingWithholding?.ansatt.id === id) editingWithholding = null;
+  }
+
   async function saveWithholding() {
+    const id = editingWithholding.ansatt.id;
     saving = true;
     try {
       await send(
         "PUT",
-        "/companies/" + companyId + "/employees/" + editingWithholding.ansatt.id + "/withholding",
+        "/companies/" + companyId + "/employees/" + id + "/withholding",
         { ...withholdingPayload(editingWithholding.value), reason: editingWithholding.reason },
       );
       toast("Trekket er endret, og endringen er logget", true);
-      editingWithholding = null;
+      closeWithholding(id);
       onDone();
     } catch (error) {
       toast(error.message, false);
@@ -216,9 +222,9 @@
   async function fetchFromEditor() {
     const a = editingWithholding.ansatt;
     saving = true;
-    await fetchTaxCard(a.id, a.navn);
+    await fetchTaxCard(a.id, a.navn, "beholder trekket (" + withholdingText(a) + ")");
     saving = false;
-    editingWithholding = null;
+    closeWithholding(a.id);
     onDone();
   }
 
@@ -544,9 +550,9 @@
           {#if editingWithholding.ansatt.trekk_12_maneder || editingWithholding.ansatt.trekk_type === "frikort"}
             <div role="alert" class="alert alert-warning alert-soft text-xs mt-2">
               <span>
-                Lagrer du, forsvinner vilkårene fra skattekortet. Prosent og tabell uten 12 måneder gir
-                halvt trekk i desember og ingen trekk på feriepenger, og frikortets beløpsgrense gjelder
-                ikke lenger.
+                Lagrer du, forsvinner vilkårene fra skattekortet. Prosent og tabell uten 12 måneder
+                følger de vanlige reglene for desember og feriepenger, og frikortets beløpsgrense
+                gjelder ikke lenger.
               </span>
             </div>
           {/if}
@@ -573,7 +579,7 @@
             <ul class="text-xs opacity-80 grid gap-1">
               {#each editingWithholding.history as h (h.at)}
                 <li>
-                  {formatDate(h.at.slice(0, 10))}: {withholdingText(h.from)} → {withholdingText(h.to)},
+                  {new Date(h.at).toLocaleDateString("nb-NO")}: {withholdingText(h.from)} → {withholdingText(h.to)},
                   {h.changed_by}: {h.reason}
                 </li>
               {/each}

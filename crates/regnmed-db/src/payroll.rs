@@ -394,7 +394,12 @@ pub async fn create_employee(
     .bind(new.monthly_salary_ore)
     .bind(new.hourly_wage_ore)
     .bind(&new.withholding_type)
-    .bind(new.withholding_percent_bp)
+    // On a table, this column is the percent printed on its card (§ 5-10-3).
+    .bind(
+        (new.withholding_type == "prosent")
+            .then_some(new.withholding_percent_bp)
+            .flatten(),
+    )
     .bind(new.withholding_table)
     .bind(new.holiday_pay_bp)
     .bind(&new.bank_account)
