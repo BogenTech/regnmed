@@ -1501,8 +1501,9 @@ pub async fn kjort_maned(pool: &PgPool, company_id: Uuid, year: i32, month: u32)
 /// Builds the payslip for one employee in one run.
 ///
 /// Rendered on demand rather than stored: the payroll line is
-/// insert-only, so the same line yields the same slip forever — and not
-/// storing it means one fewer copy of personal data to protect.
+/// insert-only, so the slip's own figures never change — and not storing
+/// it means one fewer copy of personal data to protect. The year-to-date
+/// figures are summed from the runs each time it is rendered.
 pub async fn payslip(
     pool: &PgPool,
     company_id: Uuid,

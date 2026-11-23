@@ -808,9 +808,11 @@ ansvarlig for, uten en motor med skjult oppførsel.
 
 **Slippen lagres ikke.** Til forskjell fra fakturaen, der PDF-en *er*
 salgsdokumentet og derfor bokføres som vedlegg, er lønnsslippen utledet
-av lønnslinjen — og linjene er innsettings-bare. Samme linje gir samme
-bytes for alltid, så den rendres på forespørsel i stedet for å lagre
-enda en kopi av personopplysninger.
+av lønnslinjen — og linjene er innsettings-bare. Slippens egne tall står
+derfor fast, så den rendres på forespørsel i stedet for å lagre enda en
+kopi av personopplysninger. Hittil-i-år-tallene summeres fra kjøringene
+hver gang, så de endrer seg hvis en kjøring bokføres senere med en
+tidligere utbetalingsdato.
 
 Slippen **forklarer** trekket i stedet for bare å oppgi det: grunnlaget
 står i parentes («Forskuddstrekk (35 % av 55 000,00)»), og både

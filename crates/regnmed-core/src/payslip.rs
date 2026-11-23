@@ -373,6 +373,16 @@ mod tests {
         assert!(text.contains("Halvt forskuddstrekk"), "{text}");
     }
 
+    #[test]
+    fn the_year_to_date_heading_names_the_payment_year() {
+        let mut december = input();
+        december.month = 12;
+        december.paid_date = date(2027, 1, 15);
+        let text = String::from_utf8_lossy(&render_payslip(&december)).to_string();
+        assert!(text.contains("HITTIL I 2027"), "{text}");
+        assert!(text.contains("2026"), "the pay period stays: {text}");
+    }
+
     /// The fødselsnummer must never end up in a document that travels.
     #[test]
     fn the_slip_shows_the_birth_date_not_the_nin() {
