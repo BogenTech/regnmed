@@ -227,6 +227,28 @@ impl BrregClient {
         parse_search(&response.text().await?)
     }
 
+    /// The legal entity's open business units (underenheter), where its
+    /// employees can work. shortcut: first 100 only, page when a customer
+    /// has more; the form still accepts a typed number.
+    pub async fn business_units(&self, parent: &str) -> Result<Vec<BusinessUnit>> {
+        let response = self
+            .http
+            .get(format!(
+                "{}/underenheter",
+                self.base_url.trim_end_matches('/')
+            ))
+            .query(&[("overordnetEnhet", parent), ("size", "100")])
+            .header("accept", "application/json")
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+            .await
+            .context("Enhetsregisteret unreachable")?;
+        if !response.status().is_success() {
+            bail!("Enhetsregisteret returned {}", response.status());
+        }
+        parse_business_units(&response.text().await?)
+    }
+
     /// Looks up an entity; `Ok(None)` when the orgnr is unknown to the
     /// register.
     pub async fn entity(&self, orgnumber: &str) -> Result<Option<BrregEntity>> {
@@ -257,6 +279,43 @@ impl BrregClient {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BusinessUnit {
+    #[serde(rename = "organisasjonsnummer")]
+    pub orgnumber: String,
+    #[serde(rename = "navn")]
+    pub name: String,
+    #[serde(rename = "beliggenhetsadresse")]
+    pub location: Option<UnitLocation>,
+    #[serde(default, rename = "nedleggelsesdato")]
+    closed: Option<String>,
+    #[serde(default, rename = "slettedato")]
+    deleted: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UnitLocation {
+    #[serde(rename = "kommune")]
+    pub municipality: Option<String>,
+}
+
+fn parse_business_units(body: &str) -> Result<Vec<BusinessUnit>> {
+    #[derive(Deserialize)]
+    struct Page {
+        #[serde(default, rename = "_embedded")]
+        embedded: Option<Embedded>,
+    }
+    #[derive(Deserialize)]
+    struct Embedded {
+        #[serde(rename = "underenheter")]
+        units: Vec<BusinessUnit>,
+    }
+    let page: Page = serde_json::from_str(body).context("parsing Enhetsregisteret units")?;
+    let mut units = page.embedded.map(|e| e.units).unwrap_or_default();
+    units.retain(|u| u.closed.is_none() && u.deleted.is_none());
+    Ok(units)
+}
+
 fn parse_search(body: &str) -> Result<Vec<BrregEntity>> {
     #[derive(Deserialize)]
     struct Page {
@@ -275,6 +334,29 @@ fn parse_search(body: &str) -> Result<Vec<BrregEntity>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closed_business_units_are_not_offered() {
+        let units = parse_business_units(
+            r#"{"_embedded":{"underenheter":[
+                {"organisasjonsnummer":"315286913","navn":"OPEN","beliggenhetsadresse":{"kommune":"MELØY"}},
+                {"organisasjonsnummer":"315286921","navn":"CLOSED","nedleggelsesdato":"2025-01-01"},
+                {"organisasjonsnummer":"315286930","navn":"DELETED","slettedato":"2025-01-01"}
+            ]}}"#,
+        )
+        .unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].orgnumber, "315286913");
+        assert_eq!(
+            units[0].location.as_ref().unwrap().municipality.as_deref(),
+            Some("MELØY")
+        );
+        assert!(
+            parse_business_units(r#"{"page":{"totalElements":0}}"#)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn a_name_search_reads_hits_and_no_hits() {

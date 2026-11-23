@@ -59,9 +59,8 @@ fn validate_details(d: &EmploymentDetails, company_orgnumber: &str) -> Result<()
             regnmed_core::orgnumber::is_valid(n),
             "virksomhetens organisasjonsnummer «{n}» er ugyldig"
         );
-        // shortcut: not checked against Enhetsregisteret that it is an
-        // underenhet OF this company; do it when the BRREG lookup is wired
-        // into the employee form.
+        // Enhetsregisteret suggests the unit in the form, but saving does
+        // not depend on it: a registry outage must not block registration.
         ensure!(
             n != company_orgnumber,
             "virksomheten skal være underenheten i Enhetsregisteret der den ansatte jobber, \
@@ -69,7 +68,7 @@ fn validate_details(d: &EmploymentDetails, company_orgnumber: &str) -> Result<()
         );
     }
     if let Some(code) = &d.occupation_code {
-        // shortcut: format only; the full STYRK-08 catalogue is not vendored.
+        // Format only: the vendored STYRK-08 catalogue is for search.
         ensure!(
             code.len() == 7 && code.bytes().all(|b| b.is_ascii_digit()),
             "yrkeskoden skal være 7 siffer fra SSBs yrkeskatalog (STYRK-08)"
@@ -102,7 +101,146 @@ fn validate_details(d: &EmploymentDetails, company_orgnumber: &str) -> Result<()
     Ok(())
 }
 
-async fn company_orgnumber(pool: &PgPool, company_id: Uuid) -> Result<String> {
+/// What a person may set by hand. A frikort or a 12-month percentage only
+/// comes from a fetched skattekort, which carries the limit and the terms.
+fn validate_withholding(kind: &str, percent_bp: Option<i32>, table: Option<i32>) -> Result<()> {
+    match kind {
+        "prosent" => ensure!(
+            percent_bp.is_some_and(|bp| (0..=10000).contains(&bp)),
+            "trekkprosenten må være mellom 0 og 100"
+        ),
+        "tabell" => ensure!(
+            table.is_some_and(|n| regnmed_core::withholding_table::Table::lookup(n).is_some()),
+            "ukjent tabellnummer: bruk nummeret som står på skattekortet"
+        ),
+        "ingen" => {}
+        other => bail!("ukjent trekktype «{other}»"),
+    }
+    Ok(())
+}
+
+pub struct WithholdingChange {
+    pub kind: String,
+    pub percent_bp: Option<i32>,
+    pub table: Option<i32>,
+    pub reason: String,
+}
+
+/// Sets the withholding by hand and records the change in the same
+/// transaction. Posted runs keep what they withheld.
+pub async fn set_withholding(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+    change: &WithholdingChange,
+    changed_by: &str,
+) -> Result<()> {
+    validate_withholding(&change.kind, change.percent_bp, change.table)?;
+    let reason = change.reason.trim();
+    ensure!(!reason.is_empty(), "skriv hvorfor trekket endres");
+    let (percent_bp, table) = match change.kind.as_str() {
+        "prosent" => (change.percent_bp, None),
+        "tabell" => (None, change.table),
+        _ => (None, None),
+    };
+    let mut tx = pool.begin().await?;
+    let old = sqlx::query(
+        "select trekk_type, trekk_prosent_bp, trekk_tabell, withholding_twelve_months,
+                tax_free_card_limit_ore
+           from employee where id = $1 and company_id = $2 for update",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .context("ukjent ansatt")?;
+    sqlx::query(
+        "update employee set trekk_type = $3, trekk_prosent_bp = $4, trekk_tabell = $5,
+                withholding_twelve_months = false, tax_free_card_limit_ore = null
+          where id = $1 and company_id = $2",
+    )
+    .bind(employee_id)
+    .bind(company_id)
+    .bind(&change.kind)
+    .bind(percent_bp)
+    .bind(table)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "insert into employee_withholding_change
+             (company_id, employee_id, old_type, old_percent_bp, old_table, old_twelve_months,
+              old_tax_free_card_limit_ore, new_type, new_percent_bp, new_table, reason, changed_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .bind(old.get::<String, _>("trekk_type"))
+    .bind(old.get::<Option<i32>, _>("trekk_prosent_bp"))
+    .bind(old.get::<Option<i32>, _>("trekk_tabell"))
+    .bind(old.get::<bool, _>("withholding_twelve_months"))
+    .bind(old.get::<Option<i64>, _>("tax_free_card_limit_ore"))
+    .bind(&change.kind)
+    .bind(percent_bp)
+    .bind(table)
+    .bind(reason)
+    .bind(changed_by)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct WithholdingHistory {
+    pub old_type: String,
+    pub old_percent_bp: Option<i32>,
+    pub old_table: Option<i32>,
+    pub old_twelve_months: bool,
+    pub old_tax_free_card_limit_ore: Option<i64>,
+    pub new_type: String,
+    pub new_percent_bp: Option<i32>,
+    pub new_table: Option<i32>,
+    pub reason: String,
+    pub changed_by: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn withholding_history(
+    pool: &PgPool,
+    company_id: Uuid,
+    employee_id: Uuid,
+) -> Result<Vec<WithholdingHistory>> {
+    let rows = sqlx::query(
+        "select old_type, old_percent_bp, old_table, old_twelve_months,
+                old_tax_free_card_limit_ore, new_type, new_percent_bp, new_table,
+                reason, changed_by, created_at
+           from employee_withholding_change
+          where company_id = $1 and employee_id = $2
+          order by created_at desc",
+    )
+    .bind(company_id)
+    .bind(employee_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| WithholdingHistory {
+            old_type: r.get("old_type"),
+            old_percent_bp: r.get("old_percent_bp"),
+            old_table: r.get("old_table"),
+            old_twelve_months: r.get("old_twelve_months"),
+            old_tax_free_card_limit_ore: r.get("old_tax_free_card_limit_ore"),
+            new_type: r.get("new_type"),
+            new_percent_bp: r.get("new_percent_bp"),
+            new_table: r.get("new_table"),
+            reason: r.get("reason"),
+            changed_by: r.get("changed_by"),
+            created_at: r.get("created_at"),
+        })
+        .collect())
+}
+
+pub async fn company_orgnumber(pool: &PgPool, company_id: Uuid) -> Result<String> {
     sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_optional(pool)
@@ -220,14 +358,11 @@ pub async fn create_employee(
         regnmed_core::nin::is_valid(&new.nin),
         "ugyldig fødselsnummer (kontrollsifrene stemmer ikke)"
     );
-    ensure!(
-        matches!(
-            new.withholding_type.as_str(),
-            "prosent" | "tabell" | "ingen"
-        ),
-        "ukjent trekktype «{}»",
-        new.withholding_type
-    );
+    validate_withholding(
+        &new.withholding_type,
+        new.withholding_percent_bp,
+        new.withholding_table,
+    )?;
     validate_details(&new.details, &company_orgnumber(pool, company_id).await?)?;
     let d = &new.details;
     let id = Uuid::new_v4();

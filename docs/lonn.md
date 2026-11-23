@@ -137,6 +137,36 @@ arbeidsforholdet (alder, tariff), ikke en systeminnstilling.
 **Den ekstra arbeidsgiveravgiften på 5 % over 750 000 kroner ble fjernet
 fra 2025.** Den finnes ikke i registeret fordi den ikke finnes.
 
+## Trekk satt for hånd
+
+Skattekortet er hovedveien. Skjemaet for ny ansatt har valget **Hent fra
+skattekort** der henting er satt opp, og alternativene **Prosent**,
+**Tabell** og **Ingen trekk**.
+
+- **Hent fra skattekort** registrerer den ansatte med 50 % trekk, som er
+  det arbeidsgiver skal trekke uten skattekort, og bestiller så kortet
+  for akkurat denne personen (`POST …/tax-cards?year=&employee=`). Feiler
+  bestillingen, står den ansatte med 50 %, og portalen sier fra.
+- **Tabell** godtar bare numre trekkrutinen kjenner
+  (`withholding_table::Table::lookup`).
+- **Frikort og prosent over 12 måneder** kan ikke settes for hånd, fordi
+  de bærer en beløpsgrense eller vilkår som bare står på skattekortet.
+
+Trekket på en eksisterende ansatt endres med `PUT
+…/employees/{eid}/withholding` (`LONN_SKRIV`), og **begrunnelse er
+påkrevd**. Endringen og raden i den innsettings-bare
+`employee_withholding_change` (migration 0106: fra, til, hvorfor, hvem,
+når) skrives i samme transaksjon. Sporet leses med `GET` på samme adresse
+(`LONN_LES`). Bokførte kjøringer beholder trekket de brukte, og et nytt
+skattekort erstatter det som er satt for hånd.
+
+Å sette trekket for hånd på en ansatt med frikort eller prosent over 12
+måneder fjerner kortets vilkår, og skjemaet advarer om det før lagring.
+Et kort som ikke ble satt, gir en advarsel i lønnskjøringen til noen har
+satt trekket for hånd med begrunnelse. Skattekort-kortet i portalen viser
+nyeste kort per ansatt for året og hver bestilling som fortsatt venter
+på svar, så en enkeltbestilling ikke skjuler en bestilling for alle.
+
 ## Tabelltrekk
 
 Tabelltrekket regnes ikke ut av en tabell vi har tastet inn, men av
@@ -416,7 +446,7 @@ vilkårene:
 | A-meldingen | Kolonne | Regel |
 | --- | --- | --- |
 | `virksomhet` | `business_unit_orgnumber` | F290: underenheten i Enhetsregisteret, MOD11 og ALDRI selskapets eget orgnr |
-| `yrke` | `occupation_code` | F115B: 7 siffer (STYRK-08) — bare formatet sjekkes, katalogen er ikke vendored |
+| `yrke` | `occupation_code` | F115B: 7 siffer (STYRK-08) — bare formatet sjekkes; katalogen brukes til søk, ikke til å nekte en kode |
 | `stillingsprosent` | `position_percent_bp` | F291: 0–100 %, i basispunkter |
 | `antallTimerPerUkeSomEnFullStillingTilsvarer` | `full_time_hours_per_week_hundredths` | F291, i hundredeler |
 | `arbeidstidsordning` | `working_hours_scheme` | F291: kodelisten i `regnmed-core::amelding` |
@@ -434,8 +464,35 @@ sjekker mot (`koder` på `GET …/employees`).
 felt. Portalen viser det som «mangler N» per ansatt, med et skjema
 (`PUT …/employees/{eid}/employment`, `LONN_SKRIV`) som erstatter alle
 sju feltene, så et felt kan tømmes igjen. Ansatte registrert før 0073
-har ingen av dem, og ingenting fylles inn for dem: det som mangler,
-mangler synlig.
+har ingen av dem, og serveren fyller aldri inn noe for dem: det som
+mangler, mangler synlig til noen lagrer skjemaet.
+
+**Forslag i skjemaet.** Portalen fyller inn forslag der kilden er god
+nok, synlig og redigerbart. Ingenting lagres før brukeren trykker lagre,
+og feltene for arbeidsforholdet står åpne når en ny ansatt registreres.
+
+| Felt | Forslag |
+| --- | --- |
+| Feriepengesats | Satsen flest ansatte i selskapet har, ellers lovens 10,2 %. Ingen offentlig kilde oppgir satsen for den enkelte |
+| Virksomhet | Selskapets eneste åpne underenhet i Enhetsregisteret (`GET …/business-units`). Har det flere, velges blant dem, med sist ansattes enhet som forslag |
+| Yrkeskode | Ingen kode foreslås. Feltet søker på tittel eller kode i SSBs katalog (`GET …/occupations`) |
+| Stillingsprosent, timer, arbeidstidsordning, ansettelsesform | Fra sist ansatte med komplett arbeidsforhold. Første ansatte får 100 %, ikke skift og fast, mens timer står tomt |
+| Siste lønnsendring | Startdatoen for en NY ansatt. For en eksisterende ansatt gjettes den ikke, siden datoen kan ha endret seg siden start |
+
+Feriepengeforslaget teller bare ansatte som fortsatt er ansatt og som
+ikke fyller 59 år eller mer i år, så tillegget for eldre arbeidstakere
+ikke smitter over på en nyansatt. Et forslag kan byttes ut når
+Enhetsregisteret svarer, men en verdi brukeren selv har skrevet eller
+tømt, røres aldri.
+
+Et brudd hos Enhetsregisteret gir bare en tom forslagsliste, og feltet
+kan fortsatt fylles ut for hånd.
+
+`docs/lonn/yrkeskoder-ssb-145.csv` er SSBs Klass-klassifikasjon 145
+(«Standard for yrkesklassifisering», STYRK-08) per 2026-11-23, 7 130
+koder, redusert til `kode;navn` og lagret som UTF-8. Kilde:
+`https://data.ssb.no/api/klass/v1/classifications/145/codesAt.csv?date=2026-11-23&csvSeparator=;`.
+Listen hentes på nytt ved den årlige regelverksrevisjonen.
 
 Virksomheten ligger per ANSATT fordi det er der den hører hjemme — et
 selskap med to underenheter har ansatte på begge. Renderen tar i dag ÉN

@@ -5,19 +5,82 @@
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, sporsmal } from "../../lib/dialog.svelte.js";
   import Card from "../../components/Card.svelte";
-  import Arbeidsforhold, { tomt, fraAnsatt, tilPayload } from "./Arbeidsforhold.svelte";
+  import { untrack } from "svelte";
+  import Arbeidsforhold from "./Arbeidsforhold.svelte";
+  import WithholdingFields from "./WithholdingFields.svelte";
+  import {
+    commonRate,
+    fillBlanks,
+    fraAnsatt,
+    newWithholding,
+    rateEmployees,
+    suggest,
+    tilPayload,
+    withholdingOf,
+    withholdingPayload,
+  } from "./employment.js";
 
-  let { companyId, ansatte, koder, invitasjoner, medlemmer, onDone } = $props();
+  let { companyId, ansatte, koder, canFetchCard, invitasjoner, medlemmer, onDone } = $props();
 
   let navn = $state("");
   let fnr = $state("");
   let stilling = $state("");
   let fra = $state(today());
+  let previousStart = today();
   let lonn = $state("");
-  let trekk = $state("");
-  let fp = $state("10,2");
+  let withholding = $state(untrack(() => newWithholding(canFetchCard)));
+  let saving = $state(false);
+  let fp = $state(untrack(() => commonRate(ansatte)));
   let epost = $state("");
-  let forhold = $state(tomt());
+  let units = $state([]);
+  let forhold = $state(untrack(() => suggest(ansatte, [], today())));
+  // A suggestion may be replaced by a better one, a user's value never.
+  let suggestedUnit = untrack(() => forhold.virksomhet);
+  // Suggestions keep updating only until the user starts typing.
+  let touched = $state(false);
+
+  $effect(() => {
+    const id = companyId;
+    units = [];
+    api("/companies/" + id + "/business-units")
+      .then((s) => {
+        if (companyId === id) units = s.units;
+      })
+      .catch(() => {});
+  });
+
+  $effect(() => {
+    const f = suggest(ansatte, units, untrack(() => fra));
+    const sats = commonRate(ansatte);
+    untrack(() => {
+      if (!touched) {
+        fp = sats;
+        forhold = { ...f, yrkeskode: forhold.yrkeskode };
+        suggestedUnit = f.virksomhet;
+      } else if (forhold.virksomhet === suggestedUnit) {
+        forhold.virksomhet = f.virksomhet;
+        suggestedUnit = f.virksomhet;
+      }
+      if (redigering?.suggestedUnit != null && redigering.verdi.virksomhet === redigering.suggestedUnit) {
+        redigering.verdi.virksomhet = f.virksomhet;
+        redigering.suggestedUnit = f.virksomhet;
+      }
+      // The card may have changed under an open editor: never save the old value over it.
+      if (editingWithholding) {
+        const now = ansatte.find((a) => a.id === editingWithholding.ansatt.id);
+        if (now && withholdingText(now) !== withholdingText(editingWithholding.ansatt)) {
+          editingWithholding = null;
+          toast("Trekket ble endret mens skjemaet var åpent. Åpne det på nytt.", false);
+        }
+      }
+    });
+  });
+
+  // The last pay change follows the start date until someone sets their own.
+  function startChanged(ny) {
+    if (forhold.sisteLonnsendring === previousStart) forhold.sisteLonnsendring = ny;
+    previousStart = ny;
+  }
 
   // The package limit shown up front; the server refuses regardless.
   let pakke = $state(null);
@@ -38,14 +101,20 @@
     fnr = "";
     stilling = "";
     fra = today();
+    previousStart = fra;
     lonn = "";
-    trekk = "";
-    fp = "10,2";
+    withholding = newWithholding(canFetchCard);
+    fp = commonRate(ansatte);
     epost = "";
-    forhold = tomt();
+    forhold = suggest(ansatte, units, fra);
+    suggestedUnit = forhold.virksomhet;
+    touched = false;
   }
 
   async function opprett() {
+    const fetchCard = withholding.kind === "card";
+    const name = navn.trim();
+    saving = true;
     try {
       const created = await post("/companies/" + companyId + "/employees", {
         navn: navn.trim(),
@@ -53,10 +122,7 @@
         stilling: stilling.trim() || null,
         ansatt_fra: fra.trim(),
         manedslonn_ore: lonn.trim() ? parseKr(lonn.trim()) : null,
-        trekk_type: trekk.trim() ? "prosent" : "ingen",
-        trekk_prosent_bp: trekk.trim()
-          ? Math.round(parseFloat(trekk.trim().replace(",", ".")) * 100)
-          : null,
+        ...withholdingPayload(withholding),
         feriepenger_bp: Math.round(parseFloat(fp.trim().replace(",", ".")) * 100),
         ...tilPayload(forhold),
       });
@@ -64,14 +130,96 @@
       // logger inn med adressen — admin velger aldri en person fra en
       // liste (docs/lonn.md).
       if (epost.trim()) {
-        await inviterAnsatt(created.employee_id, epost.trim());
+        // The employee exists now, so a refused invitation must not stop the rest.
+        await inviterAnsatt(created.employee_id, epost.trim()).catch((e) =>
+          toast("Ansatt registrert, men invitasjonen feilet: " + e.message, false),
+        );
       }
       toast("Ansatt registrert", true);
       nullstill();
+      if (fetchCard) await fetchTaxCard(created.employee_id, name);
       onDone();
     } catch (error) {
       toast(error.message, false);
+    } finally {
+      saving = false;
     }
+  }
+
+  // A failed fetch leaves the statutory 50 % in place and says so.
+  async function fetchTaxCard(employeeId, name) {
+    const year = new Date().getFullYear();
+    try {
+      const b = await post(
+        "/companies/" + companyId + "/tax-cards?year=" + year + "&employee=" + employeeId,
+        {},
+      );
+      const card = b.skattekort?.[0];
+      if (b.besvart && !card?.satt) {
+        toast(
+          "Skattekortet ble ikke satt for " + name + ", som beholder trekket. " + (card?.merknad ?? ""),
+          false,
+        );
+      } else {
+        toast(
+          b.besvart
+            ? "Skattekortet er hentet"
+            : "Skattekortet er bestilt, men svaret er ikke klart. Hent svaret under Skattekort.",
+          b.besvart,
+        );
+      }
+    } catch (error) {
+      toast(name + " står med 50 % trekk fordi skattekortet ikke ble hentet: " + error.message, false);
+    }
+  }
+
+  function withholdingText(w) {
+    if (w.trekk_type === "prosent") {
+      return prosent(w.trekk_prosent_bp, 1) + (w.trekk_12_maneder ? " (12 mnd)" : "");
+    }
+    if (w.trekk_type === "tabell") return "tabell " + w.trekk_tabell;
+    if (w.trekk_type === "frikort") return "frikort, grense " + kr(w.frikort_grense_ore);
+    return "ingen trekk";
+  }
+
+  // One employee's withholding at a time, with its trail.
+  let editingWithholding = $state(null); // { ansatt, value, reason, history }
+
+  async function openWithholding(a) {
+    editingWithholding = { ansatt: a, value: withholdingOf(a), reason: "", history: [] };
+    try {
+      const h = await api("/companies/" + companyId + "/employees/" + a.id + "/withholding");
+      if (editingWithholding?.ansatt.id === a.id) editingWithholding.history = h.history;
+    } catch (error) {
+      toast(error.message, false);
+    }
+  }
+
+  async function saveWithholding() {
+    saving = true;
+    try {
+      await send(
+        "PUT",
+        "/companies/" + companyId + "/employees/" + editingWithholding.ansatt.id + "/withholding",
+        { ...withholdingPayload(editingWithholding.value), reason: editingWithholding.reason },
+      );
+      toast("Trekket er endret, og endringen er logget", true);
+      editingWithholding = null;
+      onDone();
+    } catch (error) {
+      toast(error.message, false);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function fetchFromEditor() {
+    const a = editingWithholding.ansatt;
+    saving = true;
+    await fetchTaxCard(a.id, a.navn);
+    saving = false;
+    editingWithholding = null;
+    onDone();
   }
 
   async function inviterAnsatt(employeeId, adresse) {
@@ -249,15 +397,14 @@
               <td class="text-xs opacity-70 whitespace-nowrap">{formatDate(a.fodselsdato || "")}</td>
               <td class="text-right">{a.manedslonn_ore == null ? "" : kr(a.manedslonn_ore)}</td>
               <td class="text-right">
-                {#if a.trekk_type === "prosent"}
-                  {prosent(a.trekk_prosent_bp, 1)}{a.trekk_12_maneder ? " (12 mnd)" : ""}
-                {:else if a.trekk_type === "tabell"}
-                  tabell {a.trekk_tabell}
-                {:else if a.trekk_type === "frikort"}
-                  frikort, grense {kr(a.frikort_grense_ore)}
-                {:else}
-                  ingen trekk
-                {/if}
+                {withholdingText(a)}
+                <button
+                  class="btn btn-ghost btn-xs"
+                  aria-label={"Endre trekk for " + a.navn}
+                  onclick={() => openWithholding(a)}
+                >
+                  Endre …
+                </button>
               </td>
               <td class="text-right">{prosent(a.feriepenger_bp, 1)}</td>
               <td class="text-xs">
@@ -287,7 +434,14 @@
                 <button
                   class="btn btn-ghost btn-xs whitespace-nowrap"
                   aria-label={"Arbeidsforhold for " + a.navn}
-                  onclick={() => (redigering = { ansatt: a, verdi: fraAnsatt(a) })}
+                  onclick={() => {
+                    const f = suggest(ansatte, units);
+                    redigering = {
+                      ansatt: a,
+                      verdi: fillBlanks(fraAnsatt(a), f),
+                      suggestedUnit: a.arbeidsforhold?.virksomhet_orgnr ? null : f.virksomhet,
+                    };
+                  }}
                 >
                   {a.amelding_mangler.length ? "Fyll ut …" : "Arbeidsforhold …"}
                 </button>
@@ -309,19 +463,84 @@
         <div class="card-body">
           <h4 class="font-semibold text-sm">Arbeidsforhold for {redigering.ansatt.navn}</h4>
           <p class="text-xs opacity-70 mb-2">
-            Det a-meldingen krever om arbeidsforholdet. Det som mangler gjettes aldri — a-meldingen
-            nektes til feltet er fylt ut.
+            Tomme felt har fått forslag fra Enhetsregisteret og forrige ansatte. Sjekk dem før du
+            lagrer. A-meldingen nektes så lenge et felt mangler.
           </p>
           {#if redigering.ansatt.amelding_mangler.length}
             <p class="text-xs text-warning mb-2">
               Mangler: {redigering.ansatt.amelding_mangler.join(", ")}
             </p>
           {/if}
-          <Arbeidsforhold bind:value={redigering.verdi} {koder} />
+          <Arbeidsforhold
+            bind:value={redigering.verdi}
+            {koder}
+            {companyId}
+            {units}
+            onunitinput={() => (redigering.suggestedUnit = null)}
+          />
           <div class="flex gap-2 mt-2">
             <button class="btn btn-sm btn-primary" onclick={lagreArbeidsforhold}>Lagre</button>
             <button class="btn btn-ghost btn-sm" onclick={() => (redigering = null)}>Avbryt</button>
           </div>
+        </div>
+      </div>
+    {/if}
+    {#if editingWithholding}
+      <div class="card border border-base-300 card-sm mb-4 max-w-md">
+        <div class="card-body">
+          <h4 class="font-semibold text-sm">Trekk for {editingWithholding.ansatt.navn}</h4>
+          <p class="text-xs opacity-70 mb-2">
+            Nå: {withholdingText(editingWithholding.ansatt)}. Endringen gjelder neste lønnskjøring og
+            logges. Et nytt skattekort erstatter det du setter her. Frikort og trekk over 12 måneder
+            kommer bare fra skattekortet.
+          </p>
+          <WithholdingFields bind:value={editingWithholding.value} />
+          <label class="flex flex-col gap-1 text-xs mt-2">
+            Begrunnelse
+            <input
+              class="input input-sm"
+              placeholder="f.eks. tabellnummer fra skattekortet"
+              bind:value={editingWithholding.reason}
+            />
+          </label>
+          {#if editingWithholding.ansatt.trekk_12_maneder || editingWithholding.ansatt.trekk_type === "frikort"}
+            <div role="alert" class="alert alert-warning alert-soft text-xs mt-2">
+              <span>
+                Lagrer du, forsvinner vilkårene fra skattekortet. Prosent og tabell uten 12 måneder gir
+                halvt trekk i desember og ingen trekk på feriepenger, og frikortets beløpsgrense gjelder
+                ikke lenger.
+              </span>
+            </div>
+          {/if}
+          <div class="flex flex-wrap gap-2 mt-2">
+            <button
+              class="btn btn-sm btn-primary"
+              disabled={saving || !editingWithholding.reason.trim()}
+              onclick={saveWithholding}
+            >
+              Lagre
+            </button>
+            {#if canFetchCard}
+              <button class="btn btn-sm" disabled={saving} onclick={fetchFromEditor}>
+                {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
+                Hent skattekort
+              </button>
+            {/if}
+            <button class="btn btn-ghost btn-sm" onclick={() => (editingWithholding = null)}>
+              Avbryt
+            </button>
+          </div>
+          {#if editingWithholding.history.length}
+            <h5 class="font-semibold text-xs mt-3">Endringer</h5>
+            <ul class="text-xs opacity-80 grid gap-1">
+              {#each editingWithholding.history as h (h.at)}
+                <li>
+                  {formatDate(h.at.slice(0, 10))}: {withholdingText(h.from)} → {withholdingText(h.to)},
+                  {h.changed_by}: {h.reason}
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       </div>
     {/if}
@@ -375,7 +594,8 @@
   {/if}
 
   <h3 class="font-semibold mb-1">Ny ansatt</h3>
-  <div class="grid gap-2 max-w-md">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="grid gap-2 max-w-md" oninput={() => (touched = true)}>
     <label class="flex flex-col gap-1 text-xs">
       Navn
       <input class="input input-sm" autocomplete="off" bind:value={navn} />
@@ -393,32 +613,48 @@
     <div class="grid grid-cols-2 gap-2">
       <label class="flex flex-col gap-1 text-xs">
         Ansatt fra
-        <input type="date" class="input input-sm" bind:value={fra} />
+        <input
+          type="date"
+          class="input input-sm"
+          bind:value={fra}
+          oninput={(e) => startChanged(e.currentTarget.value)}
+        />
       </label>
       <label class="flex flex-col gap-1 text-xs">
         Månedslønn (kr)
         <input class="input input-sm" inputmode="decimal" bind:value={lonn} />
       </label>
     </div>
+    <WithholdingFields bind:value={withholding} canFetch={canFetchCard} />
     <div class="grid grid-cols-2 gap-2">
-      <label class="flex flex-col gap-1 text-xs">
-        Trekkprosent (tom = ingen trekk)
-        <input class="input input-sm" inputmode="decimal" placeholder="f.eks. 35" bind:value={trekk} />
-      </label>
       <label class="flex flex-col gap-1 text-xs">
         Feriepengesats (%)
         <input class="input input-sm" inputmode="decimal" bind:value={fp} />
+        {#if fp === commonRate(ansatte)}
+          <span class="opacity-70">
+            {rateEmployees(ansatte).length ? "Vanligst i selskapet" : "Lovens minimum"}
+          </span>
+        {/if}
       </label>
     </div>
     <label class="flex flex-col gap-1 text-xs">
       E-post — inviter til portalen og koble (valgfritt)
       <input class="input input-sm" type="email" bind:value={epost} />
     </label>
-    <details class="text-sm">
+    <!-- Open because the suggestions are saved with the employee: they must be seen first. -->
+    <details class="text-sm" open>
       <summary class="cursor-pointer opacity-70">
-        Arbeidsforhold for a-meldingen (kan fylles ut senere)
+        Arbeidsforhold for a-meldingen (forslag er fylt inn, sjekk dem)
       </summary>
-      <div class="mt-2"><Arbeidsforhold bind:value={forhold} {koder} /></div>
+      <div class="mt-2">
+        <Arbeidsforhold
+          bind:value={forhold}
+          {koder}
+          {companyId}
+          {units}
+          onunitinput={() => (suggestedUnit = null)}
+        />
+      </div>
     </details>
     {#if fullt}
       <p class="text-sm" role="note">
@@ -427,6 +663,9 @@
         <a class="link" href={"#/c/" + companyId + "/admin/abonnement"}>Abonnement</a> for å legge til flere.
       </p>
     {/if}
-    <button class="btn btn-sm" onclick={opprett} disabled={fullt}>Registrer ansatt</button>
+    <button class="btn btn-sm" onclick={opprett} disabled={fullt || saving}>
+      {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
+      Registrer ansatt
+    </button>
   </div>
 </Card>

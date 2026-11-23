@@ -1,49 +1,4 @@
 <script module>
-  // Arbeidsforholdet slik a-meldingen krever det (F290/F291, migrasjon
-  // 0073). Skjemaet holder tekst; tilPayload gjør det om til det API-et
-  // tar. Tomt felt = ikke oppgitt, aldri en standardverdi.
-  export function tomt() {
-    return {
-      virksomhet: "",
-      yrkeskode: "",
-      stillingsprosent: "",
-      timer: "",
-      arbeidstidsordning: "",
-      ansettelsesform: "",
-      sisteLonnsendring: "",
-    };
-  }
-
-  const hundredeler = (n) => (n == null ? "" : String(n / 100).replace(".", ","));
-
-  export function fraAnsatt(a) {
-    const f = a.arbeidsforhold || {};
-    return {
-      virksomhet: f.virksomhet_orgnr || "",
-      yrkeskode: f.yrkeskode || "",
-      stillingsprosent: hundredeler(f.stillingsprosent_bp),
-      timer: hundredeler(f.timer_per_uke_hundredeler),
-      arbeidstidsordning: f.arbeidstidsordning || "",
-      ansettelsesform: f.ansettelsesform || "",
-      sisteLonnsendring: f.siste_lonnsendring || "",
-    };
-  }
-
-  const tall = (s) => (s.trim() ? Math.round(parseFloat(s.trim().replace(",", ".")) * 100) : null);
-  const tekst = (s) => s.trim() || null;
-
-  export function tilPayload(v) {
-    return {
-      virksomhet_orgnr: tekst(v.virksomhet.replace(/\s/g, "")),
-      yrkeskode: tekst(v.yrkeskode),
-      stillingsprosent_bp: tall(v.stillingsprosent),
-      timer_per_uke_hundredeler: tall(v.timer),
-      arbeidstidsordning: tekst(v.arbeidstidsordning),
-      ansettelsesform: tekst(v.ansettelsesform),
-      siste_lonnsendring: tekst(v.sisteLonnsendring),
-    };
-  }
-
   // Kodene kommer fra serveren (samme liste som a-meldingen sjekkes mot);
   // dette er bare visningsnavnene. En kode uten navn her vises som koden.
   const NAVN = {
@@ -63,24 +18,38 @@
 </script>
 
 <script>
-  let { value = $bindable(), koder } = $props();
+  import OccupationPicker from "./OccupationPicker.svelte";
+
+  let { value = $bindable(), koder, companyId, units = [], onunitinput } = $props();
+  const uid = $props.id();
+  const unit = $derived(units.find((e) => e.orgnumber === value.virksomhet.replace(/\s/g, "")));
 </script>
 
 <div class="grid gap-2">
   <div class="grid grid-cols-2 gap-2">
-    <label class="flex flex-col gap-1 text-xs">
+    <label class="flex flex-col gap-1 text-xs min-w-0">
       Virksomhet (underenhetens orgnr)
       <input
         class="input input-sm"
         inputmode="numeric"
+        list={uid + "-units"}
         title="Underenheten i Enhetsregisteret der den ansatte jobber — ikke selskapets eget organisasjonsnummer"
         bind:value={value.virksomhet}
+        oninput={onunitinput}
       />
+      <datalist id={uid + "-units"}>
+        {#each units as e (e.orgnumber)}
+          <option value={e.orgnumber} label={e.name + (e.municipality ? ", " + e.municipality : "")}></option>
+        {/each}
+      </datalist>
+      {#if unit}
+        <span class="opacity-70 truncate">{unit.name}{unit.municipality ? ", " + unit.municipality : ""}</span>
+      {/if}
     </label>
-    <label class="flex flex-col gap-1 text-xs">
-      Yrkeskode (7 siffer, STYRK-08)
-      <input class="input input-sm" inputmode="numeric" bind:value={value.yrkeskode} />
-    </label>
+    <div class="flex flex-col gap-1 text-xs min-w-0">
+      <label for={uid + "-occupation"}>Yrkeskode (STYRK-08)</label>
+      <OccupationPicker id={uid + "-occupation"} {companyId} bind:value={value.yrkeskode} />
+    </div>
   </div>
   <div class="grid grid-cols-2 gap-2">
     <label class="flex flex-col gap-1 text-xs">
