@@ -207,14 +207,34 @@ fn profile_name(body: &str) -> Result<String, FilingError> {
     #[derive(Deserialize)]
     struct Party {
         name: String,
+        person: Option<Person>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Person {
+        first_name: Option<String>,
+        middle_name: Option<String>,
+        last_name: Option<String>,
     }
     let unreadable = || FilingError::Unresolved("unreadable Altinn user profile".into());
     let profile: Profile = serde_json::from_str(body).map_err(|_| unreadable())?;
-    let name = profile.party.name.trim();
+    // `party.name` is surname first; Skatteetaten's receipt is given name first.
+    let given_name_first = profile.party.person.as_ref().and_then(|person| {
+        let [first, middle, last] = [&person.first_name, &person.middle_name, &person.last_name]
+            .map(|part| part.as_deref().unwrap_or("").trim());
+        (!first.is_empty() && !last.is_empty()).then(|| {
+            [first, middle, last]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+    });
+    let name = given_name_first.unwrap_or_else(|| profile.party.name.trim().to_string());
     if name.is_empty() {
         return Err(unreadable());
     }
-    Ok(name.to_string())
+    Ok(name)
 }
 
 pub const ENVELOPE_DATA_TYPE: &str =
@@ -569,6 +589,34 @@ mod tests {
         ] {
             let error = profile_name(body).unwrap_err().to_string();
             assert!(!error.contains("01010112345"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_profile_name_is_given_name_first() {
+        let name = |person: &str| {
+            profile_name(&format!(
+                r#"{{"party": {{"name": "METODE HEL", "ssn": "01010112345", "person": {person}}}}}"#
+            ))
+            .unwrap()
+        };
+        // The shape TT02 answered on 2026-11-23.
+        assert_eq!(
+            name(r#"{"firstName": "HEL", "middleName": "", "lastName": "METODE"}"#),
+            "HEL METODE"
+        );
+        assert_eq!(
+            name(r#"{"firstName": " HEL ", "middleName": "VED", "lastName": "METODE"}"#),
+            "HEL VED METODE"
+        );
+        // Without both names, Altinn's own display name is all there is.
+        for person in [
+            "null",
+            "{}",
+            r#"{"firstName": "HEL", "lastName": " "}"#,
+            r#"{"firstName": null, "lastName": "METODE"}"#,
+        ] {
+            assert_eq!(name(person), "METODE HEL");
         }
     }
 
