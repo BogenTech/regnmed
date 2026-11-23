@@ -439,6 +439,9 @@ pub struct PayrollEntry {
     pub gross_ore: Option<i64>,
     /// Feriepenger paid out this month (drawn from the liability).
     pub holiday_pay_ore: i64,
+    /// How much of `holiday_pay_ore` is the over-60 supplement. None lets
+    /// the run work it out, which it can only for last year's whole accrual.
+    pub holiday_pay_supplement_ore: Option<i64>,
     /// Compute pay from hours logged this month × the employee's
     /// timelønn. Requires the timesheet month to be locked.
     pub from_timesheet: bool,
@@ -630,6 +633,16 @@ async fn holiday_pay_years(
         y.earning_year_withheld_ore += r.get::<i64, _>("earning_year");
         y.exempt_ceiling_ore +=
             payroll::holiday_pay_exempt_ceiling(r.get("basis"), accrued, over_60);
+        match payroll::over_60_supplement_accrued(
+            r.get("basis"),
+            accrued,
+            r.get("rate"),
+            birth.map(|b| b.year()),
+            year,
+        ) {
+            Some(supplement) => y.over_60_supplement_ore += supplement,
+            None => y.unknown_addition = true,
+        }
     }
     Ok(years)
 }
@@ -1160,34 +1173,81 @@ async fn payroll_run(
         let avsetning = payroll::holiday_pay_accrual(gross, holiday_rate) - cap_cut;
 
         let leaving = employee.employed_to.is_some_and(|d| d < next_payday);
-        let split = if post.holiday_pay_exempt {
-            payroll::HolidayPaySplit::default()
-        } else {
-            payroll::split_holiday_pay(
-                holiday_years
-                    .get(&employee.id)
-                    .map_or(&[][..], Vec::as_slice),
-                paid_date.year(),
-                avsetning,
-                post.holiday_pay_ore,
-                leaving,
-            )
-        };
+        let mut split = payroll::split_holiday_pay(
+            holiday_years
+                .get(&employee.id)
+                .map_or(&[][..], Vec::as_slice),
+            paid_date.year(),
+            avsetning,
+            post.holiday_pay_ore,
+            leaving,
+        );
+        // Only a card that exempts holiday pay needs the supplement; on the
+        // others a stated value is still checked.
+        let withholding = employee.withholding();
+        let exempts_holiday_pay = !matches!(withholding, Withholding::None)
+            && !payroll::counts_all_holiday_pay(&withholding)
+                .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        // § 5-6-1 (1) b has no exception, so a payment marked exempt under
+        // § 5-7-1 (1) c or d still withholds on the supplement. This year's
+        // part is otherwise already withheld on in full.
+        let not_withheld = split.prior_year_ore
+            + split.unexplained_ore
+            + if post.holiday_pay_exempt {
+                split.earning_year_ore
+            } else {
+                0
+            };
+        let supplement = payroll::over_60_supplement_paid(
+            not_withheld,
+            if exempts_holiday_pay {
+                post.holiday_pay_supplement_ore
+            } else {
+                post.holiday_pay_supplement_ore.or(Some(0))
+            },
+            split.owed_from_earlier_years_ore,
+            holiday_rate,
+            employee.birth_date.map(|b| b.year()),
+            paid_date.year(),
+            holiday_years
+                .get(&employee.id)
+                .map_or(&[][..], Vec::as_slice),
+        )
+        .map_err(|e| anyhow::anyhow!("{}: {e}", employee.name))?;
+        let supplement = if exempts_holiday_pay { supplement } else { 0 };
+        if post.holiday_pay_exempt && supplement > 0 {
+            holiday_pay_warnings.push(format!(
+                "{}: det trekkes skatt av {} kr selv om utbetalingen er merket trekkfri, fordi \
+                 tillegget for arbeidstakere over 60 år er trekkpliktig \
+                 (skattebetalingsforskriften § 5-6-1). Har Skatteetaten sagt at det er \
+                 fritatt, oppgi 0 som tillegg.",
+                employee.name,
+                kroner(supplement),
+            ));
+        }
+        // The supplement is what lies above the ordinary rate, so it must
+        // not be withheld on a second time as excess.
+        // shortcut: nets only this payment's supplement, so an agreed rate
+        // above the limit paid in parts can be over-withheld until the
+        // skatteoppgjør; store the supplement per line if that shows up.
+        split.excess_ore = (split.excess_ore - supplement).max(0);
+        if post.holiday_pay_exempt {
+            split = payroll::HolidayPaySplit::default();
+        }
         let calculation = payroll::calculate(
             &PayrollBasis {
                 gross_ore: gross,
                 holiday_pay_ore: post.holiday_pay_ore,
                 holiday_pay_card_percent_ore: split.card_percent_ore(),
+                holiday_pay_supplement_ore: supplement,
                 table_percent_bp: employee.withholding_percent_bp.map(i64::from),
-                withholding: employee.withholding(),
+                withholding,
                 paid_earlier_this_year_ore,
                 taxable_allowance_ore: taxable_allowance,
                 tax_free_allowance_ore: tax_free_allowance,
             },
             // Pay is taxed in the year it is paid, so December's pay paid
-            // in January takes January's tables -- like the aga rate. The
-            // month stays the pay month: the half-month exemption is for
-            // a pay period (skattebetalingsforskriften § 5-7-2 (1)).
+            // in January takes January's tables -- like the aga rate.
             paid_date.year(),
             month,
         )

@@ -785,6 +785,10 @@ pub struct PayrollLine {
     #[serde(default)]
     #[serde(rename = "feriepenger_ore")]
     holiday_pay_ore: i64,
+    /// How much of the holiday pay is the over-60 supplement. Omitted, the
+    /// run works it out for last year's whole accrual and refuses otherwise.
+    #[serde(default)]
+    holiday_pay_supplement_ore: Option<i64>,
     /// Pay from hours logged this month instead. The timesheet month
     /// must be locked first (docs/lonn.md).
     #[serde(default)]
@@ -837,6 +841,7 @@ pub async fn run_payroll(
             employee_id: l.employee_id,
             gross_ore: l.gross_ore,
             holiday_pay_ore: l.holiday_pay_ore,
+            holiday_pay_supplement_ore: l.holiday_pay_supplement_ore,
             from_timesheet: l.from_timesheet,
             holiday_pay_exempt: l.holiday_pay_exempt,
         })

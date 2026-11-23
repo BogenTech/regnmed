@@ -132,6 +132,7 @@ async fn a_payroll_run_posts_as_one_balanced_bilag() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -202,6 +203,7 @@ async fn a_run_names_every_missing_account_before_posting() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -241,6 +243,7 @@ async fn holiday_pay_paid_out_reduces_the_liability_and_carries_no_withholding()
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 4_000_000,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -321,6 +324,7 @@ async fn the_over_60_addition_is_capped_at_6g_across_the_earning_year() {
                 employee_id,
                 gross_ore: Some(gross),
                 holiday_pay_ore: 0,
+                holiday_pay_supplement_ore: None,
                 from_timesheet: false,
                 holiday_pay_exempt: false,
             })
@@ -377,6 +381,7 @@ async fn raising_the_rate_mid_year_catches_up_the_addition_and_keeps_old_payslip
                     employee_id: id,
                     gross_ore: Some(gross),
                     holiday_pay_ore: 0,
+                    holiday_pay_supplement_ore: None,
                     from_timesheet: false,
                     holiday_pay_exempt: false,
                 }],
@@ -465,6 +470,7 @@ async fn simultaneous_runs_cannot_both_post_the_catch_up() {
                     employee_id: id,
                     gross_ore: Some(10_000_000),
                     holiday_pay_ore: 0,
+                    holiday_pay_supplement_ore: None,
                     from_timesheet: false,
                     holiday_pay_exempt: false,
                 }],
@@ -567,6 +573,239 @@ async fn the_holiday_rate_edit_stays_inside_the_company_and_the_valid_range() {
 }
 
 #[tokio::test]
+async fn over_60_holiday_pay_withholds_only_the_supplement() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    // Born 1967: 2026 pay carries the addition, paid out in 2027.
+    let statutory = employee_at_rate(&pool, company, "15866710020", 1250).await;
+    let tariff = employee_at_rate(&pool, company, "16866710140", 1430).await;
+    let ordinary = employee_at_rate(&pool, company, "17866710260", 1020).await;
+    // Born 1968: 12,5 % is an agreement, with no addition to withhold on.
+    let too_young = employee_at_rate(&pool, company, "15866810041", 1250).await;
+    let all = [statutory, tariff, ordinary, too_young];
+    for id in all {
+        payroll::update_employment_details(&pool, company, id, &complete_details("974760673"))
+            .await
+            .unwrap();
+    }
+    let entry = |employee_id, gross, holiday, stated| PayrollEntry {
+        employee_id,
+        gross_ore: Some(gross),
+        holiday_pay_ore: holiday,
+        holiday_pay_supplement_ore: stated,
+        from_timesheet: false,
+        holiday_pay_exempt: false,
+    };
+    // 1 000 000 kr in 2026, above 6 G (819 294 kr).
+    let earned: Vec<_> = all
+        .iter()
+        .map(|&id| entry(id, 100_000_000, 0, None))
+        .collect();
+    let first = payroll::run_payroll(
+        &pool,
+        company,
+        2026,
+        1,
+        date(2026, 1, 20),
+        "I",
+        &earned,
+        "Test",
+    )
+    .await
+    .unwrap();
+    let accrual = |id| {
+        first
+            .lines
+            .iter()
+            .find(|l| l.employee_id == id)
+            .unwrap()
+            .holiday_pay_accrual_ore
+    };
+    assert_eq!(accrual(statutory), 10_200_000 + 1_884_376);
+    assert_eq!(accrual(tariff), 12_000_000 + 1_884_376);
+
+    let preview = |entries: Vec<PayrollEntry>| {
+        let pool = pool.clone();
+        async move {
+            payroll::preview_payroll(&pool, company, 2027, 6, date(2027, 6, 20), "I", &entries)
+                .await
+        }
+    };
+    // Part of the balance: refused until the supplement is stated.
+    let refused = preview(vec![entry(statutory, 0, 5_000_000, None)])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("tillegget på 2,3"), "{refused}");
+    let stated = preview(vec![entry(statutory, 0, 5_000_000, Some(500_000))])
+        .await
+        .unwrap();
+    assert_eq!(stated.lines[0].calculation.withholding_basis_ore, 500_000);
+    assert_eq!(stated.lines[0].calculation.withholding_ore, 175_000);
+    let too_much = preview(vec![entry(statutory, 0, 5_000_000, Some(5_000_001))])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(too_much.contains("større enn"), "{too_much}");
+    // A card that exempts nothing ignores the split but not a bad value.
+    let no_withholding = payroll::create_employee(
+        &pool,
+        company,
+        &NewEmployee {
+            nin: "03048810003".into(),
+            name: "Uten Trekk".into(),
+            stilling: None,
+            employed_from: date(2025, 1, 1),
+            monthly_salary_ore: None,
+            hourly_wage_ore: None,
+            withholding_type: "ingen".into(),
+            withholding_percent_bp: None,
+            withholding_table: None,
+            holiday_pay_bp: 1020,
+            bank_account: None,
+            note: None,
+            details: complete_details("974760673"),
+        },
+        "Test",
+    )
+    .await
+    .unwrap();
+    let invalid = preview(vec![entry(no_withholding, 0, 100_000, Some(100_001))])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(invalid.contains("større enn"), "{invalid}");
+
+    // Marked exempt: the supplement is withheld all the same.
+    let marked = preview(vec![PayrollEntry {
+        holiday_pay_exempt: true,
+        ..entry(statutory, 0, accrual(statutory), None)
+    }])
+    .await
+    .unwrap();
+    assert_eq!(marked.lines[0].calculation.withholding_basis_ore, 1_884_376);
+    assert!(
+        marked
+            .warnings
+            .iter()
+            .any(|w| w.contains("merket trekkfri")),
+        "{:?}",
+        marked.warnings
+    );
+
+    // The whole of last year's accrual: the split is computed.
+    let payout: Vec<_> = all
+        .iter()
+        .map(|&id| entry(id, 0, accrual(id), None))
+        .collect();
+    let run = payroll::run_payroll(
+        &pool,
+        company,
+        2027,
+        6,
+        date(2027, 6, 20),
+        "I",
+        &payout,
+        "Test",
+    )
+    .await
+    .unwrap();
+    assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
+    for line in &run.lines {
+        let (basis, withheld) = if [statutory, tariff].contains(&line.employee_id) {
+            // 35 % of 18 843,76 kr, rounded down to whole kroner.
+            (1_884_376, 659_500)
+        } else if line.employee_id == too_young {
+            // An agreed 12,5 %: only what exceeds 12,342 % of the basis.
+            (158_000, 55_300)
+        } else {
+            (0, 0)
+        };
+        assert_eq!(line.calculation.withholding_basis_ore, basis);
+        assert_eq!(line.calculation.withholding_ore, withheld);
+    }
+
+    // One feriepenger line per employee, supplement included.
+    let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+        .await
+        .unwrap();
+    assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+    let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+    assert_eq!(
+        xml.matches("<beskrivelse>feriepenger</beskrivelse>")
+            .count(),
+        4
+    );
+}
+
+#[tokio::test]
+async fn the_over_60_supplement_is_withheld_on_leaving_and_when_marked_exempt() {
+    let Some(pool) = pool().await else { return };
+    let company = company(&pool).await;
+    // Born 1967: both years below carry the addition.
+    let id = employee_at_rate(&pool, company, "15866710020", 1250).await;
+    for (year, month) in [(2026, 1), (2027, 2)] {
+        let entry = PayrollEntry {
+            employee_id: id,
+            gross_ore: Some(10_000_000),
+            holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
+            from_timesheet: false,
+            holiday_pay_exempt: false,
+        };
+        payroll::run_payroll(
+            &pool,
+            company,
+            year,
+            month,
+            date(year, month, 20),
+            "I",
+            &[entry],
+            "Test",
+        )
+        .await
+        .unwrap();
+    }
+    payroll::end_employment(&pool, company, id, Some(date(2027, 3, 31)))
+        .await
+        .unwrap();
+    let payout = |stated, exempt| {
+        let pool = pool.clone();
+        async move {
+            let entry = PayrollEntry {
+                employee_id: id,
+                gross_ore: Some(0),
+                // 1 250 000 from 2026 + 1 250 000 earned in 2027.
+                holiday_pay_ore: 2_500_000,
+                holiday_pay_supplement_ore: stated,
+                from_timesheet: false,
+                holiday_pay_exempt: exempt,
+            };
+            payroll::preview_payroll(&pool, company, 2027, 3, date(2027, 3, 20), "I", &[entry])
+                .await
+        }
+    };
+
+    // This year's part is withheld in full, last year's only on its 2,3 %.
+    let leaving = payout(None, false).await.unwrap();
+    assert_eq!(
+        leaving.lines[0].calculation.withholding_basis_ore,
+        1_250_000 + 230_000
+    );
+
+    // Marked exempt: the payment holds two years' supplements, so the
+    // operator must say how much.
+    let refused = payout(None, true).await.unwrap_err().to_string();
+    assert!(refused.contains("tillegget på 2,3"), "{refused}");
+    let stated = payout(Some(460_000), true).await.unwrap();
+    assert_eq!(stated.lines[0].calculation.withholding_basis_ore, 460_000);
+    assert_eq!(stated.lines[0].calculation.withholding_ore, 161_000);
+    // The operator can still record that none is withheld.
+    let none = payout(Some(0), true).await.unwrap();
+    assert_eq!(none.lines[0].calculation.withholding_ore, 0);
+}
+
+#[tokio::test]
 async fn a_leaver_is_capped_at_the_g_on_the_leaving_date_and_earlier_cuts_are_netted() {
     let Some(pool) = pool().await else { return };
     let company = company(&pool).await;
@@ -576,6 +815,7 @@ async fn a_leaver_is_capped_at_the_g_on_the_leaving_date_and_earlier_cuts_are_ne
             employee_id: id,
             gross_ore: Some(gross),
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }]
@@ -626,6 +866,7 @@ fn holiday_entry(id: Uuid, gross: i64, holiday: i64, exempt: bool) -> [PayrollEn
         employee_id: id,
         gross_ore: Some(gross),
         holiday_pay_ore: holiday,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: exempt,
     }]
@@ -861,6 +1102,7 @@ async fn a_run_says_so_when_the_cap_rests_on_a_stale_g() {
             employee_id: id,
             gross_ore: Some(10_000_000_000),
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -891,6 +1133,7 @@ async fn december_withholds_half() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -919,6 +1162,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -941,6 +1185,7 @@ async fn sone_v_is_a_zero_rate_and_sone_ia_is_refused() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -976,6 +1221,7 @@ async fn tabelltrekk_follows_the_table_for_10_5_and_12_month_tables() {
         employee_id: id,
         gross_ore: None,
         holiday_pay_ore: 0,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     };
@@ -1060,6 +1306,7 @@ async fn the_same_month_cannot_be_run_twice_and_runs_are_immutable() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }]
@@ -1176,6 +1423,7 @@ async fn the_payslip_is_built_from_the_line_with_year_to_date() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: fp,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }]
@@ -1253,6 +1501,7 @@ async fn december_pay_paid_in_january_counts_in_the_new_year_to_date() {
         employee_id: a,
         gross_ore: None,
         holiday_pay_ore: 0,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     }];
@@ -1381,6 +1630,7 @@ async fn hourly_pay_requires_the_month_to_be_locked() {
             employee_id: a,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: true,
             holiday_pay_exempt: false,
         }]
@@ -1484,6 +1734,7 @@ async fn run(
             employee_id: a,
             gross_ore: gross,
             holiday_pay_ore: holiday_pay,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -1592,6 +1843,7 @@ async fn the_accrual_is_always_the_rate_times_the_holiday_pay_liability() {
                     employee_id: a,
                     gross_ore: None,
                     holiday_pay_ore: holiday_pay,
+                    holiday_pay_supplement_ore: None,
                     from_timesheet: false,
                     holiday_pay_exempt: false,
                 },
@@ -1599,6 +1851,7 @@ async fn the_accrual_is_always_the_rate_times_the_holiday_pay_liability() {
                     employee_id: b,
                     gross_ore: None,
                     holiday_pay_ore: holiday_pay,
+                    holiday_pay_supplement_ore: None,
                     from_timesheet: false,
                     holiday_pay_exempt: false,
                 },
@@ -1817,6 +2070,7 @@ async fn a_run_records_whether_it_paid_fixed_salary() {
             employee_id: id,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -1838,6 +2092,7 @@ fn run_entry(employee_id: Uuid, gross_ore: Option<i64>) -> PayrollEntry {
         employee_id,
         gross_ore,
         holiday_pay_ore: 0,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     }
@@ -2655,6 +2910,7 @@ async fn an_unapplied_skattekort_is_named_in_the_run() {
         employee_id: id,
         gross_ore: None,
         holiday_pay_ore: 0,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     };
@@ -2718,6 +2974,7 @@ async fn frikort_counts_the_year_and_twelve_month_cards_withhold_on_holiday_pay(
         employee_id: id,
         gross_ore: None,
         holiday_pay_ore: holiday,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     };
@@ -3217,6 +3474,7 @@ async fn a_preview_books_nothing_and_matches_the_run() {
         employee_id: a,
         gross_ore: None,
         holiday_pay_ore: 0,
+        holiday_pay_supplement_ore: None,
         from_timesheet: false,
         holiday_pay_exempt: false,
     }];

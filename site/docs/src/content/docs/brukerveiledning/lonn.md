@@ -77,6 +77,7 @@ Hvis selskapet ble opprettet før 11. november 2026 og mangler noen av lønnskon
 - **Tabelltrekk** regnes med Skatteetatens egen trekkrutine, sjekket mot hele den publiserte tabellfilen for 2026. Et år uten innlagte konstanter stopper kjøringen i stedet for å bruke fjorårets.
 - **Feriepenger er trekkfrie** når de utbetales året etter at de er opptjent, og det trekkes halv skatt i desember. Begge deler gjelder bare kort over 10,5 måneder. Kort over 12 måneder trekker fullt hver måned.
 - **Det trekkes likevel skatt** av feriepenger som er opptjent i år og utbetales fordi den ansatte slutter, og av avtalte feriepenger over 12,34 % av grunnlaget. Gjelder utbetalingen dødsfall, eller løpende utbetaling etter avtale, huker du av for «Trekkfri» i lønnskjøringen.
+- **Tillegget for ansatte over 60 år er ikke trekkfritt**, heller ikke når utbetalingen er merket «Trekkfri». Betaler du ut hele fjorårets feriepenger, regner regnmed det ut. Ved delutbetaling må du fylle inn «Herav tillegg over 60».
 - Trekket **rundes ned til hele kroner**, siden a-meldingen tar hele kroner.
 
 Lønnsslippen sier hvordan trekket ble regnet, for eksempel «35,00 %» eller «tabell 8000».

@@ -209,15 +209,28 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly += 12.0;
     }
     if input.gross_ore != input.withholding_basis_ore {
+        // A slip is re-rendered from its line, so one with all holiday pay
+        // exempt must keep the wording it was issued with.
+        let exempt_holiday_pay = input.gross_ore - input.withholding_basis_ore;
+        let holiday_pay: i64 = input
+            .lines
+            .iter()
+            .filter(|l| l.text == "Feriepenger")
+            .map(|l| l.amount_ore)
+            .sum();
         pdf.text(
             MARGIN,
             ly,
             8.0,
             Font::Regular,
-            &format!(
-                "Feriepenger uten forskuddstrekk: {} kr.",
-                kr(input.gross_ore - input.withholding_basis_ore)
-            ),
+            &if exempt_holiday_pay == holiday_pay {
+                "Feriepenger utbetales uten forskuddstrekk.".to_string()
+            } else {
+                format!(
+                    "Feriepenger uten forskuddstrekk: {} kr.",
+                    kr(exempt_holiday_pay)
+                )
+            },
         );
         ly += 12.0;
     }
@@ -382,6 +395,14 @@ mod tests {
         assert!(
             text.contains("uten forskuddstrekk"),
             "feriepengenes trekkfrihet skal forklares"
+        );
+
+        // The over-60 supplement is withheld, so only the rest is exempt.
+        june.withholding_basis_ore = 3_920_000;
+        let text = String::from_utf8_lossy(&render_payslip(&june)).to_string();
+        assert!(
+            text.contains("Feriepenger uten forskuddstrekk: 30") && text.contains("800,00 kr"),
+            "{text}"
         );
 
         let mut desember = input();

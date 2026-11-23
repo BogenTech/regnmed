@@ -250,6 +250,7 @@ async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
             employee_id: employee,
             gross_ore: None,
             holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
             from_timesheet: false,
             holiday_pay_exempt: false,
         }],
@@ -270,6 +271,43 @@ async fn setup(events_endpoint: Option<&str>) -> Option<Fixture> {
         admin: tokens[0].clone(),
         auditor: tokens[1].clone(),
     })
+}
+
+#[tokio::test]
+async fn a_stated_over_60_supplement_is_withheld_through_the_api() {
+    let Some(Fixture {
+        state,
+        submissions,
+        admin,
+        ..
+    }) = setup(None).await
+    else {
+        return;
+    };
+    let company: Uuid = submissions.split('/').nth(2).unwrap().parse().unwrap();
+    let employee = regnmed_db::payroll::list_ansatte(&state.pool, company)
+        .await
+        .unwrap()[0]
+        .id;
+    let body = serde_json::json!({
+        "ar": 2026, "maned": 4, "utbetalt_dato": "2026-04-25", "sone": "I",
+        "linjer": [{
+            "employee_id": employee,
+            "feriepenger_ore": 1_000_000,
+            "holiday_pay_supplement_ore": 200_000,
+        }],
+    });
+    let (code, preview) = call(
+        &state,
+        "POST",
+        &format!("/companies/{company}/payroll?preview=true"),
+        &admin,
+        &body.to_string(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{preview}");
+    // 35 % of 40 000 kr pay + the 2 000 kr supplement.
+    assert_eq!(preview["linjer"][0]["forskuddstrekk_ore"], 1_470_000);
 }
 
 #[tokio::test]
