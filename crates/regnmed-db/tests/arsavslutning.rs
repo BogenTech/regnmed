@@ -342,3 +342,111 @@ async fn a_year_that_has_not_ended_refuses() {
             .expect_err("et år som ikke er over kan ikke avsluttes");
     assert!(error.to_string().contains("ikke over ennå"), "{error}");
 }
+
+/// The next year: income-statement accounts open at zero in the trial
+/// balance, the kontospesifikasjon and the SAF-T export, while balance
+/// accounts carry over. Before the closing, the openings sum to the
+/// undistributed result; after it, to zero.
+#[tokio::test]
+async fn income_statement_accounts_open_the_next_year_at_zero() {
+    let Some(pool) = pool().await else { return };
+    let company = selskap_med_overskudd(&pool).await;
+    regnmed_db::post_voucher(
+        &pool,
+        company,
+        &VoucherDraft {
+            journal_code: "GL".into(),
+            voucher_date: d(2026, 2, 1),
+            description: "Salg 2026".into(),
+            reverses: None,
+            entries: vec![e("1920", 10_000_00), e("3000", -10_000_00)],
+        },
+        "test",
+    )
+    .await
+    .unwrap();
+    let opening = |rows: &[regnmed_db::TrialBalanceRow], number: &str| {
+        rows.iter()
+            .find(|r| r.number == number)
+            .map_or(0, |r| r.opening_ore)
+    };
+    let sum =
+        |rows: &[regnmed_db::TrialBalanceRow]| rows.iter().map(|r| r.opening_ore).sum::<i64>();
+
+    // 2025 not closed: the 60 000 profit has no home yet.
+    let year = regnmed_db::trial_balance(&pool, company, d(2026, 1, 1), d(2026, 12, 31))
+        .await
+        .unwrap();
+    assert_eq!(opening(&year, "3000"), 0, "salg starter året på null");
+    assert_eq!(opening(&year, "6300"), 0);
+    assert_eq!(opening(&year, "1920"), 60_000_00, "banken bæres over");
+    assert_eq!(sum(&year), 60_000_00, "udisponert resultat fra 2025");
+
+    regnmed_db::year_end::close_year(&pool, company, 2025, 13_200_00, "test", false, false, None)
+        .await
+        .unwrap();
+
+    let year = regnmed_db::trial_balance(&pool, company, d(2026, 1, 1), d(2026, 12, 31))
+        .await
+        .unwrap();
+    for number in ["3000", "6300", "8300", "8800"] {
+        assert_eq!(opening(&year, number), 0, "{number}");
+    }
+    assert_eq!(opening(&year, "2050"), -46_800_00);
+    assert_eq!(sum(&year), 0, "avsluttet år: inngående går i null");
+    let salg = year.iter().find(|r| r.number == "3000").unwrap();
+    assert_eq!(salg.closing_ore, -10_000_00);
+
+    // Mid-year, an income account opens at the year so far.
+    let march = regnmed_db::trial_balance(&pool, company, d(2026, 3, 1), d(2026, 3, 31))
+        .await
+        .unwrap();
+    assert_eq!(opening(&march, "3000"), -10_000_00);
+
+    let posts = regnmed_db::account_specification(
+        &pool,
+        company,
+        Some("3000"),
+        d(2026, 1, 1),
+        d(2026, 12, 31),
+    )
+    .await
+    .unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0].balance_ore, -10_000_00, "løpende saldo fra null");
+
+    let saft = regnmed_db::load_saft_input(
+        &pool,
+        company,
+        d(2026, 1, 1),
+        d(2026, 12, 31),
+        "Ola",
+        "Nordmann",
+    )
+    .await
+    .unwrap();
+    let account = |number: &str| saft.accounts.iter().find(|a| a.number == number).unwrap();
+    assert_eq!(
+        (account("3000").opening_ore, account("3000").closing_ore),
+        (0, -10_000_00)
+    );
+    assert_eq!(
+        (account("6300").opening_ore, account("6300").closing_ore),
+        (0, 0)
+    );
+    assert_eq!(account("1920").opening_ore, 60_000_00);
+    assert_eq!(account("2050").opening_ore, -46_800_00);
+
+    // Across New Year an income account's closing would mix two years.
+    let error = regnmed_db::load_saft_input(
+        &pool,
+        company,
+        d(2025, 11, 1),
+        d(2026, 2, 28),
+        "Ola",
+        "Nordmann",
+    )
+    .await
+    .expect_err("a selection spanning two fiscal years is refused");
+    assert!(error.to_string().contains("one fiscal year"), "{error}");
+}

@@ -137,64 +137,66 @@
       </div>
     </div>
 
-    <fieldset class="grid gap-3">
-      <legend class="font-semibold mb-1">Linjer</legend>
-      {#each lines as line, i (i)}
-        {@const lineProblem = lineProblems[i]}
-        <div class="grid gap-2 grid-cols-2 sm:grid-cols-[8rem_1fr_1fr_11rem_auto] items-end border-b border-base-200 pb-3">
-          <div class="fieldset py-0 col-span-2 sm:col-span-1">
-            <label class="fieldset-legend pt-0" for={"nb-konto-" + i}>Konto</label>
-            <KontoVelger id={"nb-konto-" + i} kontoer={chart.kontoer} standard={chart.standard} bind:value={line.account} cls="input w-full" />
-          </div>
-          <div class="fieldset py-0">
-            <label class="fieldset-legend pt-0" for={"nb-debet-" + i}>Debet</label>
-            <input id={"nb-debet-" + i} class="input w-full text-right" inputmode="decimal" autocomplete="off" bind:value={line.debit} />
-          </div>
-          <div class="fieldset py-0">
-            <label class="fieldset-legend pt-0" for={"nb-kredit-" + i}>Kredit</label>
-            <input id={"nb-kredit-" + i} class="input w-full text-right" inputmode="decimal" autocomplete="off" bind:value={line.credit} />
-          </div>
-          <div class="fieldset py-0">
-            <label class="fieldset-legend pt-0" for={"nb-mva-" + i}>Mva</label>
-            <select id={"nb-mva-" + i} class="select w-full" bind:value={line.vat}>
-              <option value="">Ingen mva</option>
-              {#each Object.entries(VAT) as [code, v] (code)}
-                <option value={code}>{v.label}</option>
-              {/each}
-            </select>
-          </div>
-          <button
-            type="button"
-            class="btn btn-ghost btn-square"
-            aria-label={"Fjern linje " + (i + 1)}
-            title="Fjern linjen"
-            onclick={() => remove(i)}
-          >
-            ✕
-          </button>
-          {#if dims.length}
-            <div class="col-span-2 sm:col-span-5 flex flex-wrap gap-2">
-              <label class="flex items-center gap-2 text-sm">
-                <span class="opacity-70">Avdeling</span>
-                <DimSelect {dims} kind="avdeling" cls="select select-sm" alleLabel="Ingen" bind:value={line.avdeling} />
-              </label>
-              <label class="flex items-center gap-2 text-sm">
-                <span class="opacity-70">Prosjekt</span>
-                <DimSelect {dims} kind="prosjekt" cls="select select-sm" alleLabel="Ingen" bind:value={line.prosjekt} />
-              </label>
+    <div class="@container">
+      <fieldset class="grid gap-3">
+        <legend class="font-semibold mb-1">Linjer</legend>
+        {#each lines as line, i (i)}
+          {@const lineProblem = lineProblems[i]}
+          <div class="grid gap-2 grid-cols-2 @xl:grid-cols-[8rem_1fr_1fr_11rem_auto] items-end border-b border-base-200 pb-3">
+            <div class="fieldset py-0 col-span-2 @xl:col-span-1">
+              <label class="fieldset-legend pt-0" for={"nb-konto-" + i}>Konto</label>
+              <KontoVelger id={"nb-konto-" + i} kontoer={chart.kontoer} standard={chart.standard} bind:value={line.account} cls="input w-full" />
             </div>
-          {/if}
-          <p class="text-sm col-span-2 sm:col-span-5 {lineProblem && (submitted || line.account.trim()) ? 'text-error' : 'opacity-70'}">
-            {#if lineProblem && (submitted || line.account.trim())}
-              {lineProblem}
-            {:else if line.account.trim() && nameOf(line.account.trim())}
-              {nameOf(line.account.trim())}{VAT[line.vat] ? ". Beløpet er inkludert mva." : ""}
+            <div class="fieldset py-0">
+              <label class="fieldset-legend pt-0" for={"nb-debet-" + i}>Debet</label>
+              <input id={"nb-debet-" + i} class="input w-full text-right" inputmode="decimal" autocomplete="off" bind:value={line.debit} />
+            </div>
+            <div class="fieldset py-0">
+              <label class="fieldset-legend pt-0" for={"nb-kredit-" + i}>Kredit</label>
+              <input id={"nb-kredit-" + i} class="input w-full text-right" inputmode="decimal" autocomplete="off" bind:value={line.credit} />
+            </div>
+            <div class="fieldset py-0">
+              <label class="fieldset-legend pt-0" for={"nb-mva-" + i}>Mva</label>
+              <select id={"nb-mva-" + i} class="select w-full" bind:value={line.vat}>
+                <option value="">Ingen mva</option>
+                {#each Object.entries(VAT) as [code, v] (code)}
+                  <option value={code}>{v.label}</option>
+                {/each}
+              </select>
+            </div>
+            <button
+              type="button"
+              class="btn btn-ghost btn-square"
+              aria-label={"Fjern linje " + (i + 1)}
+              title="Fjern linjen"
+              onclick={() => remove(i)}
+            >
+              ✕
+            </button>
+            {#if dims.length}
+              <div class="col-span-2 @xl:col-span-5 flex flex-wrap gap-2">
+                <label class="flex items-center gap-2 text-sm">
+                  <span class="opacity-70">Avdeling</span>
+                  <DimSelect {dims} kind="avdeling" cls="select select-sm" alleLabel="Ingen" bind:value={line.avdeling} />
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <span class="opacity-70">Prosjekt</span>
+                  <DimSelect {dims} kind="prosjekt" cls="select select-sm" alleLabel="Ingen" bind:value={line.prosjekt} />
+                </label>
+              </div>
             {/if}
-          </p>
-        </div>
-      {/each}
-      <button type="button" class="btn btn-sm w-fit" onclick={() => (lines = [...lines, blank()])}>Legg til linje</button>
-    </fieldset>
+            <p class="text-sm col-span-2 @xl:col-span-5 {lineProblem && (submitted || line.account.trim()) ? 'text-error' : 'opacity-70'}">
+              {#if lineProblem && (submitted || line.account.trim())}
+                {lineProblem}
+              {:else if line.account.trim() && nameOf(line.account.trim())}
+                {nameOf(line.account.trim())}{VAT[line.vat] ? ". Beløpet er inkludert mva." : ""}
+              {/if}
+            </p>
+          </div>
+        {/each}
+        <button type="button" class="btn btn-sm w-fit" onclick={() => (lines = [...lines, blank()])}>Legg til linje</button>
+      </fieldset>
+    </div>
 
     {#if hasVat && posting.length}
       <div class="overflow-x-auto">

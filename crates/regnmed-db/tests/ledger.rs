@@ -559,24 +559,45 @@ async fn reports_read_from_the_monthly_totals_match_the_entries_exactly() {
         );
     }
 
-    // The trial balance built on them closes on the entries' own sum.
+    // The trial balance built on them closes on the entries' own sum:
+    // all history for balance accounts, 2026 alone for income accounts.
     let tb = regnmed_db::trial_balance(&pool, company, date(2026, 3, 10), date(2026, 8, 20))
         .await
         .unwrap();
     let closing = sums_from_entries(&pool, company, None, date(2026, 8, 20)).await;
     let opening = sums_from_entries(&pool, company, None, date(2026, 3, 9)).await;
+    let before_year = sums_from_entries(&pool, company, None, date(2025, 12, 31)).await;
+    let saldo = |sums: &[(String, i64, i64)], number: &str| {
+        sums.iter().find(|s| s.0 == number).map_or(0, |s| s.1 + s.2)
+    };
     for row in &tb {
-        let c = closing
-            .iter()
-            .find(|c| c.0 == row.number)
-            .map_or(0, |c| c.1 + c.2);
-        let o = opening
-            .iter()
-            .find(|o| o.0 == row.number)
-            .map_or(0, |o| o.1 + o.2);
+        let reset = if regnmed_core::statements::carries_over(&row.number) {
+            0
+        } else {
+            saldo(&before_year, &row.number)
+        };
+        let o = saldo(&opening, &row.number) - reset;
+        let c = saldo(&closing, &row.number) - reset;
         assert_eq!((row.opening_ore, row.closing_ore), (o, c), "{}", row.number);
     }
-    assert_eq!(tb.len(), closing.len());
+    assert!(
+        tb.iter()
+            .any(|r| !regnmed_core::statements::carries_over(&r.number) && r.opening_ore != 0),
+        "an income account carries its 2026 year-to-date into the period"
+    );
+    // Every account with a balance on either side is listed, no more.
+    let listed = closing
+        .iter()
+        .filter(|(number, ..)| {
+            let reset = if regnmed_core::statements::carries_over(number) {
+                0
+            } else {
+                saldo(&before_year, number)
+            };
+            saldo(&opening, number) != reset || saldo(&closing, number) != reset
+        })
+        .count();
+    assert_eq!(tb.len(), listed);
 
     // A total that drifts from its entries (only the owner role can write
     // one) is named by the check verify-ledger runs.

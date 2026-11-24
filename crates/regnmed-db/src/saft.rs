@@ -29,10 +29,21 @@ pub async fn load_saft_input(
         .await?
         .context("no such company")?;
 
+    // Income-statement accounts open at the start of the selection's fiscal
+    // year rather than at genesis (`regnmed_core::statements::carries_over`):
+    // the same rule `saft_import` holds a follow-up file to.
+    let year = regnmed_core::fiscal_year::of(start);
+    anyhow::ensure!(
+        regnmed_core::fiscal_year::of(end) == year,
+        "a SAF-T selection must lie within one fiscal year ({start} to {end} does not)"
+    );
+    let (year_start, _) = regnmed_core::fiscal_year::period(year)
+        .with_context(|| format!("fiscal year {year} is out of range"))?;
     let accounts = sqlx::query(
         "select a.number, a.name, a.created_at,
                 coalesce(sum(e.amount_ore) filter (where v.voucher_date < $2), 0)::bigint as opening_ore,
-                coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $3), 0)::bigint as closing_ore
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date <= $3), 0)::bigint as closing_ore,
+                coalesce(sum(e.amount_ore) filter (where v.voucher_date < $4), 0)::bigint as before_year_ore
          from account a
          left join entry e on e.account_id = a.id
          left join voucher v on v.id = e.voucher_id
@@ -43,15 +54,24 @@ pub async fn load_saft_input(
     .bind(company_id)
     .bind(start)
     .bind(end)
+    .bind(year_start)
     .fetch_all(pool)
     .await?
     .into_iter()
-    .map(|row| SaftAccount {
-        number: row.get("number"),
-        name: row.get("name"),
-        created: row.get::<DateTime<Utc>, _>("created_at").date_naive(),
-        opening_ore: row.get("opening_ore"),
-        closing_ore: row.get("closing_ore"),
+    .map(|row| {
+        let number: String = row.get("number");
+        let before_year: i64 = if regnmed_core::statements::carries_over(&number) {
+            0
+        } else {
+            row.get("before_year_ore")
+        };
+        SaftAccount {
+            name: row.get("name"),
+            created: row.get::<DateTime<Utc>, _>("created_at").date_naive(),
+            opening_ore: row.get::<i64, _>("opening_ore") - before_year,
+            closing_ore: row.get::<i64, _>("closing_ore") - before_year,
+            number,
+        }
     })
     .collect();
 

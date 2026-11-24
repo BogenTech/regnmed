@@ -1,7 +1,8 @@
 <script>
   // Saldobalanse: every account with movement or balance, each one a
-  // link to its postings in Hovedbok. The sums close the check — utgående
-  // over all accounts is zero when the ledger balances.
+  // link to its postings in Hovedbok. Income-statement accounts open the
+  // year at zero, so the sums are zero only once every earlier year is
+  // closed; otherwise they equal that undistributed result, said below.
   import { api } from "../../lib/api.js";
   import { kr } from "../../lib/format.js";
   import LoadError from "../../components/LoadError.svelte";
@@ -66,4 +67,11 @@
       </tr>
     </tfoot>
   </table>
+  {#if sum("inngaende_ore") !== 0}
+    <p class="text-sm opacity-70 mt-2">
+      Inngående saldo summerer til {kr(sum("inngaende_ore"))} fordi resultatet for et tidligere år ikke er
+      overført til egenkapitalen. Resultatkontoene starter hvert år på null. Avslutt året under
+      <a class="link" href={"#/c/" + companyId + "/admin/periode"}>Administrasjon → Periode</a>.
+    </p>
+  {/if}
 {/if}

@@ -151,7 +151,9 @@ async fn period_lock_and_attachments_end_to_end() {
             .await
             .expect_err("locked period must reject postings");
     assert!(
-        rejected.to_string().contains("locked through"),
+        rejected
+            .to_string()
+            .contains("Perioden er låst til og med 31.01.2026"),
         "got: {rejected}"
     );
 
