@@ -17,7 +17,7 @@ The specifications and where they live:
 | Kontospesifikasjon (hovedbok) | `GET …/reports/kontospesifikasjon?from=&to=[&account=]` | every posting per account, running saldo seeded from inngående balance, bilagshenvisning `journal-år-nummer` |
 | Kunde-/leverandørspesifikasjon | `GET …/reports/kundespesifikasjon?from=&to=` and `GET …/reports/leverandorspesifikasjon?from=&to=` | per party: inngående saldo, every posting with running saldo and bilagshenvisning, utgående saldo; a party with nonzero inngående but no movement is still listed. (`GET …/parties/{pid}/items` remains the åpne poster working view — no period filter, no running saldo — see [reskontro.md](reskontro.md)) |
 | Mva-spesifikasjon | `GET …/reports/mva?year=&termin=` | dated rates ([mva.md](mva.md)) |
-| Saldobalanse | `GET …/reports/saldobalanse?from=&to=` | per account: inngående, debet, kredit, utgående |
+| Saldobalanse | `GET …/reports/saldobalanse?from=&to=` | per account: inngående, debet, kredit, utgående. Balance accounts (class 1–2) open on all earlier history; income-statement accounts (3–9) on the fiscal year so far, so zero on 1 January ([arsavslutning.md](arsavslutning.md#7-neste-år-starter-resultatkontoene-på-null)). A period across New Year is not refused, but an income account's closing then spans both years; the portal always asks per year |
 | Resultatregnskap | `GET …/reports/resultat?from=&to=` (optional `avdeling=`/`prosjekt=` — resultat per dimensjon, docs/dimensjoner.md) | NS 4102 classes 3–8 |
 | Balanse | `GET …/reports/balanse?date=` | NS 4102 classes 1–2 + udisponert resultat |
 

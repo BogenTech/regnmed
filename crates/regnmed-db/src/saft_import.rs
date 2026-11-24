@@ -11,10 +11,9 @@
 //! - A follow-up file must **continue exactly where the imported history
 //!   stopped**: balance accounts (class 1–2) must open at the booked
 //!   balance, and resultat accounts at the booked balance of the file's
-//!   own fiscal year (the exporting system resets them at year end,
-//!   while regnmed never posts year-end closings — udisponert resultat
-//!   is derived in reports). Any difference refuses the import with the
-//!   numbers named.
+//!   own fiscal year (they restart every year, in the exporting system
+//!   and in regnmed's own SAF-T export alike). Any difference refuses
+//!   the import with the numbers named.
 //! - Every imported file is recorded in `saft_import_log` with its
 //!   content hash: the same bytes can never be imported twice, and the
 //!   log is the audit trail of which files a migrated ledger was built
@@ -475,12 +474,12 @@ pub async fn saft_import_log(pool: &PgPool, company_id: Uuid) -> Result<Vec<Saft
 ///
 /// - **Balance accounts (class 1–2)** open at the booked all-time
 ///   balance — they carry over the year end unchanged.
-/// - **Income statement accounts (class 3–9)** are reset at year end by the
-///   exporting system, but regnmed never posts year-end closings
-///   (udisponert resultat is derived in reports), so their file opening
-///   is compared against the booked entries of the file's own fiscal
-///   year: zero at a year boundary, the year-to-date sum when a year is
-///   delivered in several files.
+/// - **Income statement accounts (class 3–9)** restart every fiscal year
+///   (`regnmed_core::statements::carries_over`, the rule regnmed's own
+///   export follows too), so their file opening is compared against the
+///   booked entries of the file's own fiscal year: zero at a year
+///   boundary, the year-to-date sum when a year is delivered in several
+///   files.
 ///
 /// Verified against a real Conta export (2026-08-06): balance accounts
 /// carry over to the øre, resultat accounts open at zero, and the
@@ -534,7 +533,7 @@ async fn reconcile_openings(
     let mut mismatches: Vec<String> = Vec::new();
     for number in numbers {
         let (total, in_year) = booked.get(number).copied().unwrap_or((0, 0));
-        let expected = if number.starts_with('1') || number.starts_with('2') {
+        let expected = if regnmed_core::statements::carries_over(number) {
             total
         } else {
             in_year

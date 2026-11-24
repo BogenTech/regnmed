@@ -231,6 +231,13 @@ pub async fn saft_export(
             ));
         }
     };
+    // Income-statement accounts restart every year, so a selection across
+    // New Year would mix two years in one closing balance.
+    if regnmed_core::fiscal_year::of(start) != regnmed_core::fiscal_year::of(end) {
+        return Err(ApiError::BadRequest(
+            "En SAF-T-fil gjelder ett regnskapsår. Velg en periode innenfor samme år.".into(),
+        ));
+    }
 
     // The exporting person is the natural header contact.
     let (first, last) = match (&query.contact_first, &query.contact_last) {

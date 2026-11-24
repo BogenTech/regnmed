@@ -141,9 +141,47 @@ skjemaet. Skjules uten `BILAG_BOKFOR` og `PERIODE_LAAS`.
 Testet i `regnmed-db/tests/arsavslutning.rs`: avslutning bak en senere
 lås (forhåndsvisning uten spor, endret resultat nektet, gjenåpning og
 gjenlåsing i historikken, kjeden verifisert), låst år uten
-administratorrett, og et år som ikke er over.
+administratorrett, et år som ikke er over, og neste års inngående saldo
+(avsnitt 7, sett feile).
 
-## 7. Ikke bygget
+**Bevist i testmiljøet 2026-11-24** gjennom portalen, for et syntetisk
+Tenor-AS: to bilag i 2025 (150 000 kr overskudd), oppgitt skattekostnad
+33 000 kr, avsluttet som bilag 2025-3. Resultatregnskapet viste
+årsresultat 117 000 kr, balansen 2050 117 000 og 2500 33 000 med
+udisponert 0, et nytt bilag datert 15.12.2025 ble nektet, og
+verifikasjonsrapportens kjede-, balanse- og låskontroller var grønne.
+
+## 7. Neste år starter resultatkontoene på null
+
+Saldobalansen, kontospesifikasjonen og SAF-T-eksporten gir
+**balansekontoene** (klasse 1–2) inngående saldo av all tidligere
+historikk, men **resultatkontoene** (klasse 3–9) bare av regnskapsåret
+så langt: null 1. januar. Regelen står ett sted
+(`regnmed_core::statements::carries_over`), og det er den samme som
+SAF-T-importen holder en oppfølgingsfil til — verifisert mot en ekte
+Conta-eksport ([migration.md](migration.md)). Før dette fikk 2026 med
+seg 2025s salg og kostnader som inngående saldo, både på skjermen og i
+SAF-T-filen.
+
+Når et tidligere år **ikke** er avsluttet, summerer inngående saldo seg
+derfor til det udisponerte resultatet i stedet for null — årets
+overskudd har ennå ingen konto på egenkapitalsiden. Saldobalansen sier
+det med tallet og peker til årsavslutningen. Etter avslutningen går
+summen i null.
+
+To følger av regelen:
+
+- **En SAF-T-fil gjelder ett regnskapsår.** Et utvalg over nyttår ville
+  gitt resultatkontoene en utgående saldo fra to år, så API-et og
+  CLI-en nekter det.
+- **En SAF-T-fil fra et år der fjoråret ikke er avsluttet har
+  åpningsbalanser som ikke går i null**, akkurat som Contas. regnmeds
+  egen import tar den som oppfølgingsfil etter fjorårets fil, men ikke
+  som første fil i en tom hovedbok — der må åpningsbalansen gå i null
+  ([migration.md](migration.md)). Avslutt fjoråret før eksporten, eller
+  eksporter begge årene.
+
+## 8. Ikke bygget
 
 Utsatt skatt, oppstillingsplanen etter rskl. §6-1/§6-1a/§6-2 (vår NS
 4102-gruppering er §3-1-presentasjonen) og notene — de to siste hører

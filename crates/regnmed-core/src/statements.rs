@@ -76,6 +76,15 @@ pub fn class_of(number: &str) -> Option<u32> {
     number.chars().next()?.to_digit(10)
 }
 
+/// Whether an account's balance carries over a year end. Balance accounts
+/// (classes 1–2) do. Income-statement accounts open every fiscal year at
+/// zero in the trial balance and in SAF-T, which is what the exporting
+/// systems do (a real Conta export, see `regnmed-db::saft_import`) and
+/// what makes last year's 3000 not show up as this year's opening.
+pub fn carries_over(number: &str) -> bool {
+    matches!(class_of(number), Some(1 | 2))
+}
+
 /// The presentation sign rule in ONE place: inntekter (class 3) and
 /// egenkapital/gjeld (class 2) read positive when negated; everything
 /// else is shown as booked. Used by the sections below and by budsjett
@@ -199,6 +208,16 @@ mod tests {
             number: number.into(),
             name: name.into(),
             balance_ore,
+        }
+    }
+
+    #[test]
+    fn only_balance_accounts_carry_over_the_year_end() {
+        for n in ["1920", "2050", "2500"] {
+            assert!(carries_over(n), "{n}");
+        }
+        for n in ["3000", "6300", "8300", ALLOCATION_ACCOUNT, "9000", ""] {
+            assert!(!carries_over(n), "{n}");
         }
     }
 

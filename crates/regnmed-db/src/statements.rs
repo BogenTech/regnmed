@@ -9,7 +9,7 @@
 //! keeps in step with the entries -- same answer, without walking the
 //! whole history.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use regnmed_core::statements::BalanceLine;
 use sqlx::{PgPool, Row};
@@ -26,30 +26,62 @@ pub struct TrialBalanceRow {
     pub closing_ore: i64,
 }
 
+/// Inngående saldo per account at `from`: everything before it for balance
+/// accounts, the fiscal year so far for income-statement accounts
+/// (`regnmed_core::statements::carries_over`). Read through the monthly
+/// totals (crate::ledger_totals), so the cost follows the number of
+/// accounts and months, not the size of the history.
+pub(crate) async fn opening_sums(
+    pool: &PgPool,
+    company_id: Uuid,
+    from: NaiveDate,
+) -> Result<Vec<crate::AccountSum>> {
+    let Some(day_before) = from.pred_opt() else {
+        return Ok(Vec::new());
+    };
+    let (year_start, _) = regnmed_core::fiscal_year::period(regnmed_core::fiscal_year::of(from))
+        .with_context(|| format!("fiscal year of {from} is out of range"))?;
+    let mut in_year: std::collections::HashMap<String, crate::AccountSum> = if year_start < from {
+        crate::account_sums(pool, company_id, Some(year_start), day_before)
+            .await?
+            .into_iter()
+            .map(|a| (a.number.clone(), a))
+            .collect()
+    } else {
+        Default::default()
+    };
+    Ok(crate::account_sums(pool, company_id, None, day_before)
+        .await?
+        .into_iter()
+        .filter_map(|a| {
+            if regnmed_core::statements::carries_over(&a.number) {
+                Some(a)
+            } else {
+                in_year.remove(&a.number)
+            }
+        })
+        .collect())
+}
+
 pub async fn trial_balance(
     pool: &PgPool,
     company_id: Uuid,
     from: NaiveDate,
     to: NaiveDate,
 ) -> Result<Vec<TrialBalanceRow>> {
-    // Opening = everything before the period. Both sums read through the
-    // monthly totals (crate::ledger_totals), so the cost follows the number
-    // of accounts and months, not the size of the history.
     let mut rows: std::collections::BTreeMap<String, TrialBalanceRow> = Default::default();
-    if let Some(day_before) = from.pred_opt() {
-        for a in crate::account_sums(pool, company_id, None, day_before).await? {
-            rows.insert(
-                a.number.clone(),
-                TrialBalanceRow {
-                    opening_ore: a.balance_ore(),
-                    debit_ore: 0,
-                    credit_ore: 0,
-                    closing_ore: a.balance_ore(),
-                    number: a.number,
-                    name: a.name,
-                },
-            );
-        }
+    for a in opening_sums(pool, company_id, from).await? {
+        rows.insert(
+            a.number.clone(),
+            TrialBalanceRow {
+                opening_ore: a.balance_ore(),
+                debit_ore: 0,
+                credit_ore: 0,
+                closing_ore: a.balance_ore(),
+                number: a.number,
+                name: a.name,
+            },
+        );
     }
     for a in crate::account_sums(pool, company_id, Some(from), to).await? {
         let row = rows.entry(a.number.clone()).or_insert(TrialBalanceRow {
@@ -228,14 +260,11 @@ pub async fn account_specification(
     // Inngående saldo per account. It used to be a lateral subquery, which
     // Postgres ran once PER ROW over the account's whole history: 20 s for
     // one month at 40 000 entries.
-    let opening: std::collections::HashMap<String, i64> = match from.pred_opt() {
-        Some(day_before) => crate::account_sums(pool, company_id, None, day_before)
-            .await?
-            .into_iter()
-            .map(|a| (a.number.clone(), a.balance_ore()))
-            .collect(),
-        None => Default::default(),
-    };
+    let opening: std::collections::HashMap<String, i64> = opening_sums(pool, company_id, from)
+        .await?
+        .into_iter()
+        .map(|a| (a.number.clone(), a.balance_ore()))
+        .collect();
     Ok(rows
         .iter()
         .map(|r| AccountPost {

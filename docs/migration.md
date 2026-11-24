@@ -47,13 +47,12 @@ konto before anything is written:
 
 - **Balance accounts (class 1–2)** must open at the booked all-time
   balance — they carry over the year end unchanged.
-- **Resultat accounts (class 3–9)** are reset at year end by the
-  exporting system, while regnmed never posts year-end closings
-  (udisponert resultat is derived in the balanse report). Their file
-  opening is therefore compared against the booked entries of the
-  file's **own fiscal year** (the `fiscal_year` seam): zero at a year
-  boundary, the year-to-date sum when one year arrives in several
-  files.
+- **Resultat accounts (class 3–9)** restart every fiscal year, in the
+  exporting system and in regnmed's own SAF-T export alike
+  (`regnmed_core::statements::carries_over`). Their file opening is
+  therefore compared against the booked entries of the file's **own
+  fiscal year** (the `fiscal_year` seam): zero at a year boundary, the
+  year-to-date sum when one year arrives in several files.
 
 Any difference refuses the import with each account and the exact øre
 difference named — the numbers are wrong or the files are out of order,

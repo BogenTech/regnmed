@@ -272,10 +272,13 @@ pub async fn post_voucher_in(
     if let Some(lock) = lock
         && draft.voucher_date <= lock
     {
+        // Every posting path hands this to the person who tried, so it is
+        // Norwegian like any other text a user reads.
         bail!(
-            "period is locked through {lock}: voucher dated {} cannot be posted — \
-             correct in an open period",
-            draft.voucher_date
+            "Perioden er låst til og med {}, så et bilag datert {} kan ikke føres. \
+             En rettelse føres i en åpen periode.",
+            crate::period::display_date(lock),
+            crate::period::display_date(draft.voucher_date)
         );
     }
 
