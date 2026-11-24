@@ -527,7 +527,7 @@ fn month_deviations(block: &serde_json::Value) -> Vec<serde_json::Value> {
                             json!({
                                 "id": a["id"],
                                 "navn": a["navn"],
-                                "detaljer": a["detaljer"],
+                                "detaljer": a["detaljer"].as_str().map(mask_national_ids),
                                 "alvorlighetsgrad": a["alvorlighetsgrad"],
                                 "arbeidsforhold_id": employment,
                             })
@@ -543,6 +543,31 @@ fn month_deviations(block: &serde_json::Value) -> Vec<serde_json::Value> {
     }
     let mut out = Vec::new();
     walk(&block["mottattPeriode"], None, &mut out);
+    out
+}
+
+/// Skatteetaten's free text can name the income recipient by national ID,
+/// which the payroll summary never shows. Masks every run of exactly 11
+/// digits, the shape of a fødselsnummer or D-nummer.
+fn mask_national_ids(text: &str) -> String {
+    fn flush(out: &mut String, digits: &mut String) {
+        out.push_str(if digits.len() == 11 {
+            "***********"
+        } else {
+            digits
+        });
+        digits.clear();
+    }
+    let (mut out, mut digits) = (String::with_capacity(text.len()), String::new());
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else {
+            flush(&mut out, &mut digits);
+            out.push(c);
+        }
+    }
+    flush(&mut out, &mut digits);
     out
 }
 

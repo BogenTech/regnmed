@@ -566,7 +566,7 @@ async fn an_avvik_on_another_month_is_shown_until_a_replacement_clears_it() {
             "arbeidsforhold": [{"arbeidsforholdId": employment, "avvik": [{
                 "id": "MAGNET_EDAG-108",
                 "navn": "Opplysninger om arbeidsforhold mangler.",
-                "detaljer": "Alle arbeidsforhold må rapporteres hver måned.",
+                "detaljer": "Arbeidsforhold for 26829398612 må rapporteres hver måned.",
                 "alvorlighetsgrad": "oeyeblikkelig",
             }]}],
         }]}]},
@@ -612,6 +612,10 @@ async fn an_avvik_on_another_month_is_shown_until_a_replacement_clears_it() {
             .to_string()
             .contains("26829398612"),
         "the national ID stays out of the summary"
+    );
+    assert_eq!(
+        avvik[0]["detaljer"],
+        "Arbeidsforhold for *********** må rapporteres hver måned."
     );
     let (_, payroll) = call(
         state,

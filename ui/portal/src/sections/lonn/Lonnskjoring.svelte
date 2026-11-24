@@ -10,8 +10,8 @@
 
   let { companyId, ansatte, kjoringer, maaneder = [], onMaaneder } = $props();
 
-  // Skatteetatens siste ord per måned. Et svar på én måned kan legge avvik
-  // på en annen, så dette følger selskapet og ikke den åpne kjøringen.
+  // Skatteetaten's latest word per month. An answer for one month can put
+  // an avvik on another, so this follows the company, not the open run.
   const medAvvik = $derived(maaneder.filter((m) => m.avvik.length));
   const maanedNavn = (periode) => {
     const [ar, maned] = periode.split("-");
@@ -306,11 +306,16 @@
               {/each}
             </ul>
             <p class="mt-1">
-              Rett det som mangler, og send {amelding.innsendinger.some(
-                (i) => i.status !== "ikke_levert",
-              )
-                ? "måneden som en erstatning"
-                : "a-meldingen for måneden"}.
+              {#if amelding.innsendinger.some((i) => i.status === "levert")}
+                Skatteetaten har ikke svart på den siste innsendingen ennå. Hent tilbakemeldingen før
+                du sender på nytt.
+              {:else}
+                Rett det som mangler, og send {amelding.innsendinger.some(
+                  (i) => i.status !== "ikke_levert",
+                )
+                  ? "måneden som en erstatning"
+                  : "a-meldingen for måneden"}.
+              {/if}
             </p>
           </div>
         {:else if maaned}
