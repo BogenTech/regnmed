@@ -547,9 +547,12 @@ async fn read(s: &Setup, id: &str) -> Value {
     body
 }
 
-/// The job runs in the background: wait until it has settled.
+/// The job runs in the background: wait until it has settled. A deadline
+/// in wall time, not a count of polls: on a loaded CI runner a run that
+/// takes a second locally took over ten.
 async fn settled(s: &Setup, id: &str) -> Value {
-    for _ in 0..200 {
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_secs(30) {
         // The job first: a filing read after it closed has the final flags.
         let busy = regnmed_db::vat_filing::job_open(&s.state.pool, s.company, id.parse().unwrap())
             .await
@@ -562,7 +565,18 @@ async fn settled(s: &Setup, id: &str) -> Value {
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    panic!("the filing never settled: {}", read(s, id).await);
+    let job: Vec<(String, i32)> =
+        sqlx::query_as("select status, attempts from job where company_id = $1 and dedup_key = $2")
+            .bind(s.company)
+            .bind(regnmed_db::vat_filing::dedup_key(id.parse().unwrap()))
+            .fetch_all(&s.state.pool)
+            .await
+            .unwrap();
+    panic!(
+        "the filing never settled in {:?} (job {job:?}): {}",
+        started.elapsed(),
+        read(s, id).await
+    );
 }
 
 async fn approved_and_settled(s: &Setup) -> (String, Value) {
