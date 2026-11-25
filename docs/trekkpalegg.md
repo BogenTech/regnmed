@@ -93,15 +93,59 @@ Reglene Skatteetaten selv skriver:
   `betalingsmottaker` er innkrevingsmyndighetens, felles for alle.
 - `skyldner` er den ansattes fødsels- eller D-nummer.
 
+### Reglene for arbeidsgiveren
+
+Lest 2026-11-25 i Skatteetatens veiledning [Om trekk i lønn hos
+ansatt](https://www.skatteetaten.no/bedrift-og-organisasjon/betaling-og-innkreving/tema/trekk-i-lonn-hos-ansatte/om/),
+[Betale trekk i lønn](https://www.skatteetaten.no/bedrift-og-organisasjon/betaling-og-innkreving/tema/trekk-i-lonn-hos-ansatte/betale/),
+[Utleggstrekk i a-meldingen](https://www.skatteetaten.no/bedrift-og-organisasjon/arbeidsgiver/a-meldingen/veiledning/utleggstrekk)
+(oppdatert 25.02.2026) og skattebetalingshåndboken 14-4.4 og 14-5.7.
+Håndboken sier selv at den ikke er oppdatert for innkrevingsloven fra
+1.1.2026; der den og veiledningen spriker, gjelder veiledningen.
+
+- **Samordnet trekk.** Fra 2026 har en ansatt **ett** samordnet
+  utleggstrekk. Når et samordnet trekk settes i gang, skal alle andre
+  trekk avsluttes. Påleggene fra API-et er samordnede. Trekk etter den
+  gamle ordningen kommer som brev og løper til arbeidsgiveren får
+  beskjed om å stoppe dem; de er utenfor regnmed, og merknaden i
+  forhåndsvisningen av lønnskjøringen gjelder fortsatt for dem.
+- **Grunnlaget for prosenten** er bruttolønnen, regnet på samme grunnlag
+  som forskuddstrekket. Naturalytelser og utgiftsgodtgjørelser holdes
+  utenfor. Trekkfri kjøregodtgjørelse og diett er derfor ikke med; den
+  trekkpliktige delen av en bilgodtgjørelse er med. Feriepenger er med,
+  og sommer- og desemberreglene for forskuddstrekket gjelder ikke for
+  utleggstrekk — i måneder med feriepenger eller halv skatt trekkes det
+  pålegget sier.
+- **Ikke nok å trekke i.** Arbeidsgiveren skal trekke så mye som mulig,
+  aldri mer enn pålegget. Er årsaken ikke synlig i a-meldingen (sykdom
+  og permisjon er det), skal arbeidsgiveren kontakte
+  innkrevingsmyndigheten.
+- **Frist.** Trekket betales til innkrevingsmyndigheten senest første
+  virkedag etter lønnsutbetalingen, med påleggets KID (én KID per
+  ansatt).
+- **Fratrådt.** For samordnet trekk er det nok at sluttdatoen meldes i
+  a-meldingen.
+- **Arbeidsgiveren er ikke part.** Størrelsen på trekket — også
+  hensynet til hva den ansatte trenger til livsopphold — er
+  innkrevingsmyndighetens avgjørelse. Arbeidsgiveren trekker det
+  pålegget sier.
+
 ### A-meldingen
 
 A-meldingen v2.3 (vendored i docs/amelding/) har `utleggstrekk` per
 inntektsmottaker — `beskrivelse`, `beloep` (hele kroner),
 `datoForUtleggstrekk` (valgfri) — og `sumUtleggstrekk` i
-betalingsinformasjonen. `beskrivelse` er fri tekst i skjemaet
-(`Utleggstrekkbeskrivelse` er en ubegrenset `xsd:string`); hva som skal
-stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
-**ikke sjekket ennå**.
+betalingsinformasjonen. Veiledningen sier:
+
+- Trekket rapporteres med beskrivelsen **`utleggstrekkSamordnet`**
+  (`utleggstrekkSkatt` er den gamle ordningens). Skjemaet har bare
+  `beskrivelse` som tekstfelt for dette (`Utleggstrekkbeskrivelse` er en
+  ubegrenset `xsd:string`), så det er der koden står — en slutning fra
+  skjemaet og veiledningen sammen, som testinnsendingen må bekrefte.
+- **Beløpet har minustegn.**
+- Datoen er lønnsutbetalingsdatoen.
+- «Sum utleggstrekk å betale» er summen av samordnede trekk og
+  skattetrekk i samme a-melding.
 
 ## 2. Flyten i regnmed
 
@@ -120,14 +164,17 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
    hvorfor et trekk var det det var.
 3. **Knytt til den ansatte** på `skyldner` mot fødselsnummeret i
    ansattregisteret. Et pålegg uten ansatt vises som et avvik i portalen;
-   det forsvinner ikke.
-4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen de
-   aktive påleggene, perioden som dekker utbetalingsdatoen, og beregner
-   trekket: prosent av grunnlaget (se «Brutto inntekt» i §3), eller
-   beløpet. Lønnskjøringen er én per måned (unik per selskap, år og
-   måned i `payroll_run`), så et månedsbeløp trekkes i sin helhet i den
-   ene kjøringen. Trekket reduserer
-   netto og vises i forhåndsvisningen og på lønnsslippen, med
+   det forsvinner ikke. Har den ansatte et nyere samordnet pålegg, er
+   det det som gjelder.
+4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen det
+   aktive pålegget og perioden som dekker utbetalingsdatoen, og beregner
+   trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
+   kjøringen — lønn, feriepenger og trekkpliktig del av
+   kjøregodtgjørelse — og aldri av trekkfri kjøregodtgjørelse, diett
+   eller naturalytelser. Et beløp trekkes som det står. Lønnskjøringen er
+   én per måned (unik per selskap, år og måned i `payroll_run`), så et
+   månedsbeløp trekkes i sin helhet i den ene kjøringen. Trekket
+   reduserer netto og vises i forhåndsvisningen og på lønnsslippen, med
    pålegg og versjon.
 5. **Bokfør** i samme bilag som lønnen: trekket krediteres på
    **2610 Utleggstrekk** med innkrevingsmyndigheten
@@ -138,8 +185,9 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
    med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
    (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
    første gang en kjøring trekker et pålegg, med navnet
-   «Utleggstrekk». Linjen får betalingsvilkår i
-   `payable_terms` med påleggets `kidnummer` og fristen for innbetaling.
+   «Utleggstrekk». Linjen får betalingsvilkår i `payable_terms` med
+   påleggets `kidnummer` og forfall **første virkedag etter
+   utbetalingsdatoen**.
 6. **Betal** fra betalingslisten. Den betaler bare åpne
    leverandørposter og godkjente utlegg (`regnmed-db::payments`,
    migrasjon 0086), og det er derfor trekket føres som en
@@ -147,25 +195,15 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
    betalingslisten må utvides, og oppgjøret lukker posten mot banken
    som for enhver annen leverandør. En gjeldskonto uten part ville
    aldri dukket opp der.
-7. **Rapporter** trekket i a-meldingen (`utleggstrekk` og
-   `sumUtleggstrekk`).
+7. **Rapporter** trekket i a-meldingen: `utleggstrekk` med
+   `utleggstrekkSamordnet`, negativt beløp og utbetalingsdatoen, og
+   `sumUtleggstrekk`.
 
 ## 3. Det som må avgjøres før koden skrives
 
-- **Flere pålegg som ikke får plass.** Har en ansatt flere pålegg og
-  netto ikke dekker alle, i hvilken rekkefølge de trekkes.
-- **«Brutto inntekt».** Om prosenten regnes av hele bruttoen i kjøringen
-  — med feriepenger — eller av lønnen alene, og om trekkfri
-  kjøregodtgjørelse og diett holdes utenfor.
-- **Frist for innbetaling.** Når trekket må være betalt til
-  innkrevingsmyndigheten. Står ikke i API-dokumentasjonen.
-- **A-meldingens `beskrivelse`.** Hvilken tekst feltet skal ha — for
-  eksempel saksnummeret — etter Skatteetatens veiledning; skjemaet
-  tillater hva som helst.
 - **Godkjenning.** Om et nytt pålegg skal virke fra neste kjøring uten
   videre, eller om en person i selskapet først skal se det. Pålegget er
   bindende for arbeidsgiveren, så trolig uten videre, men med varsel.
-- **Fratrådte.** Et pålegg på en som ikke lenger er ansatt.
 
 Avgjort:
 
@@ -178,7 +216,14 @@ Avgjort:
   ble trukket — i forhåndsvisningen og i kjøringens resultat. Kjøringen
   stopper ikke: lønnen skal ut, og forskuddstrekket går foran. Det som
   ble trukket, er det som bokføres og rapporteres i a-meldingen;
-  differansen føres ikke over til neste måned av regnmed.
+  differansen føres ikke over til neste måned av regnmed. Er årsaken
+  ikke synlig i a-meldingen, sier advarselen at selskapet må kontakte
+  innkrevingsmyndigheten. Dette er Skatteetatens egen regel («trekke så
+  mye som mulig», §1).
+- **Grunnlaget for prosenten, fristen, a-meldingens felt, flere pålegg
+  og fratrådte** (2026-11-25): avgjort av Skatteetatens regler i §1, ikke
+  av oss. Flere pålegg per ansatt finnes ikke i den samordnede ordningen,
+  og en fratrådt meldes i a-meldingen.
 
 ## 4. Før noe kan prøves mot Skatteetaten
 
