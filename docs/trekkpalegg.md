@@ -149,9 +149,15 @@ betalingsinformasjonen. Veiledningen sier:
 
 ## 2. Flyten i regnmed
 
-1. **Hent.** En jobb i arbeideren henter `GET /api/trekkpaalegg/v1` for
+1. **Hent.** En jobb i arbeideren henter **daglig**
+   `GET /api/trekkpaalegg/v1` for
    hvert selskap som har systembruker og har levert minst én a-melding
-   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Den
+   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Kravet
+   om en levert a-melding er API-ets, ikke vårt: et selskap som kommer
+   til regnmed med et løpende pålegg, får det ikke før etter første
+   a-melding herfra. Har selskapet aldri hentet med hell, sier derfor
+   forhåndsvisningen av kjøringen at eventuelle pålegg selskapet alt har,
+   ikke er med, og må trekkes og betales utenfor regnmed den måneden. Den
    henter side for side til en side kommer tilbake med færre enn
    `maksAntall` — én side kan ikke antas å være alt. Vannmerket flyttes
    til høyeste `sekvensnummer` i **samme transaksjon** som versjonene
@@ -171,12 +177,17 @@ betalingsinformasjonen. Veiledningen sier:
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
    kjøringen — lønn, feriepenger og trekkpliktig del av
    kjøregodtgjørelse — og aldri av trekkfri kjøregodtgjørelse, diett
-   eller naturalytelser. Et beløp trekkes som det står. Lønnskjøringen er
+   eller naturalytelser. Et beløp trekkes som det står. Trekket
+   **rundes ned til hele kroner**, slik forskuddstrekket gjør
+   (`regnmed-core::payroll`): a-meldingens `beloep` er hele kroner, og
+   det som bokføres, betales og rapporteres, skal være samme tall. Lønnskjøringen er
    én per måned (unik per selskap, år og måned i `payroll_run`), så et
    månedsbeløp trekkes i sin helhet i den ene kjøringen. Trekket
    reduserer netto og vises i forhåndsvisningen og på lønnsslippen, med
    pålegg og versjon.
-5. **Bokfør** i samme bilag som lønnen: trekket krediteres på
+5. **Bokfør** i samme bilag som lønnen, med **én linje per pålegg**
+   (lønnsbilaget er ellers samlet), siden hver har sin KID: trekket
+   krediteres på
    **2610 Utleggstrekk** med innkrevingsmyndigheten
    (`betalingsmottaker`, med `kontonummer` som bankkonto) som part, i
    stedet for på 2930 Skyldig lønn. 2610 er en egen konto under
@@ -215,13 +226,23 @@ Alle avgjørelsene forslaget ventet på er tatt:
      **før** kjøringen, i forhåndsvisningen, ikke bare som et varsel.
   2. Har et pålegg kommet eller endret seg etter forhåndsvisningen,
      nekter kjøringen til den er forhåndsvist på nytt — det som ble vist,
-     er det som kjøres.
+     er det som kjøres. Forhåndsvisningen lagrer ingenting, så
+     mekanismen er at den returnerer settet av (`trekkid`,
+     `trekkversjon`) den brukte, bokføringskallet sender settet tilbake,
+     og serveren nekter hvis settet den selv ville brukt er et annet.
   3. Kjøringen advarer når siste vellykkede henting er eldre enn tre
-     dager, siden den da kan trekke etter pålegg som er stoppet eller
-     erstattet.
-  4. Varselet og pålegget er synlige bare for dem med `LONN_LES`: gjeld
-     hos en ansatt er sensitive opplysninger, og selskapsadmin uten
-     lønnsrettigheter ser dem ikke.
+     dager — tre tapte daglige hentinger (steg 1) — siden den da kan
+     trekke etter pålegg som er stoppet eller erstattet. Har selskapet
+     aldri hentet, gjelder advarselen i steg 1.
+  4. Pålegget selv, varselet og koblingen til den ansatte er synlige
+     bare for dem med `LONN_LES`: gjeld hos en ansatt er sensitive
+     opplysninger. Bokføringen kan ikke skjules på samme måte: hvert
+     trekk er en egen åpen post på 2610 med påleggets KID (steg 5–6),
+     så den som kan lese hovedboken, leverandørreskontroen eller
+     betalingslisten — også rollen `les`, som ellers ikke ser lønn — ser
+     ett beløp per pålegg. Linjeteksten navngir derfor aldri den
+     ansatte («Utleggstrekk 07/2026»), og koblingen fra KID til person
+     finnes bare i trekkpåleggstabellen bak `LONN_LES`.
   5. Et pålegg virker ikke bakover: kommer det etter at månedens lønn
      er kjørt, trekkes det fra neste kjøring. Om Skatteetaten regner
      virkningstidspunktet fra mottak eller fra utbetalingsdato, er ikke
