@@ -1106,7 +1106,8 @@ Rekkefølgen er omtrent den de bør tas i.
    regnmed.** Portalen sier det samme i forhåndsvisningen av hver
    kjøring. Skatteetatens API for trekkpålegg går på samme
    systembrukerskinne som a-meldingen og krever at kunden har
-   rapportert gjennom regnmed minst én gang.
+   rapportert gjennom regnmed minst én gang. Forslaget står i
+   docs/trekkpalegg.md.
 3. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
