@@ -152,8 +152,8 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
 
 ## 3. Det som må avgjøres før koden skrives
 
-- **Trekk større enn netto.** Hva kjøringen skal gjøre når trekket er
-  større enn det som er igjen etter forskuddstrekk.
+- **Flere pålegg som ikke får plass.** Har en ansatt flere pålegg og
+  netto ikke dekker alle, i hvilken rekkefølge de trekkes.
 - **«Brutto inntekt».** Om prosenten regnes av hele bruttoen i kjøringen
   — med feriepenger — eller av lønnen alene, og om trekkfri
   kjøregodtgjørelse og diett holdes utenfor.
@@ -172,6 +172,13 @@ Avgjort:
 - **Gjeldskontoen** (2026-11-25): en egen konto, 2610 Utleggstrekk,
   framfor 2400 Leverandørgjeld, så trekket er synlig for seg i balansen
   (steg 5).
+- **Trekk større enn netto** (2026-11-25): kjøringen trekker det som er
+  igjen etter forskuddstrekket, aldri mer, så netto blir null og aldri
+  negativ, og den **advarer** med påleggets beløp og det som faktisk
+  ble trukket — i forhåndsvisningen og i kjøringens resultat. Kjøringen
+  stopper ikke: lønnen skal ut, og forskuddstrekket går foran. Det som
+  ble trukket, er det som bokføres og rapporteres i a-meldingen;
+  differansen føres ikke over til neste måned av regnmed.
 
 ## 4. Før noe kan prøves mot Skatteetaten
 
