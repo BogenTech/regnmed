@@ -183,11 +183,14 @@ impl S3 {
     /// object storage answers an occasional 504 for an object that is
     /// there (seen 2026-11-08); a 404 is not retried — that object is gone.
     ///
-    /// It also sits on the odd GET for many seconds before answering
-    /// (2.6-17 s seen in prod, 2026-11-09), and the stall belongs to the
-    /// OBJECT: abandoning after 3 s and resending (v0.8.3) met the same
-    /// stall five times running and failed a read that waiting would have
-    /// finished. So an attempt waits out the client's 30 s.
+    /// It also sits on about one GET in 25 for 3-18 s before sending
+    /// headers, and the stall belongs to the REQUEST, not the object: the
+    /// same object answers at once the next time (measured 2026-11-25), and
+    /// a GET that timed out after 30 s answered its retry in 3 s. So a GET
+    /// with no answer after `HEDGE` gets a second, identical request beside
+    /// it and the first to succeed wins. The first is never abandoned —
+    /// v0.8.3 gave up after 3 s and resent, and five resends in a row
+    /// stalled — so a hedged GET is never slower than an unhedged one.
     async fn send(
         &self,
         method: &str,
@@ -195,66 +198,115 @@ impl S3 {
         payload_hash: &str,
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
+        use futures_util::FutureExt;
         const ATTEMPTS: u32 = 5;
-        const SLOW: std::time::Duration = std::time::Duration::from_secs(2);
+        const HEDGE: std::time::Duration = std::time::Duration::from_millis(1500);
         let mut last = String::new();
-        for attempt in 0..ATTEMPTS {
-            if attempt > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(200 << attempt)).await;
+        for attempt in 1..=ATTEMPTS {
+            if attempt > 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(200 << (attempt - 1))).await;
             }
-            // Signed per attempt: the signature carries the time.
-            let url = format!("{}{path}", self.endpoint);
-            let mut req = match body {
-                Some(bytes) => self.client.put(url).body(bytes.to_vec()),
-                None => self.client.get(url),
-            };
-            for (k, v) in self.signed_headers(method, path, payload_hash) {
-                req = req.header(k, v);
-            }
-            // Every failed or slow attempt is logged with its timing: a
-            // retry used to be silent, so a 48 s audit report in prod
-            // (2026-11-09) showed nothing but its total.
-            let started = std::time::Instant::now();
-            let outcome = req.send().await.map_err(anyhow::Error::from);
-            let headers_ms = started.elapsed().as_millis();
-            let note = |what: &str| {
-                eprintln!(
-                    "object store {method} {path} attempt {}: {what}, headers after {headers_ms} ms, {} ms in all",
-                    attempt + 1,
-                    started.elapsed().as_millis()
-                )
+            let first = self.request(
+                method,
+                path,
+                payload_hash,
+                body,
+                format!("attempt {attempt}"),
+            );
+            // Only GETs: a PUT would upload its whole body twice.
+            let outcome = if body.is_none() {
+                let second = async {
+                    tokio::time::sleep(HEDGE).await;
+                    eprintln!(
+                        "object store {method} {path} attempt {attempt}: no answer after {} ms, sending a second request",
+                        HEDGE.as_millis()
+                    );
+                    self.request(
+                        method,
+                        path,
+                        payload_hash,
+                        None,
+                        format!("attempt {attempt} (hedge)"),
+                    )
+                    .await
+                };
+                futures_util::future::select_ok([first.boxed(), second.boxed()])
+                    .await
+                    .map(|(bytes, _)| bytes)
+            } else {
+                first.await
             };
             match outcome {
-                Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                    Ok(bytes) => {
-                        if started.elapsed() > SLOW {
-                            note(&format!("slow, {} bytes", bytes.len()));
-                        }
-                        return Ok(bytes.to_vec());
-                    }
-                    Err(e) => {
-                        last = format!("reading the body: {:#}", anyhow::Error::from(e));
-                        note(&last);
-                    }
-                },
-                Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
-                    bail!("object store {method} {path}: 404 — the object is missing")
-                }
-                Ok(resp)
-                    if resp.status().is_server_error()
-                        || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS =>
-                {
-                    last = resp.status().to_string();
-                    note(&last);
-                }
-                Ok(resp) => bail!("object store {method} {path}: {}", resp.status()),
-                Err(e) => {
-                    last = format!("{e:#}");
-                    note(&last);
-                }
+                Ok(bytes) => return Ok(bytes),
+                Err(Failure::Final(e)) => return Err(e),
+                Err(Failure::Retry(why)) => last = why,
             }
         }
         bail!("object store {method} {path}: unavailable after {ATTEMPTS} attempts ({last})")
+    }
+
+    /// One signed request. Signed per request: the signature carries the
+    /// time. Every failed or slow request is logged with its timing: a retry
+    /// used to be silent, so a 48 s audit report in prod (2026-11-09)
+    /// showed nothing but its total.
+    async fn request(
+        &self,
+        method: &str,
+        path: &str,
+        payload_hash: &str,
+        body: Option<&[u8]>,
+        label: String,
+    ) -> Result<Vec<u8>, Failure> {
+        const SLOW: std::time::Duration = std::time::Duration::from_secs(2);
+        let url = format!("{}{path}", self.endpoint);
+        let mut req = match body {
+            Some(bytes) => self.client.put(url).body(bytes.to_vec()),
+            None => self.client.get(url),
+        };
+        for (k, v) in self.signed_headers(method, path, payload_hash) {
+            req = req.header(k, v);
+        }
+        let started = std::time::Instant::now();
+        let outcome = req.send().await.map_err(anyhow::Error::from);
+        let headers_ms = started.elapsed().as_millis();
+        let note = |what: &str| {
+            eprintln!(
+                "object store {method} {path} {label}: {what}, headers after {headers_ms} ms, {} ms in all",
+                started.elapsed().as_millis()
+            )
+        };
+        let retry = |why: String| {
+            note(&why);
+            Failure::Retry(why)
+        };
+        match outcome {
+            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                Ok(bytes) => {
+                    if started.elapsed() > SLOW {
+                        note(&format!("slow, {} bytes", bytes.len()));
+                    }
+                    Ok(bytes.to_vec())
+                }
+                Err(e) => Err(retry(format!(
+                    "reading the body: {:#}",
+                    anyhow::Error::from(e)
+                ))),
+            },
+            Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => Err(Failure::Final(
+                anyhow::anyhow!("object store {method} {path}: 404 — the object is missing"),
+            )),
+            Ok(resp)
+                if resp.status().is_server_error()
+                    || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS =>
+            {
+                Err(retry(resp.status().to_string()))
+            }
+            Ok(resp) => Err(Failure::Final(anyhow::anyhow!(
+                "object store {method} {path}: {}",
+                resp.status()
+            ))),
+            Err(e) => Err(retry(format!("{e:#}"))),
+        }
     }
 
     fn signed_headers(
@@ -290,6 +342,12 @@ impl S3 {
         out.push(("authorization".to_string(), auth));
         out
     }
+}
+
+/// Why one request failed: worth another attempt, or not.
+enum Failure {
+    Retry(String),
+    Final(anyhow::Error),
 }
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -460,6 +518,62 @@ mod tests {
         );
         assert!(blobs.load(Some(b"endret".to_vec()), &hash).await.is_err());
         assert!(blobs.load(None, &hash).await.is_err());
+    }
+
+    /// A local stand-in for the store that answers every GET with "hello",
+    /// the first one only after a minute. Returns the store and a count of
+    /// the requests it received.
+    async fn fake_store(stall_first: bool) -> (S3, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = count.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let n = seen.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    if stall_first && n == 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    }
+                    let _ = sock
+                        .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nhello")
+                        .await;
+                });
+            }
+        });
+        let s3 = S3 {
+            client: reqwest::Client::new(),
+            endpoint: format!("http://{addr}"),
+            bucket: "b".into(),
+            region: "r".into(),
+            prefix: "p/".into(),
+            access_key: "k".into(),
+            secret_key: "s".into(),
+        };
+        (s3, count)
+    }
+
+    #[tokio::test]
+    async fn a_stalled_get_is_answered_by_a_second_request() {
+        let (s3, count) = fake_store(true).await;
+        let started = std::time::Instant::now();
+        assert_eq!(s3.get(&[0; 32]).await.unwrap(), b"hello");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// A store that answers at once gets one request, not two.
+    #[tokio::test]
+    async fn a_prompt_get_sends_one_request() {
+        let (s3, count) = fake_store(false).await;
+        assert_eq!(s3.get(&[0; 32]).await.unwrap(), b"hello");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     /// Round trip against a real object store, only when one is configured

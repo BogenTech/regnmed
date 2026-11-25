@@ -71,14 +71,27 @@ nytt: da er objektet borte, og det meldes som det.
 Hetzner holder også en og annen GET i mange sekunder før den svarer:
 av 65 vedlegg i prods revisjonsrapport kom 62 straks, mens tre små
 (15–54 KB) ventet 2,6, 5,5 og 17 s på svarhodene (2026-11-09, målt
-etter at nett og DNS var utelukket). Stoppet hører til OBJEKTET, ikke
-forsøket: v0.8.3 forlot en GET uten svarhoder etter 3 s og sendte den på
-nytt, og møtte samme stopp fem ganger på rad — revisjonsrapporten meldte
-da et vedlegg som feilet som ikke var endret, bare tregt. Rullet tilbake
-i v0.8.4: hvert forsøk venter klientens 30 s. Hvert feilet forsøk, og
-hvert vellykket som tok over 2 s, logges med tidene sine, og
-revisjonsrapporten viser hele feilkjeden, så «utilgjengelig» og «endret»
-aldri leses likt.
+etter at nett og DNS var utelukket). v0.8.3 forlot en GET uten svarhoder
+etter 3 s og sendte den på nytt, og møtte samme stopp fem ganger på rad —
+revisjonsrapporten meldte da et vedlegg som feilet som ikke var endret,
+bare tregt. Rullet tilbake i v0.8.4: hvert forsøk venter klientens 30 s.
+
+Konklusjonen den gang — at stoppet hører til OBJEKTET — holdt ikke.
+Målt 2026-11-25 (75 GET-er, alle 25 testobjekter tre ganger): tre ventet
+3,5–7 s på første byte, tilkoblingen tok 18 ms hver gang, og et objekt
+som stoppet i tredje runde svarte straks i de to første. I prod stoppet
+hver backup-sjekk på andre objekter enn forrige, og en GET som nådde
+30 s svarte på 3 s ved neste forsøk. Stoppet hører altså til
+FORESPØRSELEN. Derfor sikres GET-er nå med en parallell forespørsel: har
+en GET ikke fått svar etter 1,5 s, sendes en identisk GET ved siden av,
+og den første som lykkes vinner. Den første forlates aldri (det var
+v0.8.3s feil), så en sikret GET er aldri tregere enn en usikret. PUT
+sikres ikke — den ville lastet opp hele innholdet to ganger.
+
+Hvert feilet forsøk, hver parallell forespørsel («sending a second
+request») og hvert vellykket kall som tok over 2 s logges med tidene
+sine, og revisjonsrapporten viser hele feilkjeden, så «utilgjengelig» og
+«endret» aldri leses likt.
 
 ## Versjonering
 
