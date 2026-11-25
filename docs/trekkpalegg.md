@@ -199,14 +199,33 @@ betalingsinformasjonen. Veiledningen sier:
    `utleggstrekkSamordnet`, negativt beløp og utbetalingsdatoen, og
    `sumUtleggstrekk`.
 
-## 3. Det som må avgjøres før koden skrives
+## 3. Avgjørelser
 
-- **Godkjenning.** Om et nytt pålegg skal virke fra neste kjøring uten
-  videre, eller om en person i selskapet først skal se det. Pålegget er
-  bindende for arbeidsgiveren, så trolig uten videre, men med varsel.
+Alle avgjørelsene forslaget ventet på er tatt:
 
-Avgjort:
-
+- **Godkjenning** (2026-11-25): et nytt eller endret pålegg virker fra
+  **neste lønnskjøring uten godkjenning**, og de som har `LONN_LES`
+  varsles. Pålegget er bindende, og et trekk som ikke gjennomføres er
+  arbeidsgiverens ansvar (innledningen), så en godkjenning kunne bare
+  utsatt trekket, aldri stoppet det — og utsettelsen ville vært
+  selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
+  erstattet pålegg slutter å trekkes uten at noen må handle. Fem ting
+  holder automatikken trygg:
+  1. Et pålegg som ikke kan knyttes til en ansatt (steg 3), vises
+     **før** kjøringen, i forhåndsvisningen, ikke bare som et varsel.
+  2. Har et pålegg kommet eller endret seg etter forhåndsvisningen,
+     nekter kjøringen til den er forhåndsvist på nytt — det som ble vist,
+     er det som kjøres.
+  3. Kjøringen advarer når siste vellykkede henting er eldre enn tre
+     dager, siden den da kan trekke etter pålegg som er stoppet eller
+     erstattet.
+  4. Varselet og pålegget er synlige bare for dem med `LONN_LES`: gjeld
+     hos en ansatt er sensitive opplysninger, og selskapsadmin uten
+     lønnsrettigheter ser dem ikke.
+  5. Et pålegg virker ikke bakover: kommer det etter at månedens lønn
+     er kjørt, trekkes det fra neste kjøring. Om Skatteetaten regner
+     virkningstidspunktet fra mottak eller fra utbetalingsdato, er ikke
+     funnet i veiledningen og må bekreftes i testmiljøet.
 - **Gjeldskontoen** (2026-11-25): en egen konto, 2610 Utleggstrekk,
   framfor 2400 Leverandørgjeld, så trekket er synlig for seg i balansen
   (steg 5).
