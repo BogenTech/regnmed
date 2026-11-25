@@ -1098,7 +1098,16 @@ Rekkefølgen er omtrent den de bør tas i.
    den er på plass er dette internt regnskap, ikke rapportering —
    **selskapet må fortsatt levere a-melding på annet vis.** Dette er
    den viktigste mangelen.
-2. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+2. **Trekkpålegg** (#334). Et trekkpålegg fra innkrevingsmyndigheten
+   eller namsmannen pålegger arbeidsgiveren å holde tilbake en del av
+   lønnen og betale den til kreditor. Kjøringen kjenner dem ikke: den
+   utbetaler hele netto, og ingen påleggsopplysninger hentes fra
+   Skatteetaten. **Har en ansatt trekkpålegg, må trekket gjøres utenom
+   regnmed.** Portalen sier det samme i forhåndsvisningen av hver
+   kjøring. Skatteetatens API for trekkpålegg går på samme
+   systembrukerskinne som a-meldingen og krever at kunden har
+   rapportert gjennom regnmed minst én gang.
+3. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
 ## Timelønn fra timeføringen
