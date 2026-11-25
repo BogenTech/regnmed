@@ -98,17 +98,23 @@ Reglene Skatteetaten selv skriver:
 A-meldingen v2.3 (vendored i docs/amelding/) har `utleggstrekk` per
 inntektsmottaker — `beskrivelse`, `beloep` (hele kroner),
 `datoForUtleggstrekk` (valgfri) — og `sumUtleggstrekk` i
-betalingsinformasjonen. Hvilke verdier `beskrivelse` kan ha, står i
-a-meldingens kodeliste og er **ikke sjekket ennå**.
+betalingsinformasjonen. `beskrivelse` er fri tekst i skjemaet
+(`Utleggstrekkbeskrivelse` er en ubegrenset `xsd:string`); hva som skal
+stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
+**ikke sjekket ennå**.
 
 ## 2. Flyten i regnmed
 
 1. **Hent.** En jobb i arbeideren henter `GET /api/trekkpaalegg/v1` for
    hvert selskap som har systembruker og har levert minst én a-melding
-   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Samme
-   kall kan startes fra portalen («Hent trekkpålegg»). Som for
-   skattekortet skrives forespørselen **før** kallet, og en feil lagres
-   med koden.
+   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Den
+   henter side for side til en side kommer tilbake med færre enn
+   `maksAntall` — én side kan ikke antas å være alt. Vannmerket flyttes
+   til høyeste `sekvensnummer` i **samme transaksjon** som versjonene
+   lagres, så et kall som feiler halvveis hentes på nytt neste gang i
+   stedet for å hoppes over. Samme kall kan startes fra portalen («Hent
+   trekkpålegg»). Som for skattekortet skrives forespørselen **før**
+   kallet, og en feil lagres med koden.
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -117,19 +123,33 @@ a-meldingens kodeliste og er **ikke sjekket ennå**.
    det forsvinner ikke.
 4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen de
    aktive påleggene, perioden som dekker utbetalingsdatoen, og beregner
-   trekket: prosent av bruttolønnen, eller beløpet. Trekket reduserer
+   trekket: prosent av grunnlaget (se «Brutto inntekt» i §3), eller
+   beløpet. Lønnskjøringen er én per måned (unik per selskap, år og
+   måned i `payroll_run`), så et månedsbeløp trekkes i sin helhet i den
+   ene kjøringen. Trekket reduserer
    netto og vises i forhåndsvisningen og på lønnsslippen, med
    pålegg og versjon.
-5. **Bokfør** i samme bilag som lønnen: kredit på en gjeldskonto for
-   utleggstrekk i stedet for 2930 Skyldig lønn.
-6. **Betal** fra betalingslisten til `kontonummer` med `kidnummer`, så
-   gjelden går i null mot banken som annen gjeld.
+5. **Bokfør** i samme bilag som lønnen: trekket krediteres i
+   **leverandørreskontroen** med innkrevingsmyndigheten
+   (`betalingsmottaker`, med `kontonummer` som bankkonto) som part, i
+   stedet for på 2930 Skyldig lønn. Linjen får betalingsvilkår i
+   `payable_terms` med påleggets `kidnummer` og fristen for innbetaling.
+6. **Betal** fra betalingslisten. Den betaler bare åpne
+   leverandørposter og godkjente utlegg (`regnmed-db::payments`,
+   migrasjon 0086), og det er derfor trekket føres som en
+   leverandørpost: da står det i listen med KID og frist uten at
+   betalingslisten må utvides, og oppgjøret lukker posten mot banken
+   som for enhver annen leverandør. En gjeldskonto uten part ville
+   aldri dukket opp der.
 7. **Rapporter** trekket i a-meldingen (`utleggstrekk` og
    `sumUtleggstrekk`).
 
 ## 3. Det som må avgjøres før koden skrives
 
-- **Gjeldskontoen.** Hvilken konto i 2xxx trekket føres på.
+- **Gjeldskontoen.** Om trekket føres på 2400 Leverandørgjeld sammen
+  med annen leverandørgjeld, eller på en egen reskontroflagget konto i
+  2xxx som holder trekket synlig for seg i balansen. Begge virker med
+  betalingslisten (steg 6).
 - **Trekk større enn netto.** Hva kjøringen skal gjøre når trekket er
   større enn det som er igjen etter forskuddstrekk.
 - **«Brutto inntekt».** Om prosenten regnes av hele bruttoen i kjøringen
@@ -137,7 +157,9 @@ a-meldingens kodeliste og er **ikke sjekket ennå**.
   kjøregodtgjørelse og diett holdes utenfor.
 - **Frist for innbetaling.** Når trekket må være betalt til
   innkrevingsmyndigheten. Står ikke i API-dokumentasjonen.
-- **A-meldingens `beskrivelse`.** Hvilken kodeverdi som brukes.
+- **A-meldingens `beskrivelse`.** Hvilken tekst feltet skal ha — for
+  eksempel saksnummeret — etter Skatteetatens veiledning; skjemaet
+  tillater hva som helst.
 - **Godkjenning.** Om et nytt pålegg skal virke fra neste kjøring uten
   videre, eller om en person i selskapet først skal se det. Pålegget er
   bindende for arbeidsgiveren, så trolig uten videre, men med varsel.
