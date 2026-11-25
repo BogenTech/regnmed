@@ -363,6 +363,10 @@
             </ul>
           </div>
         {/if}
+        <p class="text-xs opacity-70 mt-3">
+          Trekkpålegg fra Skatteetaten eller namsmannen trekkes ikke ennå, så netto utbetales i sin
+          helhet. Har en ansatt trekkpålegg, må trekket gjøres utenom regnmed.
+        </p>
         <div class="flex flex-wrap gap-2 mt-3">
           <button class="btn btn-primary btn-sm" disabled={arbeider} onclick={bokfor}>
             Bokfør lønn for {periode}
@@ -371,10 +375,6 @@
         </div>
         <p class="text-xs opacity-70 mt-2">
           Et bokført bilag kan ikke endres — en retting er et reverserende bilag og en ny kjøring.
-        </p>
-        <p class="text-xs opacity-70 mt-1">
-          Trekkpålegg fra Skatteetaten eller namsmannen trekkes ikke ennå, så netto utbetales i sin
-          helhet. Har en ansatt trekkpålegg, må trekket gjøres utenom regnmed.
         </p>
       </section>
     {:else}
