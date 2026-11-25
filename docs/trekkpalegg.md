@@ -152,12 +152,7 @@ betalingsinformasjonen. Veiledningen sier:
 1. **Hent.** En jobb i arbeideren henter **daglig**
    `GET /api/trekkpaalegg/v1` for
    hvert selskap som har systembruker og har levert minst én a-melding
-   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Kravet
-   om en levert a-melding er API-ets, ikke vårt: et selskap som kommer
-   til regnmed med et løpende pålegg, får det ikke før etter første
-   a-melding herfra. Har selskapet aldri hentet med hell, sier derfor
-   forhåndsvisningen av kjøringen at eventuelle pålegg selskapet alt har,
-   ikke er med, og må trekkes og betales utenfor regnmed den måneden. Den
+   gjennom regnmed, med `fraSekvensnummer` fra forrige vannmerke. Jobben
    henter side for side til en side kommer tilbake med færre enn
    `maksAntall` — én side kan ikke antas å være alt. Vannmerket flyttes
    til høyeste `sekvensnummer` i **samme transaksjon** som versjonene
@@ -165,6 +160,13 @@ betalingsinformasjonen. Veiledningen sier:
    stedet for å hoppes over. Samme kall kan startes fra portalen («Hent
    trekkpålegg»). Som for skattekortet skrives forespørselen **før**
    kallet, og en feil lagres med koden.
+
+   Kravet om en levert a-melding er API-ets, ikke vårt: et selskap som
+   kommer til regnmed med et løpende pålegg, får det ikke før etter
+   første a-melding herfra. Har selskapet aldri hentet med hell, sier
+   derfor forhåndsvisningen av kjøringen at eventuelle pålegg selskapet
+   alt har, ikke er med, og må trekkes og betales utenfor regnmed den
+   måneden.
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -177,11 +179,14 @@ betalingsinformasjonen. Veiledningen sier:
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
    kjøringen — lønn, feriepenger og trekkpliktig del av
    kjøregodtgjørelse — og aldri av trekkfri kjøregodtgjørelse, diett
-   eller naturalytelser. Et beløp trekkes som det står. Trekket
-   **rundes ned til hele kroner**, slik forskuddstrekket gjør
-   (`regnmed-core::payroll`): a-meldingens `beloep` er hele kroner, og
-   det som bokføres, betales og rapporteres, skal være samme tall. Lønnskjøringen er
-   én per måned (unik per selskap, år og måned i `payroll_run`), så et
+   eller naturalytelser. Et beløp trekkes som det står — men **enheten
+   til `trekkbeloep` er ikke dokumentert** (eksempelet sier 8000 uten
+   enhet), og regnmed regner i øre, så en feil antakelse er en feil på
+   100 ganger som taket og avrundingen ville skjult. Enheten leses fra
+   OpenAPI-spesifikasjonen før koden skrives (§4). Trekket **rundes ned
+   til hele kroner**, slik forskuddstrekket gjør (`regnmed-core::payroll`):
+   a-meldingens `beloep` er hele kroner, og det som bokføres, betales og
+   rapporteres, skal være samme tall. Lønnskjøringen er én per måned (unik per selskap, år og måned i `payroll_run`), så et
    månedsbeløp trekkes i sin helhet i den ene kjøringen. Trekket
    reduserer netto og vises i forhåndsvisningen og på lønnsslippen, med
    pålegg og versjon.
@@ -196,9 +201,18 @@ betalingsinformasjonen. Veiledningen sier:
    med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
    (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
    første gang en kjøring trekker et pålegg, med navnet
-   «Utleggstrekk». Linjen får betalingsvilkår i `payable_terms` med
-   påleggets `kidnummer` og forfall **første virkedag etter
-   utbetalingsdatoen**.
+   «Utleggstrekk». **Finnes 2610 alt** — et selskap som har importert
+   kontoplanen, kan bruke nummeret til noe annet — brukes den bare hvis
+   den alt er leverandørreskontro. Ellers flagges den ikke om (historikken
+   har posteringer uten part); forhåndsvisningen sier fra før kjøringen,
+   og selskapet velger en annen konto for utleggstrekk i lønnsinnstillingene
+   (standard 2610), som må være en leverandørreskontrokonto. Kjøringen
+   nekter bare når en ansatt faktisk har et pålegg å trekke. Linjen får
+   betalingsvilkår i `payable_terms` med påleggets `kidnummer` og
+   **forfall på utbetalingsdatoen**. Fristen er første virkedag etter
+   (§1), men regnmed har ingen helligdagskalender, og ukedager alene
+   tar feil rundt påske, jul og 17. mai. Forfall på utbetalingsdatoen er
+   aldri for sent og krever ingen kalender.
 6. **Betal** fra betalingslisten. Den betaler bare åpne
    leverandørposter og godkjente utlegg (`regnmed-db::payments`,
    migrasjon 0086), og det er derfor trekket føres som en
@@ -251,8 +265,12 @@ Alle avgjørelsene forslaget ventet på er tatt:
   framfor 2400 Leverandørgjeld, så trekket er synlig for seg i balansen
   (steg 5).
 - **Trekk større enn netto** (2026-11-25): kjøringen trekker det som er
-  igjen etter forskuddstrekket, aldri mer, så netto blir null og aldri
-  negativ, og den **advarer** med påleggets beløp og det som faktisk
+  igjen etter forskuddstrekket **av lønnen**, aldri mer, og den
+  ansattes trekkfrie kjøregodtgjørelse og diett røres ikke — de er
+  utgiftsgodtgjørelser som holdes utenfor (§1), selv om de utbetales
+  med lønnen og regnes inn i `net_ore`. Taket er altså netto minus
+  trekkfrie godtgjørelser, og den delen av netto blir null, aldri
+  negativ. Kjøringen **advarer** med påleggets beløp og det som faktisk
   ble trukket — i forhåndsvisningen og i kjøringens resultat. Kjøringen
   stopper ikke: lønnen skal ut, og forskuddstrekket går foran. Det som
   ble trukket, er det som bokføres og rapporteres i a-meldingen;
@@ -275,6 +293,8 @@ Alle avgjørelsene forslaget ventet på er tatt:
    godkjent på nytt med den.
 3. Skatteetaten har lagt inn trekkpålegg i testmiljøet for det
    syntetiske selskapet.
+4. OpenAPI-spesifikasjonen er lest, og enheten til `trekkbeloep` (kroner
+   eller øre) står i dette dokumentet med kilde.
 
 ## 5. Ferdig når
 
