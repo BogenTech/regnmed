@@ -106,7 +106,7 @@ jobs:
           OCR_MODELS_DIR: ${{ github.workspace }}/target/ocr-models
       # The rules an access point rejects on (docs/efaktura.md §3.4). Java
       # lives here and never in the product. Cached by the pinned checksums.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
