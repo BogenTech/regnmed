@@ -129,10 +129,16 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
    ene kjøringen. Trekket reduserer
    netto og vises i forhåndsvisningen og på lønnsslippen, med
    pålegg og versjon.
-5. **Bokfør** i samme bilag som lønnen: trekket krediteres i
-   **leverandørreskontroen** med innkrevingsmyndigheten
+5. **Bokfør** i samme bilag som lønnen: trekket krediteres på
+   **2610 Utleggstrekk** med innkrevingsmyndigheten
    (`betalingsmottaker`, med `kontonummer` som bankkonto) som part, i
-   stedet for på 2930 Skyldig lønn. Linjen får betalingsvilkår i
+   stedet for på 2930 Skyldig lønn. 2610 er en egen konto under
+   standardkontoen 2600 «Skattetrekk og andre trekk», så trekket står
+   for seg i balansen og ikke blandes med forskuddstrekket på 2600 eller
+   med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
+   (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
+   første gang en kjøring trekker et pålegg, med navnet
+   «Utleggstrekk». Linjen får betalingsvilkår i
    `payable_terms` med påleggets `kidnummer` og fristen for innbetaling.
 6. **Betal** fra betalingslisten. Den betaler bare åpne
    leverandørposter og godkjente utlegg (`regnmed-db::payments`,
@@ -146,10 +152,6 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
 
 ## 3. Det som må avgjøres før koden skrives
 
-- **Gjeldskontoen.** Om trekket føres på 2400 Leverandørgjeld sammen
-  med annen leverandørgjeld, eller på en egen reskontroflagget konto i
-  2xxx som holder trekket synlig for seg i balansen. Begge virker med
-  betalingslisten (steg 6).
 - **Trekk større enn netto.** Hva kjøringen skal gjøre når trekket er
   større enn det som er igjen etter forskuddstrekk.
 - **«Brutto inntekt».** Om prosenten regnes av hele bruttoen i kjøringen
@@ -164,6 +166,12 @@ stå der, må komme fra Skatteetatens veiledning til a-meldingen og er
   videre, eller om en person i selskapet først skal se det. Pålegget er
   bindende for arbeidsgiveren, så trolig uten videre, men med varsel.
 - **Fratrådte.** Et pålegg på en som ikke lenger er ansatt.
+
+Avgjort:
+
+- **Gjeldskontoen** (2026-11-25): en egen konto, 2610 Utleggstrekk,
+  framfor 2400 Leverandørgjeld, så trekket er synlig for seg i balansen
+  (steg 5).
 
 ## 4. Før noe kan prøves mot Skatteetaten
 
