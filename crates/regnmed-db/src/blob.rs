@@ -198,7 +198,7 @@ impl S3 {
         payload_hash: &str,
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
-        use futures_util::FutureExt;
+        use std::sync::atomic::{AtomicBool, Ordering};
         const ATTEMPTS: u32 = 5;
         const HEDGE: std::time::Duration = std::time::Duration::from_millis(1500);
         let mut last = String::new();
@@ -206,35 +206,45 @@ impl S3 {
             if attempt > 1 {
                 tokio::time::sleep(std::time::Duration::from_millis(200 << (attempt - 1))).await;
             }
-            let first = self.request(
-                method,
-                path,
-                payload_hash,
-                body,
-                format!("attempt {attempt}"),
-            );
+            let label = format!("attempt {attempt}");
             // Only GETs: a PUT would upload its whole body twice.
             let outcome = if body.is_none() {
+                let answered = tokio::sync::Notify::new();
+                let hedged = AtomicBool::new(false);
+                let first = self.request(method, path, payload_hash, None, label, Some(&answered));
+                // Sent only while the first has no answer: a body that is
+                // merely large is downloading, not stalled.
                 let second = async {
-                    tokio::time::sleep(HEDGE).await;
+                    tokio::select! {
+                        _ = tokio::time::sleep(HEDGE) => {}
+                        _ = answered.notified() => std::future::pending::<()>().await,
+                    }
+                    hedged.store(true, Ordering::SeqCst);
                     eprintln!(
                         "object store {method} {path} attempt {attempt}: no answer after {} ms, sending a second request",
                         HEDGE.as_millis()
                     );
-                    self.request(
-                        method,
-                        path,
-                        payload_hash,
-                        None,
-                        format!("attempt {attempt} (hedge)"),
-                    )
-                    .await
+                    let label = format!("attempt {attempt} (hedge)");
+                    self.request(method, path, payload_hash, None, label, None)
+                        .await
                 };
-                futures_util::future::select_ok([first.boxed(), second.boxed()])
-                    .await
-                    .map(|(bytes, _)| bytes)
+                tokio::pin!(first, second);
+                // The first success wins, and so does the first FINAL
+                // failure: a 404 is the answer, not a reason to wait. A
+                // retryable failure waits for the other request, if sent.
+                tokio::select! {
+                    r = &mut first => match r {
+                        Err(Failure::Retry(_)) if hedged.load(Ordering::SeqCst) => second.await,
+                        r => r,
+                    },
+                    r = &mut second => match r {
+                        Err(Failure::Retry(_)) => first.await,
+                        r => r,
+                    },
+                }
             } else {
-                first.await
+                self.request(method, path, payload_hash, body, label, None)
+                    .await
             };
             match outcome {
                 Ok(bytes) => return Ok(bytes),
@@ -256,6 +266,7 @@ impl S3 {
         payload_hash: &str,
         body: Option<&[u8]>,
         label: String,
+        answered: Option<&tokio::sync::Notify>,
     ) -> Result<Vec<u8>, Failure> {
         const SLOW: std::time::Duration = std::time::Duration::from_secs(2);
         let url = format!("{}{path}", self.endpoint);
@@ -269,6 +280,12 @@ impl S3 {
         let started = std::time::Instant::now();
         let outcome = req.send().await.map_err(anyhow::Error::from);
         let headers_ms = started.elapsed().as_millis();
+        // notify_one keeps the signal if nobody is waiting yet.
+        if let (Ok(resp), Some(answered)) = (&outcome, answered)
+            && resp.status().is_success()
+        {
+            answered.notify_one();
+        }
         let note = |what: &str| {
             eprintln!(
                 "object store {method} {path} {label}: {what}, headers after {headers_ms} ms, {} ms in all",
@@ -520,12 +537,26 @@ mod tests {
         assert!(blobs.load(None, &hash).await.is_err());
     }
 
-    /// A local stand-in for the store that answers every GET with "hello",
-    /// the first one only after a minute. Returns the store and a count of
-    /// the requests it received.
-    async fn fake_store(stall_first: bool) -> (S3, Arc<std::sync::atomic::AtomicUsize>) {
+    /// How the stand-in store answers a GET.
+    #[derive(Clone, Copy)]
+    enum Store {
+        /// "hello" at once.
+        Prompt,
+        /// The first GET gets nothing for a minute, the rest "hello".
+        StallFirst,
+        /// Headers at once, the body three seconds later.
+        SlowBody,
+        /// The first GET gets 404 at once, any other 504.
+        Missing,
+    }
+
+    /// A local stand-in for the object store. Returns the store and a count
+    /// of the requests it received.
+    async fn fake_store(mode: Store) -> (S3, Arc<std::sync::atomic::AtomicUsize>) {
         use std::sync::atomic::Ordering;
+        use std::time::Duration;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        const HEAD: &[u8] = b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\n";
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -537,12 +568,25 @@ mod tests {
                 tokio::spawn(async move {
                     let mut buf = [0u8; 4096];
                     let _ = sock.read(&mut buf).await;
-                    if stall_first && n == 0 {
-                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                    }
-                    let _ = sock
-                        .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nhello")
-                        .await;
+                    let status = |code: &str| {
+                        format!("HTTP/1.1 {code}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                    };
+                    let reply = match (mode, n) {
+                        (Store::StallFirst, 0) => {
+                            tokio::time::sleep(Duration::from_secs(60)).await;
+                            [HEAD, b"hello"].concat()
+                        }
+                        (Store::SlowBody, _) => {
+                            let _ = sock.write_all(HEAD).await;
+                            let _ = sock.flush().await;
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+                            b"hello".to_vec()
+                        }
+                        (Store::Missing, 0) => status("404 Not Found").into_bytes(),
+                        (Store::Missing, _) => status("504 Gateway Timeout").into_bytes(),
+                        _ => [HEAD, b"hello"].concat(),
+                    };
+                    let _ = sock.write_all(&reply).await;
                 });
             }
         });
@@ -560,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_stalled_get_is_answered_by_a_second_request() {
-        let (s3, count) = fake_store(true).await;
+        let (s3, count) = fake_store(Store::StallFirst).await;
         let started = std::time::Instant::now();
         assert_eq!(s3.get(&[0; 32]).await.unwrap(), b"hello");
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
@@ -570,9 +614,30 @@ mod tests {
     /// A store that answers at once gets one request, not two.
     #[tokio::test]
     async fn a_prompt_get_sends_one_request() {
-        let (s3, count) = fake_store(false).await;
+        let (s3, count) = fake_store(Store::Prompt).await;
         assert_eq!(s3.get(&[0; 32]).await.unwrap(), b"hello");
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// A body that takes long to arrive is downloading, not stalled: no
+    /// second download.
+    #[tokio::test]
+    async fn a_slow_body_is_not_downloaded_twice() {
+        let (s3, count) = fake_store(Store::SlowBody).await;
+        assert_eq!(s3.get(&[0; 32]).await.unwrap(), b"hello");
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// A 404 is the answer: reported at once, never waiting for a second
+    /// request whose 504 would turn "missing" into "unavailable".
+    #[tokio::test]
+    async fn a_missing_object_is_reported_at_once() {
+        let (s3, count) = fake_store(Store::Missing).await;
+        let started = std::time::Instant::now();
+        let err = s3.get(&[0; 32]).await.unwrap_err().to_string();
+        assert!(err.contains("404"), "{err}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
