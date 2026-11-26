@@ -175,10 +175,17 @@ betalingsinformasjonen. Veiledningen sier:
    stoppet pålegg kommer tilbake som `avsluttet` og ikke bare faller ut
    av listen over «gjeldende» pålegg, er ikke bekreftet (§4). Faller det
    ut, ville regnmed trekke etter siste lagrede versjon hver måned uten
-   grunnlag. Derfor henter forhåndsvisningen av hver kjøring også hele
-   listen, uten `fraSekvensnummer`. Et pålegg som er aktivt i regnmed,
-   men mangler i den, trekkes **ikke**; det vises som et avvik, og
-   advarselen ber selskapet kontakte innkrevingsmyndigheten.
+   grunnlag. Derfor henter den daglige jobben også hele listen, uten
+   `fraSekvensnummer`, og lagrer når hvert pålegg sist ble sett i den
+   (logget før kallet, som alle kall). Et **hentet** pålegg som er
+   aktivt i regnmed, men manglet i siste vellykkede helliste, trekkes
+   **ikke**; det vises som et avvik, og advarselen ber selskapet kontakte
+   innkrevingsmyndigheten. Manuelt registrerte pålegg (under) finnes
+   aldri i listen og omfattes ikke. Forhåndsvisningen og bokføringen
+   leser begge det lagrede, aldri Skatteetaten direkte: forhåndsvisningen
+   lagrer ingenting (docs/lonn.md), og de to må regne ut samme sett
+   (punkt 2 under Godkjenning i §3). Feiler hellisten, gjelder
+   tredagersadvarselen (punkt 3 samme sted).
    Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for
    skattekortet skrives forespørselen **før** kallet, og en feil lagres
    med koden.
@@ -195,14 +202,26 @@ betalingsinformasjonen. Veiledningen sier:
    **Manuelt registrert pålegg.** Den som har `LONN_SKRIV`, kan legge
    inn et pålegg fra brevet: ansatt, KID, beløp eller prosent, perioden
    og a-meldingens beskrivelse (`utleggstrekkSamordnet`, eller den gamle
-   ordningens `utleggstrekkSkatt`). Det trekkes, bokføres, betales og
+   ordningens `utleggstrekkSkatt`). **Brevet er påkrevd som vedlegg**
+   (PDF eller skann, lagret med SHA-256 og sjekket ved lesing som
+   bilagsvedlegg): et hentet pålegg har Skatteetatens eget svar som
+   bevis (steg 2), et manuelt har bare det noen skrev, og trekket blir
+   en postering som må være dokumentert (bokføringsloven § 4 nr. 6).
+   KID-en sjekkes på kontrollsifferet ved registreringen, som i
+   `payable_terms`. Det trekkes, bokføres, betales og
    rapporteres akkurat som et hentet pålegg og er merket med kilden
    (`manuell`, med hvem som registrerte det). Registreringen er
    innsettings-bar som de hentede versjonene: en endring eller en stopp
    er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
    KID, avløser det den manuelle registreringen fra neste kjøring, og
    forhåndsvisningen sier fra. Dette dekker også trekkene etter den
-   gamle ordningen (§1), som aldri kommer gjennom API-et.
+   gamle ordningen (§1), som aldri kommer gjennom API-et. Har den
+   ansatte både et manuelt pålegg og et hentet med **en annen** KID —
+   typisk et gammelt trekk fra brev og et nytt samordnet — vises begge
+   som et avvik, og kjøringen trekker det hentede: et samordnet trekk
+   avslutter de andre (§1). Det manuelle står til noen med `LONN_SKRIV`
+   stopper det, så stoppen er en registrert beslutning og ikke en
+   slutning regnmed gjorde.
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -338,8 +357,8 @@ Alle avgjørelsene forslaget ventet på er tatt:
      uten settet nektes som et kall med feil sett. Lønnskjøringen er et
      offentlig API-endepunkt (docs/integrations.md), og en klient som
      ikke kjenner feltet, skal ikke kunne kjøre forbi vakten.
-  3. Kjøringen advarer når siste vellykkede henting er eldre enn tre
-     dager — tre tapte daglige hentinger (steg 1) — siden den da kan
+  3. Kjøringen advarer når siste vellykkede henting — av endringene
+     eller av hellisten — er eldre enn tre dager — tre tapte daglige hentinger (steg 1) — siden den da kan
      trekke etter pålegg som er stoppet eller erstattet. Har selskapet
      aldri hentet, gjelder advarselen i steg 1.
   4. Andres pålegg, varselet og koblingen til den ansatte er synlige
