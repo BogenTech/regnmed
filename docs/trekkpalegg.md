@@ -163,8 +163,9 @@ betalingsinformasjonen. Veiledningen sier:
    hoppes over, og er innholdet en annen enn det lagrede, stopper
    hentingen med en feil i stedet for å skrive over. Ellers ville én
    gjentatt versjon rulle tilbake hele hentingen, også de nye, hver dag.
-   Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for skattekortet skrives forespørselen **før**
-   kallet, og en feil lagres med koden.
+   Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for
+   skattekortet skrives forespørselen **før** kallet, og en feil lagres
+   med koden.
 
    Kravet om en levert a-melding er API-ets, ikke vårt: et selskap som
    kommer til regnmed med et løpende pålegg, får det ikke før etter
@@ -216,8 +217,8 @@ betalingsinformasjonen. Veiledningen sier:
    arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
    gjennom samme vei som portalen (`update_party_contact`, som validerer
    kontonummeret), og forhåndsvisningen sier fra om endringen.
-   2610 er en egen konto under standardkontoen 2600 «Skattetrekk og andre trekk», så trekket står
-   for seg i balansen og ikke blandes med forskuddstrekket på 2600 eller
+   2610 er en egen konto under standardkontoen 2600 «Skattetrekk og
+   andre trekk», så trekket står for seg i balansen og ikke blandes med forskuddstrekket på 2600 eller
    med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
    (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
    første gang en kjøring trekker et pålegg, med navnet
