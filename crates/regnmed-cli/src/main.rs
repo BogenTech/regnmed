@@ -599,7 +599,7 @@ async fn main() -> Result<()> {
             let mut failed = 0usize;
             for (due, sent) in &outcomes {
                 match sent {
-                    Ok(to) => println!("{}: terms notice sent to {to}", due.company_name),
+                    Ok(_) => println!("{}: terms notice sent", due.company_name),
                     Err(e) => {
                         println!("{}: terms notice NOT sent: {e:#}", due.company_name);
                         failed += 1;
