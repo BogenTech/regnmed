@@ -179,14 +179,17 @@ betalingsinformasjonen. Veiledningen sier:
    `fraSekvensnummer`, og lagrer når hvert pålegg sist ble sett i den
    (logget før kallet, som alle kall). Et **hentet** pålegg som er
    aktivt i regnmed, men manglet i siste vellykkede helliste, trekkes
-   **ikke**; det vises som et avvik, og advarselen ber selskapet kontakte
+   **ikke** — men bare hvis regnmed alt hadde det da listen ble hentet:
+   et pålegg lagret etter hellisten kan ikke ha vært i den, og regnes
+   ikke som borte; det vises som et avvik, og advarselen ber selskapet kontakte
    innkrevingsmyndigheten. Manuelt registrerte pålegg (under) finnes
    aldri i listen og omfattes ikke. Forhåndsvisningen og bokføringen
    leser begge det lagrede, aldri Skatteetaten direkte: forhåndsvisningen
    lagrer ingenting (docs/lonn.md), og de to må regne ut samme sett
    (punkt 2 under Godkjenning i §3). Feiler hellisten, gjelder
    tredagersadvarselen (punkt 3 samme sted).
-   Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for
+   Samme henting — endringene og hellisten — kan startes fra portalen
+   («Hent trekkpålegg»). Som for
    skattekortet skrives forespørselen **før** kallet, og en feil lagres
    med koden.
 
@@ -200,17 +203,26 @@ betalingsinformasjonen. Veiledningen sier:
    utbetalt.
 
    **Manuelt registrert pålegg.** Den som har `LONN_SKRIV`, kan legge
-   inn et pålegg fra brevet: ansatt, KID, beløp eller prosent, perioden
-   og a-meldingens beskrivelse (`utleggstrekkSamordnet`, eller den gamle
-   ordningens `utleggstrekkSkatt`). **Brevet er påkrevd som vedlegg**
-   (PDF eller skann, lagret med SHA-256 og sjekket ved lesing som
-   bilagsvedlegg): et hentet pålegg har Skatteetatens eget svar som
-   bevis (steg 2), et manuelt har bare det noen skrev, og trekket blir
-   en postering som må være dokumentert (bokføringsloven § 4 nr. 6).
-   KID-en sjekkes på kontrollsifferet ved registreringen, som i
-   `payable_terms`. Det trekkes, bokføres, betales og
-   rapporteres akkurat som et hentet pålegg og er merket med kilden
-   (`manuell`, med hvem som registrerte det). Registreringen er
+   inn et pålegg fra brevet: ansatt, KID, beløp eller prosent, perioden,
+   a-meldingens beskrivelse (`utleggstrekkSamordnet`, eller den gamle
+   ordningens `utleggstrekkSkatt`), og **betalingsmottakerens
+   organisasjonsnummer og kontonummer** — brevet etter den gamle
+   ordningen kan ha en annen mottaker enn den samordnede, og uten dem
+   har steg 5 ingen part å føre på og betalingslisten ingen konto å
+   betale til. KID-en sjekkes på kontrollsifferet som i
+   `payable_terms`, kontonummeret med MOD11 som i
+   `update_party_contact`, og organisasjonsnummeret med MOD11.
+   **Brevet er påkrevd som vedlegg** (PDF eller skann): et hentet
+   pålegg har Skatteetatens eget svar som bevis (steg 2), et manuelt
+   har bare det noen skrev, og trekket blir en postering som må være
+   dokumentert (bokføringsloven § 4 nr. 6). Brevet lagres **med
+   pålegget**, innholdsadressert og hash-sjekket ved lesing som andre
+   dokumenter (docs/blob-store.md), og kan bare leses med `LONN_LES`.
+   Det festes **aldri** til lønnsbilaget: et bilagsvedlegg kan leses av
+   alle som leser hovedboken, også rollen `les`, og brevet navngir den
+   ansatte og gjelden (punkt 4 under Godkjenning i §3). Pålegget
+   trekkes, bokføres, betales og rapporteres akkurat som et hentet og
+   er merket med kilden (`manuell`, med hvem som registrerte det). Registreringen er
    innsettings-bar som de hentede versjonene: en endring eller en stopp
    er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
    KID, avløser det den manuelle registreringen fra neste kjøring, og
@@ -324,9 +336,11 @@ betalingsinformasjonen. Veiledningen sier:
    betalingslisten må utvides, og oppgjøret lukker posten mot banken
    som for enhver annen leverandør. En gjeldskonto uten part ville
    aldri dukket opp der.
-7. **Rapporter** trekket i a-meldingen: `utleggstrekk` med
-   `utleggstrekkSamordnet`, negativt beløp og utbetalingsdatoen, og
-   `sumUtleggstrekk`.
+7. **Rapporter** trekket i a-meldingen: `utleggstrekk` med påleggets
+   egen beskrivelse (`utleggstrekkSamordnet` for hentede, den
+   registrerte for manuelle — `utleggstrekkSkatt` for et trekk etter den
+   gamle ordningen), negativt beløp og utbetalingsdatoen, og
+   `sumUtleggstrekk` over alle.
 
 ## 3. Avgjørelser
 
@@ -395,8 +409,10 @@ Alle avgjørelsene forslaget ventet på er tatt:
   mye som mulig», §1).
 - **Grunnlaget for prosenten, fristen, a-meldingens felt, flere pålegg
   og fratrådte** (2026-11-25): avgjort av Skatteetatens regler i §1, ikke
-  av oss. Flere pålegg per ansatt finnes ikke i den samordnede ordningen,
-  og en fratrådt meldes i a-meldingen.
+  av oss. Den samordnede ordningen har ett pålegg per ansatt, men i
+  overgangen fra den gamle kan en ansatt ha et manuelt registrert trekk
+  fra brev ved siden av et hentet samordnet; steg 1 sier hva som
+  trekkes da. En fratrådt meldes i a-meldingen.
 
 ## 4. Før noe kan prøves mot Skatteetaten
 
