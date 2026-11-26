@@ -187,8 +187,8 @@ betalingsinformasjonen. Veiledningen sier:
 
    **Ikke dekket:** API-et gir pålegg først etter selskapets første
    a-melding gjennom regnmed, og trekk etter den gamle ordningen kommer
-   bare som brev (§1). Begge deler står i #339 (pålegg registrert for
-   hånd). Til det er bygget, sier forhåndsvisningen av kjøringen at
+   bare som brev (§1). Begge deler dekkes av pålegg registrert for hånd
+   (§6, #339). Til det er bygget, sier forhåndsvisningen av kjøringen at
    slike pålegg ikke er med, og at regnmed ikke kan rapportere et trekk
    som er gjort utenfor: a-meldingen fra regnmed er da ufullstendig for
    den ansatte den måneden (#339).
@@ -382,3 +382,91 @@ Et trekkpålegg hentet fra Skatteetatens testmiljø blir trukket i en
 lønnskjøring, bokført, betalt fra betalingslisten og rapportert i en
 a-melding som Skatteetaten tar imot uten avvik. Samme beviskrav som for
 a-meldingen og skattekortet i docs/lonn.md.
+
+## 6. Pålegg registrert for hånd (#339) — forslag
+
+API-et dekker ikke to tilfeller (§2, steg 1): **første måned**, før
+selskapet har levert en a-melding gjennom regnmed, og **trekk etter den
+gamle ordningen**, som bare kommer som brev. Å trekke dem utenfor
+regnmed går ikke, siden a-meldingen lages her. Derfor kan et pålegg
+legges inn for hånd fra brevet og deretter gå gjennom steg 4–7 som et
+hentet pålegg.
+
+Bare Skatteetatens pålegg. Andre trekk i lønn (bidrag, pensjon) er
+ikke utleggstrekk og hører ikke hjemme her.
+
+### Hva som registreres
+
+| Felt | Kontroll |
+| --- | --- |
+| Ansatt | finnes i selskapets ansattregister |
+| KID | kontrollsifferet, som i `payable_terms` |
+| Beløp per måned **eller** prosent | kroner, lagret som øre; prosent med høyst to desimaler (basispunkter, §2 steg 4) |
+| Gjelder fra (og eventuelt til) | gyldige datoer, fra ≤ til |
+| Betalingsmottaker: organisasjonsnummer og kontonummer | MOD11 for begge |
+| A-meldingens beskrivelse | `utleggstrekkSamordnet` eller `utleggstrekkSkatt` |
+| Brevet | påkrevd, PDF eller bilde |
+
+Brevet lagres **med pålegget**, innholdsadressert og hash-sjekket ved
+hver lesing (docs/blob-store.md), og kan bare leses med `LONN_LES`. Det
+festes aldri til lønnsbilaget: et bilagsvedlegg kan leses av alle som
+leser hovedboken, også rollen `les`, og brevet navngir den ansatte og
+gjelden (§3, punkt 4 under Godkjenning).
+
+### Lagring og endring
+
+- **Innsettings-bart**, som de hentede versjonene: en registrering har
+  en id og en versjon, og en endring eller en stopp er en ny versjon,
+  aldri en retting. Hver versjon har hvem og når. Statusen beregnes fra
+  siste versjon.
+- **Hvem:** `LONN_SKRIV` registrerer, endrer og stopper. Har selskapet
+  en aktiv attesteringspolicy (docs/attestering.md), må en annen person
+  attestere en ny eller endret registrering før den trekkes. Det er den
+  eksisterende ordningen med en ny `target_kind` (i dag bare
+  `inbox_document`, migrasjon 0030), ikke en egen. Til den er
+  attestert, viser forhåndsvisningen registreringen som «venter på
+  attestering» og trekker den ikke.
+- **Synlighet og tid** som for hentede pålegg (§3, punkt 4 og 5 under
+  Godkjenning): registreringen og brevet bare for `LONN_LES`, den
+  ansatte ser sitt eget på lønnsslippen, og en registrering som kommer
+  etter månedens kjøring trekkes fra neste.
+- **I kjøringen:** forhåndsvisningens sett (§3, punkt 2 under
+  Godkjenning) bærer (registrering, versjon) ved siden av (`trekkid`,
+  `trekkversjon`), så en endring etter forhåndsvisningen stopper
+  kjøringen på samme måte. Kontrollen mot hellisten (§2, steg 1) gjelder
+  ikke: et brevpålegg står aldri i den.
+- **Bokføring og betaling** som steg 5–6: parten slås opp på
+  betalingsmottakerens organisasjonsnummer blant leverandørene, og
+  KID-en går i `payable_terms`. Brevet kan ha en annen mottaker enn den
+  samordnede (§1).
+- **A-meldingen** (steg 7) bruker registreringens beskrivelse.
+
+### Når et hentet pålegg kommer
+
+- **Samme KID** (typisk første måned: brevet og API-et beskriver samme
+  pålegg): det hentede avløser det manuelle fra neste kjøring. Det
+  utledes, ingen skriver noe; forhåndsvisningen sier fra.
+- **Annen KID** (typisk et gammelt trekk og et nytt samordnet): begge
+  vises som et avvik, og kjøringen trekker det hentede — et samordnet
+  trekk avslutter de andre (§1). Det manuelle står til noen med
+  `LONN_SKRIV` stopper det, så stoppen er en registrert beslutning.
+
+### Åpne spørsmål
+
+1. **Attestering når selskapet ikke har en policy.** Forslaget krever
+   bare en annen person når selskapet alt har slått på attestering. Et
+   feilslag (40 000 for 4 000, eller en annen ansatts KID) trekkes da
+   uten at noen andre har sett det. Alternativet er å kreve to personer
+   alltid — men da kan et enkeltpersonselskap aldri registrere et
+   pålegg.
+2. **Grunnlag og tak for den gamle ordningen.** §1 beskriver reglene
+   for samordnet trekk. At de gamle trekkene følger samme prosentgrunnlag
+   og samme tak, er en antakelse som må sjekkes mot
+   skattebetalingshåndboken før koden skrives.
+
+### Ferdig når
+
+Et pålegg registrert for hånd i testmiljøet blir trukket, bokført,
+betalt fra betalingslisten og rapportert i en a-melding som
+Skatteetaten tar imot uten avvik, og et hentet pålegg med samme KID
+avløser det i neste kjøring.
