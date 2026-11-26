@@ -222,9 +222,9 @@ betalingsinformasjonen. Veiledningen sier:
    alle som leser hovedboken, også rollen `les`, og brevet navngir den
    ansatte og gjelden (punkt 4 under Godkjenning i §3). Pålegget
    trekkes, bokføres, betales og rapporteres akkurat som et hentet og
-   er merket med kilden (`manuell`, med hvem som registrerte det). Registreringen er
-   innsettings-bar som de hentede versjonene: en endring eller en stopp
-   er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
+   er merket med kilden (`manuell`, med hvem som registrerte det).
+   Registreringen er innsettings-bar som de hentede versjonene: en
+   endring eller en stopp er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
    KID, avløser det den manuelle registreringen fra neste kjøring, og
    forhåndsvisningen sier fra. Dette dekker også trekkene etter den
    gamle ordningen (§1), som aldri kommer gjennom API-et. Har den
