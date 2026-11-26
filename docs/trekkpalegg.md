@@ -222,12 +222,13 @@ betalingsinformasjonen. Veiledningen sier:
    forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400.
    Kontoen er reskontroflagget (`reskontro_kind = 'leverandor'`) og
    opprettes i selskapets kontoplan første gang en kjøring trekker et
-   pålegg, med navnet «Utleggstrekk». **Finnes 2610 alt** — et selskap som har importert
-   kontoplanen, kan bruke nummeret til noe annet — brukes den bare hvis
-   den alt er leverandørreskontro. Ellers flagges den ikke om (historikken
-   har posteringer uten part); forhåndsvisningen sier fra før kjøringen,
-   og selskapet velger en annen konto for utleggstrekk i lønnsinnstillingene
-   (standard 2610), som må være en leverandørreskontrokonto. Kjøringen
+   pålegg, med navnet «Utleggstrekk». **Finnes 2610 alt** — et selskap
+   som har importert kontoplanen, kan bruke nummeret til noe annet —
+   brukes den bare hvis den alt er leverandørreskontro. Ellers flagges
+   den ikke om (historikken har posteringer uten part);
+   forhåndsvisningen sier fra før kjøringen, og selskapet velger en
+   annen konto for utleggstrekk i lønnsinnstillingene (standard 2610),
+   som må være en leverandørreskontrokonto. Kjøringen
    nekter bare når en ansatt faktisk har et pålegg å trekke. Linjen får
    betalingsvilkår i `payable_terms` med påleggets `kidnummer` og
    **forfall på utbetalingsdatoen**. Fristen er første virkedag etter
