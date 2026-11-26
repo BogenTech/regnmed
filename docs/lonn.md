@@ -1110,9 +1110,8 @@ Rekkefølgen er omtrent den de bør tas i.
    docs/trekkpalegg.md.
 3. **Inntektsmelding til Nav** (#184). Når Nav ber om inntektsmelding
    for en sykmeldt, må selskapet sende den selv, på nav.no eller i et
-   annet system. regnmed
-   registrerer ikke fravær. Navs API tar bare imot svar på en
-   forespørsel fra Nav. Forslaget står i docs/inntektsmelding.md.
+   annet system. regnmed registrerer ikke fravær. Navs API tar bare
+   imot svar på en forespørsel fra Nav. Forslaget står i docs/inntektsmelding.md.
 4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
