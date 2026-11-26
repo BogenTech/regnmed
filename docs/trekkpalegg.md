@@ -229,11 +229,12 @@ betalingsinformasjonen. Veiledningen sier:
    eksisterende part en annen bankkonto enn påleggets `kontonummer`,
    betaler regnmed ikke til den lagrede: betalingslisten tar
    bankkontoen fra parten (et øyeblikksbilde når kjøringen lages), og
-   et trekk betalt til feil konto er arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
-   med samme validering som portalen (`update_party_contact`), men i
-   **kjøringens egen transaksjon** — dagens funksjon tar en pool, så den
-   får en `_in`-variant — slik at kontoendringen og lønnsbilaget lykkes
-   eller feiler sammen. Forhåndsvisningen sier fra om endringen.
+   et trekk betalt til feil konto er arbeidsgiverens ansvar. Kjøringen
+   skriver da påleggets konto på parten med samme validering som
+   portalen (`update_party_contact`), men i **kjøringens egen
+   transaksjon** — dagens funksjon tar en pool, så den får en
+   `_in`-variant — slik at kontoendringen og lønnsbilaget lykkes eller
+   feiler sammen. Forhåndsvisningen sier fra om endringen.
    2610 er en egen konto under standardkontoen 2600 «Skattetrekk og
    andre trekk», så trekket står for seg i balansen og ikke blandes med
    forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400.
@@ -282,9 +283,9 @@ Alle avgjørelsene forslaget ventet på er tatt:
   hente før kjøringen (punkt 2 under). Pålegget er bindende, og et
   trekk som ikke gjennomføres er arbeidsgiverens ansvar
   (innledningen), så en godkjenning kunne bare utsatt trekket, aldri
-  stoppet det — og utsettelsen ville vært selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
-  erstattet pålegg slutter å trekkes uten at noen må handle. Fem ting
-  holder automatikken trygg:
+  stoppet det — og utsettelsen ville vært selskapets risiko. Det samme
+  gjelder motsatt vei: et stoppet eller erstattet pålegg slutter å
+  trekkes uten at noen må handle. Fem ting holder automatikken trygg:
   1. Et pålegg som ikke kan knyttes til en ansatt (steg 3), vises
      **før** kjøringen, i forhåndsvisningen, ikke bare som et varsel.
   2. Har et pålegg kommet eller endret seg etter forhåndsvisningen,
