@@ -193,8 +193,11 @@ betalingsinformasjonen. Veiledningen sier:
    valgt det som sist ble endret, ikke det nyeste pålegget). At
    `opprettet` hører til pålegget og ikke til versjonen, er en
    antakelse fra eksempelet som må bekreftes (§4); er den per versjon,
-   brukes `opprettet` fra påleggets første versjon. Advarselen navngir
-   det andre, så selskapet kan kontakte innkrevingsmyndigheten.
+   brukes `opprettet` fra påleggets første versjon. Listen gir bare
+   siste versjon (§1), så er versjon 1 ikke lagret, hentes den med
+   `GET /api/trekkpaalegg/v1/{trekkid}/1` og lagres som enhver annen
+   versjon. Advarselen navngir det andre, så selskapet kan kontakte
+   innkrevingsmyndigheten.
 4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen det
    aktive pålegget og perioden som dekker utbetalingsdatoen, og beregner
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
@@ -247,13 +250,21 @@ betalingsinformasjonen. Veiledningen sier:
    oppretter i stedet **første ledige nummer i 2611–2619** som
    leverandørreskontro med navnet «Utleggstrekk» (SAF-T-grupperingen går
    til nærmeste standardkonto, 2600, som for 2610). Forhåndsvisningen
-   sier hvilken konto som blir brukt, og kontoen huskes i
-   lønnsinnstillingene, der selskapet kan velge en annen
-   leverandørreskontrokonto. Kjøringen nekter altså ikke — lønnen skal
-   ut, samme regel som for taket i §3 — med ett unntak: er hele 2610–2619
-   opptatt av kontoer som ikke er leverandørreskontro, og ingen konto er
-   valgt, finnes det ingen trygg konto å føre på, og forhåndsvisningen
-   sier det før lønningsdagen. Linjen får
+   sier hvilken konto som blir brukt, og kontoen huskes som
+   selskapets **konto for utleggstrekk**, der selskapet kan velge en
+   annen leverandørreskontrokonto. Innstillingen finnes ikke i dag og
+   er ny: daterte, innsettings-bare rader per selskap (nyeste gjelder,
+   som `mva_terminordning`), så det alltid kan sies hvilken konto
+   trekket for en gitt måned gikk til og hvem som valgte den. Den
+   endres med `LONN_SKRIV`, og kontoen sjekkes når den lagres: den må
+   finnes, være aktiv og være leverandørreskontro. Kjøringen nekter
+   altså ikke — lønnen skal ut, samme regel som for taket i §3 — med ett
+   unntak: er ingen konto valgt, er 2610 ikke leverandørreskontro, og
+   finnes det ikke noe ledig nummer i 2611–2619 (uansett hva som står
+   der), finnes det ingen trygg konto å føre på. Da **nekter** kjøringen,
+   og forhåndsvisningen sier det, med veien ut (velg en konto), før
+   lønningsdagen. En eksisterende leverandørkonto i 2611–2619 brukes
+   aldri uten at den er valgt, siden den kan bære annen gjeld. Linjen får
    betalingsvilkår i `payable_terms` med påleggets `kidnummer` og
    **forfall på utbetalingsdatoen**. Fristen er første virkedag etter
    (§1), men regnmed har ingen helligdagskalender, og ukedager alene
