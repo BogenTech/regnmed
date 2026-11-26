@@ -121,8 +121,8 @@ Håndboken sier selv at den ikke er oppdatert for innkrevingsloven fra
   utleggstrekk. Når et samordnet trekk settes i gang, skal alle andre
   trekk avsluttes. Påleggene fra API-et er samordnede. Trekk etter den
   gamle ordningen kommer som brev og løper til arbeidsgiveren får
-  beskjed om å stoppe dem; de kommer aldri gjennom API-et og dekkes
-  ikke av dette forslaget (§2, steg 1, og #339).
+  beskjed om å stoppe dem; de kommer aldri gjennom API-et og
+  registreres for hånd (§6, #339).
 - **Grunnlaget for prosenten** er bruttolønnen, regnet på samme grunnlag
   som forskuddstrekket. Naturalytelser og utgiftsgodtgjørelser holdes
   utenfor. Trekkfri kjøregodtgjørelse og diett er derfor ikke med; den
@@ -389,22 +389,40 @@ API-et dekker ikke to tilfeller (§2, steg 1): **første måned**, før
 selskapet har levert en a-melding gjennom regnmed, og **trekk etter den
 gamle ordningen**, som bare kommer som brev. Å trekke dem utenfor
 regnmed går ikke, siden a-meldingen lages her. Derfor kan et pålegg
-legges inn for hånd fra brevet og deretter gå gjennom steg 4–7 som et
-hentet pålegg.
+legges inn for hånd fra brevet og deretter trekkes, bokføres, betales og
+rapporteres i samme kjøring som de hentede.
 
-Bare Skatteetatens pålegg. Andre trekk i lønn (bidrag, pensjon) er
-ikke utleggstrekk og hører ikke hjemme her.
+### Tre typer, tre måter å betale og rapportere
+
+Skatteetatens veiledning [Utleggstrekk i
+a-meldingen](https://www.skatteetaten.no/bedrift-og-organisasjon/arbeidsgiver/a-meldingen/veiledning/utleggstrekk/)
+(oppdatert 25.02.2026, lest 2026-11-26) har en tabell over typene. Den
+er grunnlaget her:
+
+| Type (fra brevet) | I a-meldingen | Betaling | Prosentgrunnlag |
+| --- | --- | --- | --- |
+| Samordnet (ny ordning) | `utleggstrekkSamordnet`, i sum å betale | én KID **per ansatt**, fra brevet | brutto uten naturalytelser og utgiftsgodtgjørelser (§1) |
+| Skatt og avgift (gammel ordning) | `utleggstrekkSkatt`, i sum å betale | **én samlet betaling med én KID** for alle trukket på samme utbetaling — samme KID som selskapet alltid har brukt | bruttolønn, **samme grunnlag som forskuddstrekket** |
+| Øvrige krav (gammel ordning) | **rapporteres ikke** | KID og konto fra brevet | står i brevet |
+
+For alle tre gjelder fristen (første virkedag etter utbetaling, §2 steg
+5), «trekke så mye som mulig» og taket i §3, og ingen av dem har
+sommer- eller desemberfritak. Veiledningen unntar også mva-, særavgifts-
+og tollkrav fra a-meldingen; de er «øvrige» her.
+
+Forskjellen i prosentgrunnlag betyr ingenting i dag, fordi lønnen i
+regnmed ikke har naturalytelser (docs/lonn.md), men koden skal skille
+dem, så den blir riktig når naturalytelser kommer.
 
 ### Hva som registreres
 
 | Felt | Kontroll |
 | --- | --- |
 | Ansatt | finnes i selskapets ansattregister |
-| KID | kontrollsifferet, som i `payable_terms` |
-| Beløp per måned **eller** prosent | kroner, lagret som øre; prosent med høyst to desimaler (basispunkter, §2 steg 4) |
+| Type | én av de tre over |
+| Beløp per måned **eller** prosent | kroner, lagret som øre; prosent med høyst to desimaler (§2 steg 4). **Øvrige: bare beløp** — grunnlaget for en prosent står i brevet, og regnmed gjetter det ikke |
 | Gjelder fra (og eventuelt til) | gyldige datoer, fra ≤ til |
-| Betalingsmottaker: organisasjonsnummer og kontonummer | MOD11 for begge |
-| A-meldingens beskrivelse | `utleggstrekkSamordnet` eller `utleggstrekkSkatt` |
+| KID og betalingsmottaker (organisasjonsnummer, kontonummer) | samordnet og øvrige: fra brevet, kontrollsiffer og MOD11. Skatt: ingen — se betalingen under |
 | Brevet | påkrevd, PDF eller bilde |
 
 Brevet lagres **med pålegget**, innholdsadressert og hash-sjekket ved
@@ -435,21 +453,31 @@ gjelden (§3, punkt 4 under Godkjenning).
   `trekkversjon`), så en endring etter forhåndsvisningen stopper
   kjøringen på samme måte. Kontrollen mot hellisten (§2, steg 1) gjelder
   ikke: et brevpålegg står aldri i den.
-- **Bokføring og betaling** som steg 5–6: parten slås opp på
-  betalingsmottakerens organisasjonsnummer blant leverandørene, og
-  KID-en går i `payable_terms`. Brevet kan ha en annen mottaker enn den
-  samordnede (§1).
-- **A-meldingen** (steg 7) bruker registreringens beskrivelse.
+
+### Bokføring og betaling
+
+- **Samordnet og øvrige** som steg 5–6: én linje per pålegg på kontoen
+  for utleggstrekk, med betalingsmottakeren fra brevet som leverandør
+  og brevets KID i `payable_terms`.
+- **Skatt:** alle skattetrekk på samme utbetaling blir **én** linje, med
+  Skatteetaten som leverandør og selskapets egen KID for
+  utleggstrekk skatt — den samme hvert år, laget i Skatteetatens
+  KID-generator. Den og kontonummeret er nye lønnsinnstillinger ved
+  siden av kontoen for utleggstrekk (§2 steg 5), daterte og
+  innsettings-bare, og kjøringen nekter å trekke et skattetrekk uten
+  dem, med beskjed om hva som mangler. Linjeteksten navngir ingen.
 
 ### Når et hentet pålegg kommer
 
-- **Samme KID** (typisk første måned: brevet og API-et beskriver samme
-  pålegg): det hentede avløser det manuelle fra neste kjøring. Det
-  utledes, ingen skriver noe; forhåndsvisningen sier fra.
-- **Annen KID** (typisk et gammelt trekk og et nytt samordnet): begge
-  vises som et avvik, og kjøringen trekker det hentede — et samordnet
-  trekk avslutter de andre (§1). Det manuelle står til noen med
-  `LONN_SKRIV` stopper det, så stoppen er en registrert beslutning.
+- **Samme KID** (første måned: brevet og API-et beskriver samme
+  samordnede pålegg): det hentede avløser det manuelle fra neste
+  kjøring. Det utledes, ingen skriver noe; forhåndsvisningen sier fra.
+  Bare samordnede registreringer kan avløses slik: et skattetrekk har
+  selskapets felles KID, som aldri står i et hentet pålegg.
+- **Annen KID** (et gammelt trekk og et nytt samordnet): begge vises som
+  et avvik, og kjøringen trekker det hentede — et samordnet trekk
+  avslutter de andre (§1). Det manuelle står til noen med `LONN_SKRIV`
+  stopper det, så stoppen er en registrert beslutning.
 
 ### Avgjørelser
 
@@ -461,17 +489,15 @@ gjelden (§3, punkt 4 under Godkjenning).
   policy. Vernet der er at forhåndsvisningen viser hver registrering med
   beløp, KID og lenke til brevet, så den som kjører lønnen kan
   sammenligne før bokføringen.
-
-### Åpent spørsmål
-
-1. **Grunnlag og tak for den gamle ordningen.** §1 beskriver reglene
-   for samordnet trekk. At de gamle trekkene følger samme prosentgrunnlag
-   og samme tak, er en antakelse som må sjekkes mot
-   skattebetalingshåndboken før koden skrives.
+- **Gammel ordning følger Skatteetatens tabell** (2026-11-26):
+  prosentgrunnlag, rapportering og betaling per type som over. Det var
+  et åpent spørsmål om de gamle trekkene fulgte samme grunnlag som de
+  samordnede; veiledningen sier at de ikke gjør det.
 
 ### Ferdig når
 
 Et pålegg registrert for hånd i testmiljøet blir trukket, bokført,
 betalt fra betalingslisten og rapportert i en a-melding som
 Skatteetaten tar imot uten avvik, og et hentet pålegg med samme KID
-avløser det i neste kjøring.
+avløser det i neste kjøring. Et skattetrekk etter gammel ordning
+rapporteres som `utleggstrekkSkatt` og betales som én samlet post.
