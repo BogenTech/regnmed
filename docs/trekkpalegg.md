@@ -451,15 +451,20 @@ gjelden (§3, punkt 4 under Godkjenning).
   trekk avslutter de andre (§1). Det manuelle står til noen med
   `LONN_SKRIV` stopper det, så stoppen er en registrert beslutning.
 
-### Åpne spørsmål
+### Avgjørelser
 
-1. **Attestering når selskapet ikke har en policy.** Forslaget krever
-   bare en annen person når selskapet alt har slått på attestering. Et
-   feilslag (40 000 for 4 000, eller en annen ansatts KID) trekkes da
-   uten at noen andre har sett det. Alternativet er å kreve to personer
-   alltid — men da kan et enkeltpersonselskap aldri registrere et
-   pålegg.
-2. **Grunnlag og tak for den gamle ordningen.** §1 beskriver reglene
+- **Attestering bare med policy** (2026-11-26): en annen person kreves
+  bare når selskapet har slått på attestering. Å kreve to personer
+  alltid ville gjort det umulig for et enkeltpersonselskap å registrere
+  et pålegg. Prisen er at et feilslag (40 000 for 4 000, eller en annen
+  ansatts KID) trekkes uten at noen andre har sett det i selskaper uten
+  policy. Vernet der er at forhåndsvisningen viser hver registrering med
+  beløp, KID og lenke til brevet, så den som kjører lønnen kan
+  sammenligne før bokføringen.
+
+### Åpent spørsmål
+
+1. **Grunnlag og tak for den gamle ordningen.** §1 beskriver reglene
    for samordnet trekk. At de gamle trekkene følger samme prosentgrunnlag
    og samme tak, er en antakelse som må sjekkes mot
    skattebetalingshåndboken før koden skrives.
