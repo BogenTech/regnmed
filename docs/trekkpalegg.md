@@ -28,10 +28,12 @@ dokumentasjonen ikke gjør, står det under med «spesifikasjonen».
   for en kunde. Systembrukerforespørselen må da også ha ressursen
   `ske-informasjon-om-trekkpaalegg` (tilgangsressursen «Informasjon om
   trekkpålegg»).
-- Test-scopet bestilles med e-post til fremtidensinnkreving@skatteetaten.no
-  med virksomhetens ekte organisasjonsnummer. Samme adresse lager
-  testdata (trekkpålegg på syntetiske personer i et syntetisk selskap)
-  når integrasjonen når tjenesten.
+- Dokumentasjonen sier at test-scopet bestilles med e-post til
+  fremtidensinnkreving@skatteetaten.no, men brukerstøttedesken har et
+  eget skjema for det (Hente data → Søknad om tilgang, docs/gov.md), og
+  det er der det er bestilt (SSV-6690). Testdata (trekkpålegg på
+  syntetiske personer i et syntetisk selskap) bes om når integrasjonen
+  når tjenesten — på samme sak, eller på adressen over.
 - Produksjon: Skatteetaten ber om en oppsummering av testen, og
   produksjonstilgang gis ikke før den er levert. Avtalen («vilkår for
   bruk») signeres da.
@@ -359,9 +361,10 @@ Alle avgjørelsene forslaget ventet på er tatt:
 
 ## 4. Før noe kan prøves mot Skatteetaten
 
-1. Test-scopet `skatteetaten:trekkpaalegg` er bestilt for BogenTech
-   (e-post til fremtidensinnkreving@skatteetaten.no) og lagt på
-   testklienten i Samarbeidsportalen.
+1. Test-scopet `skatteetaten:trekkpaalegg` er tildelt BogenTech og lagt
+   på testklienten i Samarbeidsportalen. **Bestilt 2026-11-26, sak
+   SSV-6690**, på brukerstøttedesken under Hente data → Søknad om
+   tilgang (docs/gov.md), ikke med e-posten dokumentasjonen nevner.
 2. regnmeds system i Altinns systemregister (TT02) har fått ressursen
    `ske-informasjon-om-trekkpaalegg`, og testselskapets systembruker er
    godkjent på nytt med den.

@@ -66,11 +66,19 @@ Gjenstår:
    under), og kjør valideringsrundturen (steg 4 under) — empirisk
    sjekk: `scripts/maskinporten-scope-test.py <scope>` skal svare
    GRANTED for alle fire.
-2. `skatteetaten:mvaregisteravgiftssubjekt` og `skatteetaten:frister`
-   var **ikke** valgbare i Innrapportering-skjemaet — de hører til
-   Deling-siden (eget behandlingsgrunnlagskrav) og bestilles separat
-   der når de trengs. Lav prioritet: begge er kryssjekker, ikke
-   forutsetninger.
+2. `skatteetaten:frister` og `skatteetaten:trekkpaalegg` er **BESTILT
+   2026-11-26, sak SSV-6690** (test). De står ikke i
+   Innrapportering-skjemaet, men under desken sin kategori **Hente data
+   → Søknad om tilgang**, som har avkrysning for Frister, Krav og
+   betalinger og Trekkpålegg (utleggstrekk), test/produksjon og aksept
+   av tjenestebeskrivelsen. Trekkpålegg-dokumentasjonen ber om e-post
+   til fremtidensinnkreving@skatteetaten.no, men skjemaet er den
+   sporbare veien og gir en sak som SSV-5760.
+   `skatteetaten:mvaregisteravgiftssubjekt` får vi **ikke**: API-siden
+   sier «Tjenesten er ikke tilrettelagt for systembrukerløsningen og
+   visning i sluttbrukersystem», og tilgang krever et lovregulert
+   behandlingsgrunnlag. Mva-registreringen forblir et manuelt flagg i
+   firmaopplysningene (docs/faktura.md).
 3. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
    2026-08-11**: `altinn:instances.read`/`write` bestilles i Digdirs
    registreringsskjema for sluttbrukersystem, ikke hos Skatteetaten.
@@ -153,8 +161,11 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innrapporteringamelding` | a-melding **og** avstemmingsrapporten (#46) | koden mangler |
 | `skatteetaten:skattekorttilarbeidsgiver` | skattekort → forskuddstrekk (#46) | koden finnes (`regnmed-gov::tax_card`, docs/lonn.md); prøvd mot testmiljøet 2026-11-12 |
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
-| `skatteetaten:mvaregisteravgiftssubjekt` | er selskapet mva-registrert? | i dag et manuelt flagg i firmaopplysningene (docs/faktura.md) — dette er den autoritative kilden |
-| `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning |
+| `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning. Bestilt i test, SSV-6690 |
+| `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | bestilt i test, SSV-6690 |
+
+`skatteetaten:mvaregisteravgiftssubjekt` sto her til 2026-11-26, men
+tilbys ikke sluttbrukersystemer (punkt 2 under «Gjenstår»).
 
 **Vent til saken er planlagt** — ikke bestill tilgang til opplysninger
 uten et sted å bruke dem; det er både dataminimering og noe
