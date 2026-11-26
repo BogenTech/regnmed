@@ -408,8 +408,9 @@ er grunnlaget her:
 Samordnet og skatt betales innen første virkedag etter utbetaling (§2
 steg 5); for øvrige krav sier tabellen «Se trekkpålegget», så fristen
 er et felt fra brevet. For alle tre gjelder «trekke så mye som mulig»
-og taket i §3, og ingen av dem har sommer- eller desemberfritak. Veiledningen unntar også mva-, særavgifts-
-og tollkrav fra a-meldingen; de er «øvrige» her.
+og taket i §3, og ingen av dem har sommer- eller desemberfritak.
+Veiledningen unntar også mva-, særavgifts- og tollkrav fra
+a-meldingen; de er «øvrige» her.
 
 Forskjellen i prosentgrunnlag betyr ingenting i dag, fordi lønnen i
 regnmed ikke har naturalytelser (docs/lonn.md), men koden skal skille
