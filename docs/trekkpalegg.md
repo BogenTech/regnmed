@@ -226,10 +226,10 @@ betalingsinformasjonen. Veiledningen sier:
    0009), så en kunde med samme nummer telles ikke (den kan ikke føres på
    en leverandørkonto), og finnes flere leverandører, brukes den med
    lavest partsnummer, og forhåndsvisningen sier fra. Har en
-   eksisterende part en annen bankkonto enn påleggets `kontonummer`, betaler regnmed ikke til den
-   lagrede: betalingslisten tar bankkontoen fra parten (et øyeblikksbilde
-   når kjøringen lages), og et trekk betalt til feil konto er
-   arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
+   eksisterende part en annen bankkonto enn påleggets `kontonummer`,
+   betaler regnmed ikke til den lagrede: betalingslisten tar
+   bankkontoen fra parten (et øyeblikksbilde når kjøringen lages), og
+   et trekk betalt til feil konto er arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
    med samme validering som portalen (`update_party_contact`), men i
    **kjøringens egen transaksjon** — dagens funksjon tar en pool, så den
    får en `_in`-variant — slik at kontoendringen og lønnsbilaget lykkes
@@ -280,9 +280,9 @@ Alle avgjørelsene forslaget ventet på er tatt:
   ha begge (`LONN_KJOR` kan delegeres og ligger i `bokforing`), men får
   ikke varsel: en agent ser pålegget i forhåndsvisningen den uansett må
   hente før kjøringen (punkt 2 under). Pålegget er bindende, og et
-  trekk som ikke gjennomføres er arbeidsgiverens ansvar (innledningen), så en godkjenning kunne bare
-  utsatt trekket, aldri stoppet det — og utsettelsen ville vært
-  selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
+  trekk som ikke gjennomføres er arbeidsgiverens ansvar
+  (innledningen), så en godkjenning kunne bare utsatt trekket, aldri
+  stoppet det — og utsettelsen ville vært selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
   erstattet pålegg slutter å trekkes uten at noen må handle. Fem ting
   holder automatikken trygg:
   1. Et pålegg som ikke kan knyttes til en ansatt (steg 3), vises
