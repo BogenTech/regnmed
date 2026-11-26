@@ -218,8 +218,8 @@ betalingsinformasjonen. Veiledningen sier:
    gjennom samme vei som portalen (`update_party_contact`, som validerer
    kontonummeret), og forhåndsvisningen sier fra om endringen.
    2610 er en egen konto under standardkontoen 2600 «Skattetrekk og
-   andre trekk», så trekket står for seg i balansen og ikke blandes med forskuddstrekket på 2600 eller
-   med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
+   andre trekk», så trekket står for seg i balansen og ikke blandes med
+   forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
    (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
    første gang en kjøring trekker et pålegg, med navnet
    «Utleggstrekk». **Finnes 2610 alt** — et selskap som har importert
