@@ -46,9 +46,30 @@ Testen `an_announced_version_binds_only_from_its_date` fester regelen.
 datoen i arkivet, og at to versjoner ikke gjelder fra samme dato
 (utover de tre utkastene fra 2026-11-12, som er eldre enn regelen).
 
-**Ikke bygget:** e-postvarselet §14.1 også lover. Portalen viser den nye
-versjonen, men regnmed sender ingen e-post om den; det må gjøres for
-hånd til e-postvarslingen finnes.
+### E-postvarselet
+
+CronJobben `regnmed terms-notice` (`deploy/shared/terms-notice.yaml`,
+daglig) sender e-post til hvert selskap som har godtatt en tidligere
+versjon, men verken har godtatt eller fått varsel om den gjeldende.
+Selskaper som aldri har godtatt vilkårene, er ikke bundet av dem og får
+ikke varsel. Mottakeren er selskapets egen e-postadresse (§15.1), ellers
+adressen til den som sist godtok vilkårene for selskapet. E-posten sier
+når den nye versjonen gjelder fra, lenker til den
+(`PORTAL_BASE_URL/vilkar/<sha256>`) og forteller hva som skjer om den
+ikke godtas.
+
+Hvert varsel lagres innsettings-bart i `terms_notice` (migrasjon 0109):
+selskap, versjon, mottaker og tidspunkt, én rad per selskap og versjon.
+Derfor får hvert selskap varselet én gang, og radens id er e-postens
+Nats-Msg-Id. Et selskap uten noen adresse rapporteres, og jobben feiler
+til noen har lagt inn en adresse; da sendes varselet ved neste kjøring.
+
+Varselet går ut første kjøring etter utrullingen. **30 dagers varsel
+krever derfor at den nye versjonen dateres minst 30 dager etter
+utrullingsdagen**, ikke etter dagen teksten ble skrevet.
+
+Testen `each_bound_company_is_told_once` (`regnmed-mail`) kjører mot en
+ekte nats-server og fester hvem som varsles og at det skjer én gang.
 
 ## Versjoner
 
