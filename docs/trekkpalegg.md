@@ -107,8 +107,8 @@ Håndboken sier selv at den ikke er oppdatert for innkrevingsloven fra
   utleggstrekk. Når et samordnet trekk settes i gang, skal alle andre
   trekk avsluttes. Påleggene fra API-et er samordnede. Trekk etter den
   gamle ordningen kommer som brev og løper til arbeidsgiveren får
-  beskjed om å stoppe dem; de er utenfor regnmed, og merknaden i
-  forhåndsvisningen av lønnskjøringen gjelder fortsatt for dem.
+  beskjed om å stoppe dem; de kommer aldri gjennom API-et og
+  registreres for hånd (§2, steg 1).
 - **Grunnlaget for prosenten** er bruttolønnen, regnet på samme grunnlag
   som forskuddstrekket. Naturalytelser og utgiftsgodtgjørelser holdes
   utenfor. Trekkfri kjøregodtgjørelse og diett er derfor ikke med; den
@@ -170,6 +170,15 @@ betalingsinformasjonen. Veiledningen sier:
    nye pålegg kommet inn. Kjøringen trekker etter originalen til
    selskapet har kontaktet innkrevingsmyndigheten og en ny versjon
    kommer.
+
+   Endringslisten alene kan ikke vise at et pålegg er **borte**: at et
+   stoppet pålegg kommer tilbake som `avsluttet` og ikke bare faller ut
+   av listen over «gjeldende» pålegg, er ikke bekreftet (§4). Faller det
+   ut, ville regnmed trekke etter siste lagrede versjon hver måned uten
+   grunnlag. Derfor henter forhåndsvisningen av hver kjøring også hele
+   listen, uten `fraSekvensnummer`. Et pålegg som er aktivt i regnmed,
+   men mangler i den, trekkes **ikke**; det vises som et avvik, og
+   advarselen ber selskapet kontakte innkrevingsmyndigheten.
    Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for
    skattekortet skrives forespørselen **før** kallet, og en feil lagres
    med koden.
@@ -178,8 +187,22 @@ betalingsinformasjonen. Veiledningen sier:
    kommer til regnmed med et løpende pålegg, får det ikke før etter
    første a-melding herfra. Har selskapet aldri hentet med hell, sier
    derfor forhåndsvisningen av kjøringen at eventuelle pålegg selskapet
-   alt har, ikke er med, og må trekkes og betales utenfor regnmed den
-   måneden.
+   alt har, ikke er med, og at de må **registreres for hånd** (under).
+   Å trekke dem utenfor regnmed går ikke: a-meldingen for måneden lages
+   her, og den ville da verken vist trekket eller stemt med det som ble
+   utbetalt.
+
+   **Manuelt registrert pålegg.** Den som har `LONN_SKRIV`, kan legge
+   inn et pålegg fra brevet: ansatt, KID, beløp eller prosent, perioden
+   og a-meldingens beskrivelse (`utleggstrekkSamordnet`, eller den gamle
+   ordningens `utleggstrekkSkatt`). Det trekkes, bokføres, betales og
+   rapporteres akkurat som et hentet pålegg og er merket med kilden
+   (`manuell`, med hvem som registrerte det). Registreringen er
+   innsettings-bar som de hentede versjonene: en endring eller en stopp
+   er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
+   KID, avløser det den manuelle registreringen fra neste kjøring, og
+   forhåndsvisningen sier fra. Dette dekker også trekkene etter den
+   gamle ordningen (§1), som aldri kommer gjennom API-et.
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -203,7 +226,12 @@ betalingsinformasjonen. Veiledningen sier:
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
    kjøringen — lønn, feriepenger og trekkpliktig del av
    kjøregodtgjørelse — og aldri av trekkfri kjøregodtgjørelse, diett
-   eller naturalytelser. Et beløp trekkes som det står — men **enheten
+   eller naturalytelser. Formatet til `trekkprosent` er heller ikke
+   dokumentert (eksempelet har ingen); den leses som en desimalstreng
+   til et heltall basispunkter, aldri som flyttall (slik
+   `regnmed-core::currency::parse_rate` leser valutakurser), og
+   trekket regnes i heltall øre med samme
+   avrunding som under. Et beløp trekkes som det står — men **enheten
    til `trekkbeloep` er ikke dokumentert** (eksempelet sier 8000 uten
    enhet), og regnmed regner i øre, så en feil antakelse er en feil på
    100 ganger som taket og avrundingen ville skjult. Enheten leses fra
@@ -303,7 +331,8 @@ Alle avgjørelsene forslaget ventet på er tatt:
      nekter kjøringen til den er forhåndsvist på nytt — det som ble vist,
      er det som kjøres. Forhåndsvisningen lagrer ingenting, så
      mekanismen er at den returnerer settet av (`trekkid`,
-     `trekkversjon`) den brukte, bokføringskallet sender settet tilbake,
+     `trekkversjon`) den brukte — for et manuelt registrert pålegg
+     registreringens id — bokføringskallet sender settet tilbake,
      og serveren nekter hvis settet den selv ville brukt er et annet.
      Feltet er **påkrevd** når et pålegg gjelder for kjøringen: et kall
      uten settet nektes som et kall med feil sett. Lønnskjøringen er et
@@ -359,9 +388,11 @@ Alle avgjørelsene forslaget ventet på er tatt:
    godkjent på nytt med den.
 3. Skatteetaten har lagt inn trekkpålegg i testmiljøet for det
    syntetiske selskapet.
-4. OpenAPI-spesifikasjonen er lest, og enheten til `trekkbeloep` (kroner
-   eller øre), om `fraSekvensnummer` er inkluderende, og om `opprettet`
-   gjelder pålegget eller versjonen, står i dette dokumentet med kilde.
+4. OpenAPI-spesifikasjonen er lest, og dette står i dokumentet med
+   kilde: enheten til `trekkbeloep` (kroner eller øre), formatet til
+   `trekkprosent`, om `fraSekvensnummer` er inkluderende, om `opprettet`
+   gjelder pålegget eller versjonen, og om et stoppet pålegg kommer i
+   endringslisten som `avsluttet` eller bare forsvinner.
 
 ## 5. Ferdig når
 
