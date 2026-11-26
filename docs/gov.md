@@ -189,6 +189,19 @@ kundesegment krever det), oppdragsregisteret (bygg/anlegg),
 innkrevings- og utleggsscopene (inkasso overlates bevillingshavere,
 docs/purring.md), og tredjepartsrapporteringen for bank/forsikring.
 
+### Nav: inntektsmelding
+
+Navs scope er åpne for alle (`accessibleForAll`) og hukes av på klienten
+i Samarbeidsportalen uten søknad. Tilgangen ligger i Altinn-ressursen på
+systembrukeren. Sykepenge-API-et godtar bare tokens med nøyaktig sitt
+eget scope, så det får sin egen token-leverandør (docs/inntektsmelding.md).
+
+| Scope | Altinn-ressurs | Til | Status |
+| --- | --- | --- | --- |
+| `nav:helseytelser/sykepenger` | `nav_sykepenger_inntektsmelding` | inntektsmelding for sykepenger (#184) | ikke lagt på klienten |
+| `nav:inntektsmelding/foreldrepenger` | `nav_foreldrepenger_inntektsmelding` | foreldre- og svangerskapspenger | ikke avklart om åpent for leverandører |
+| `nav:inntektsmelding/sif` | `nav_sykdom-i-familien_inntektsmelding` | omsorgs-, pleie- og opplæringspenger | ikke avklart om åpent for leverandører |
+
 ### Det som IKKE er Skatteetaten-scope
 
 Den fellen som kostet en runde: to av behovene løses ikke med et
