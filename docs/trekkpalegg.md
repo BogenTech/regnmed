@@ -358,8 +358,9 @@ Alle avgjørelsene forslaget ventet på er tatt:
      offentlig API-endepunkt (docs/integrations.md), og en klient som
      ikke kjenner feltet, skal ikke kunne kjøre forbi vakten.
   3. Kjøringen advarer når siste vellykkede henting — av endringene
-     eller av hellisten — er eldre enn tre dager — tre tapte daglige hentinger (steg 1) — siden den da kan
-     trekke etter pålegg som er stoppet eller erstattet. Har selskapet
+     eller av hellisten — er eldre enn tre dager (tre tapte daglige
+     hentinger, steg 1), siden den da kan trekke etter pålegg som er
+     stoppet eller erstattet. Har selskapet
      aldri hentet, gjelder advarselen i steg 1.
   4. Andres pålegg, varselet og koblingen til den ansatte er synlige
      bare for dem med `LONN_LES`: gjeld hos en ansatt er sensitive
