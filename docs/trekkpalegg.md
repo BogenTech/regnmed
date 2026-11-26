@@ -159,10 +159,17 @@ betalingsinformasjonen. Veiledningen sier:
    lagres, så et kall som feiler halvveis hentes på nytt neste gang i
    stedet for å hoppes over. Om `fraSekvensnummer` er inkluderende, er
    ikke dokumentert (§4), så en versjon kan komme igjen: lagringen er
-   idempotent — en versjon som alt finnes (`on conflict do nothing`),
-   hoppes over, og er innholdet en annen enn det lagrede, stopper
-   hentingen med en feil i stedet for å skrive over. Ellers ville én
-   gjentatt versjon rulle tilbake hele hentingen, også de nye, hver dag.
+   idempotent — en versjon som alt finnes, hoppes over. «Finnes» avgjøres
+   på de tolkede feltene, ikke på bytene, så samme pålegg med feltene i
+   en annen rekkefølge er det samme. Er feltene faktisk ulike for samme
+   (`trekkid`, `trekkversjon`), lagres den nye kopien som en
+   **konflikt** ved siden av originalen (heller ikke den kan endres),
+   pålegget vises som et avvik i portalen og forhåndsvisningen, og
+   hentingen går videre. Å stoppe ville ikke hjulpet: originalen kan
+   ikke rettes, så hver henting ville stoppet på samme versjon og ingen
+   nye pålegg kommet inn. Kjøringen trekker etter originalen til
+   selskapet har kontaktet innkrevingsmyndigheten og en ny versjon
+   kommer.
    Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for
    skattekortet skrives forespørselen **før** kallet, og en feil lagres
    med koden.
@@ -180,10 +187,14 @@ betalingsinformasjonen. Veiledningen sier:
    ansattregisteret. Et pålegg uten ansatt vises som et avvik i portalen;
    det forsvinner ikke. En ansatt har bare ett samordnet pålegg (§1), og
    et erstattet pålegg kommer fra API-et som `avsluttet`. Har den ansatte
-   likevel **to aktive** pålegg, velger regnmed ikke mellom dem:
-   forhåndsvisningen viser det som et avvik, og kjøringen trekker det med
-   høyest `sekvensnummer` og advarer om det andre, så selskapet kan
-   kontakte innkrevingsmyndigheten.
+   likevel **to aktive** pålegg, viser forhåndsvisningen det som et
+   avvik, og kjøringen trekker det som ble **opprettet** sist
+   (`opprettet` — `sekvensnummer` stiger ved hver endring og ville
+   valgt det som sist ble endret, ikke det nyeste pålegget). At
+   `opprettet` hører til pålegget og ikke til versjonen, er en
+   antakelse fra eksempelet som må bekreftes (§4); er den per versjon,
+   brukes `opprettet` fra påleggets første versjon. Advarselen navngir
+   det andre, så selskapet kan kontakte innkrevingsmyndigheten.
 4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen det
    aktive pålegget og perioden som dekker utbetalingsdatoen, og beregner
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
@@ -208,15 +219,21 @@ betalingsinformasjonen. Veiledningen sier:
    krediteres på
    **2610 Utleggstrekk** med innkrevingsmyndigheten
    (`betalingsmottaker`, med `kontonummer` som bankkonto) som part, i
-   stedet for på 2930 Skyldig lønn. Parten slås opp på
-   organisasjonsnummeret i `betalingsmottaker` og opprettes som
-   leverandør hvis den ikke finnes. Har en eksisterende part en annen
-   bankkonto enn påleggets `kontonummer`, betaler regnmed ikke til den
+   stedet for på 2930 Skyldig lønn. Parten slås opp blant selskapets
+   **leverandører** (`kind = 'leverandor'`) på organisasjonsnummeret i
+   `betalingsmottaker`, og opprettes som leverandør hvis ingen finnes.
+   `party.orgnr` er verken unikt eller knyttet til typen (migrasjon
+   0009), så en kunde med samme nummer telles ikke (den kan ikke føres på
+   en leverandørkonto), og finnes flere leverandører, brukes den med
+   lavest partsnummer, og forhåndsvisningen sier fra. Har en
+   eksisterende part en annen bankkonto enn påleggets `kontonummer`, betaler regnmed ikke til den
    lagrede: betalingslisten tar bankkontoen fra parten (et øyeblikksbilde
    når kjøringen lages), og et trekk betalt til feil konto er
    arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
-   gjennom samme vei som portalen (`update_party_contact`, som validerer
-   kontonummeret), og forhåndsvisningen sier fra om endringen.
+   med samme validering som portalen (`update_party_contact`), men i
+   **kjøringens egen transaksjon** — dagens funksjon tar en pool, så den
+   får en `_in`-variant — slik at kontoendringen og lønnsbilaget lykkes
+   eller feiler sammen. Forhåndsvisningen sier fra om endringen.
    2610 er en egen konto under standardkontoen 2600 «Skattetrekk og
    andre trekk», så trekket står for seg i balansen og ikke blandes med
    forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400.
@@ -225,11 +242,17 @@ betalingsinformasjonen. Veiledningen sier:
    pålegg, med navnet «Utleggstrekk». **Finnes 2610 alt** — et selskap
    som har importert kontoplanen, kan bruke nummeret til noe annet —
    brukes den bare hvis den alt er leverandørreskontro. Ellers flagges
-   den ikke om (historikken har posteringer uten part);
-   forhåndsvisningen sier fra før kjøringen, og selskapet velger en
-   annen konto for utleggstrekk i lønnsinnstillingene (standard 2610),
-   som må være en leverandørreskontrokonto. Kjøringen
-   nekter bare når en ansatt faktisk har et pålegg å trekke. Linjen får
+   den ikke om (historikken har posteringer uten part), og kjøringen
+   oppretter i stedet **første ledige nummer i 2611–2619** som
+   leverandørreskontro med navnet «Utleggstrekk» (SAF-T-grupperingen går
+   til nærmeste standardkonto, 2600, som for 2610). Forhåndsvisningen
+   sier hvilken konto som blir brukt, og kontoen huskes i
+   lønnsinnstillingene, der selskapet kan velge en annen
+   leverandørreskontrokonto. Kjøringen nekter altså ikke — lønnen skal
+   ut, samme regel som for taket i §3 — med ett unntak: er hele 2610–2619
+   opptatt av kontoer som ikke er leverandørreskontro, og ingen konto er
+   valgt, finnes det ingen trygg konto å føre på, og forhåndsvisningen
+   sier det før lønningsdagen. Linjen får
    betalingsvilkår i `payable_terms` med påleggets `kidnummer` og
    **forfall på utbetalingsdatoen**. Fristen er første virkedag etter
    (§1), men regnmed har ingen helligdagskalender, og ukedager alene
@@ -251,11 +274,13 @@ betalingsinformasjonen. Veiledningen sier:
 Alle avgjørelsene forslaget ventet på er tatt:
 
 - **Godkjenning** (2026-11-25): et nytt eller endret pålegg virker fra
-  **neste lønnskjøring uten godkjenning**, og de som har `LONN_KJOR`
-  varsles — de som kjører lønnen, ikke alle som kan lese den (`revisor`
-  og integrasjoner kan ha `LONN_LES`; de leser pålegget, men får ikke
-  varsel). Pålegget er bindende, og et trekk som ikke gjennomføres er
-  arbeidsgiverens ansvar (innledningen), så en godkjenning kunne bare
+  **neste lønnskjøring uten godkjenning**, og **menneskene** som har
+  `LONN_KJOR` varsles — de som kjører lønnen, ikke alle som kan lese den.
+  `revisor` har `LONN_LES` men ikke `LONN_KJOR`, og en integrasjon kan
+  ha begge (`LONN_KJOR` kan delegeres og ligger i `bokforing`), men får
+  ikke varsel: en agent ser pålegget i forhåndsvisningen den uansett må
+  hente før kjøringen (punkt 2 under). Pålegget er bindende, og et
+  trekk som ikke gjennomføres er arbeidsgiverens ansvar (innledningen), så en godkjenning kunne bare
   utsatt trekket, aldri stoppet det — og utsettelsen ville vært
   selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
   erstattet pålegg slutter å trekkes uten at noen må handle. Fem ting
@@ -323,8 +348,8 @@ Alle avgjørelsene forslaget ventet på er tatt:
 3. Skatteetaten har lagt inn trekkpålegg i testmiljøet for det
    syntetiske selskapet.
 4. OpenAPI-spesifikasjonen er lest, og enheten til `trekkbeloep` (kroner
-   eller øre) og om `fraSekvensnummer` er inkluderende, står i dette
-   dokumentet med kilde.
+   eller øre), om `fraSekvensnummer` er inkluderende, og om `opprettet`
+   gjelder pålegget eller versjonen, står i dette dokumentet med kilde.
 
 ## 5. Ferdig når
 
