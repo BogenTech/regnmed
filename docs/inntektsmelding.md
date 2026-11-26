@@ -25,9 +25,11 @@ Alt i dette avsnittet er lest 2026-11-26. Kildene er Navs egne:
   (OpenAPI 3.1.1, «Sykepenger API» 1.0.0). Der den sier noe wikien ikke
   gjør, står det under med «spesifikasjonen».
 - **Driftskonfigurasjonen** i Navs repoer (`.nais/prod.yaml`,
-  `application-prod-gcp.properties`) for vertsnavn, scope og
-  Altinn-ressurs. Det er Navs egen kode, men ikke dokumentasjon; navnene
-  må bekreftes i testmiljøet.
+  `.deploy/prod-gcp*.json`, `application-prod-gcp.properties`) for
+  vertsnavn, scope og Altinn-ressurs, og **kildekoden** der wikien ikke
+  sier nok (`InnsendingUtils.kt`, `ForespoerselRepository.kt`). Det er
+  Navs egen kode, men ikke dokumentasjon. Det som står under med
+  «koden», må bekreftes i testmiljøet.
 - READMEene til [navikt/fp-inntektsmelding-api](https://github.com/navikt/fp-inntektsmelding-api)
   og [navikt/k9-inntektsmelding-api](https://github.com/navikt/k9-inntektsmelding-api).
 - [Sende inntektsmelding på nav.no](https://www.nav.no/arbeidsgiver/sende-inntektsmelding)
@@ -46,7 +48,9 @@ Alt i dette avsnittet er lest 2026-11-26. Kildene er Navs egne:
 
 Alle tre tar et Maskinporten-token for **systembruker** og sjekker i
 Altinn at systemet har ressursen for organisasjonen i kallet. Alle tre
-har forespørsel, innsending og henting av innsendte meldinger.
+har forespørsel, innsending og henting av innsendte meldinger. k9-API-et
+har i tillegg refusjonskrav for omsorgspenger, som ikke krever en
+forespørsel.
 
 Bare sykepenge-API-et er dokumentert for leverandører. Wikiens FAQ sier
 at «kun sykepenger» har besluttet å ha API, og nav.no (juni 2026) sier at
@@ -73,13 +77,21 @@ Resten av avsnittet gjelder sykepenger.
   Dialogporten er egne ressurser (`nav_sykepenger_sykmelding`,
   `nav_sykepenger_soeknad`, `nav_sykepenger_dialog`), som regnmed ikke
   trenger (§4).
-- **Regnskapsfører.** Tilgangspakken `regnskapsforer-lonn`, som regnmeds
-  klient-systembruker alt ber om (`scripts/altinn-system.py`), inneholder
+- **Selskap som rapporterer selv.** Ressursen
+  `nav_sykepenger_inntektsmelding` legges i systemets `rights`, ved
+  siden av Skatteetatens. Tilgangspakken «Lønn med personopplysninger av
+  særlig kategori» (`lonn-personopplysninger-saerlig-kategori`), som
+  wikien foreslår, er ikke et alternativ for regnmed: systemregisteret
+  tar bare REGN-, REVI- og forretningsførerpakker (regel 2 i
+  docs/gov.md), og pakken ville også gitt sykmelding og søknad, som
+  regnmed ikke skal ha (§4).
+- **Regnskapsfører.** Alle tre REGN-pakkene systemet er registrert med
+  (`scripts/altinn-system.py`) inneholder
   `nav_sykepenger_inntektsmelding`, `nav_foreldrepenger_inntektsmelding`
-  og `nav_sykdom-i-familien_inntektsmelding` (Altinns metadata). Den
-  veien trenger altså ingen endring. For et selskap som rapporterer selv,
-  er tilgangspakken «Lønn med personopplysninger av særlig kategori»
-  (`lonn-personopplysninger-saerlig-kategori`), eller ressursen alene.
+  og `nav_sykdom-i-familien_inntektsmelding` (Altinns metadata for
+  produksjon; TT02 er ikke sjekket). Klient-systembrukere er ennå ikke
+  bygget (docs/gov.md), og om Navs API godtar et token for en
+  klient-systembruker, sier ingen av Navs sider. Det må prøves.
 - **Vilkår.** Bruken reguleres av Navs «Bruksvilkår – Nav sitt API for
   sykepenger – V1» (PDF lenket fra wikiens side «Vilkår for bruk av
   API-et»). Nav anser ikke vilkårene som oppfylt før leverandørens
@@ -110,11 +122,19 @@ Status er `AKTIV` (Nav venter), `BESVART` (Nav har godkjent en
 inntektsmelding for den; kan fortsatt korrigeres) eller `FORKASTET`
 (trukket tilbake, kan ikke besvares; som oftest kommer en ny `AKTIV`).
 
-Nye forespørsler finnes på to måter: `POST /v1/forespoersler` med
-`orgnr` og eventuelt `fraLoepenr` (spesifikasjonen; høyst 1 000 per svar,
-med `X-Warning-limit-reached`), eller et abonnement på Altinn-hendelser
-fra Dialogporten (webhook, scope `altinn:events.subscribe` og
-`subscribe` på `nav_sykepenger_dialog`).
+Nye forespørsler finnes på to måter: `POST /v1/forespoersler`, eller et
+abonnement på Altinn-hendelser fra Dialogporten (webhook, scope
+`altinn:events.subscribe` og `subscribe` på `nav_sykepenger_dialog`).
+Om spørringen:
+
+- `orgnr` er **underenheten**, og den må stemme nøyaktig (koden).
+  Selskapets eget organisasjonsnummer gir ingen treff.
+- `fraLoepenr` gir forespørsler med høyere `loepenr`. Men `loepenr` er
+  radnummeret, og når status endres, skrives den på samme rad (koden).
+  Et vannmerke på `loepenr` ser altså bare **nye** forespørsler, aldri at
+  en blir `BESVART` eller `FORKASTET`.
+- Høyst 1 000 per svar, med `X-Warning-limit-reached`
+  (spesifikasjonen).
 
 ### Uten forespørsel
 
@@ -129,17 +149,40 @@ tilfellene kommer ingen forespørsel, og meldingen sendes på nav.no:
 - søknaden er ikke elektronisk (ofte utenlandske sykmeldinger);
 - sykmelding for enkeltstående behandlingsdager.
 
-Det samme gjelder flere arbeidsforhold i samme underenhet, som API-et
-ikke skiller.
+Flere arbeidsforhold i samme underenhet sendes som én samlet melding
+gjennom API-et, med ett unntak som går på nav.no: gradert fravær fra
+bare noen av arbeidsforholdene, med ulik lønn (wikien, «Flere
+arbeidsforhold i samme underenhet»). regnmed har én ansatt per
+fødselsnummer per selskap (migrasjon 0035) og kan ikke uttrykke flere
+arbeidsforhold i dag.
+
+En inntektsmelding sendt på nav.no kan **hentes** gjennom API-et:
+`typeInnsending` skiller `FORESPURT_EKSTERN` (fra et system) fra
+`ARBEIDSGIVER_INITIERT` (uten forespørsel) og meldinger sendt i Navs
+eget skjema (koden; wikien, «Testdata»). regnmed kan altså se det som er
+sendt utenfor regnmed.
 
 ### Inntektsmeldingen
 
 `POST /v1/inntektsmelding` (spesifikasjonen). Påkrevd:
 `navReferanseId`, `sykmeldtFnr`, `aarsakInnsending` (`Ny`/`Endring`),
 `arbeidsgiverTlf`, `avsender` (systemnavn og -versjon), `agp`, `inntekt`,
-`refusjon` og `naturalytelser`. `agp`, `inntekt` og `refusjon` må være
-med, men kan være `null` når de ikke er forespurt. `kontaktinformasjon`
-(navn på kontaktperson) er valgfri.
+`refusjon` og `naturalytelser`. `kontaktinformasjon` (navn på
+kontaktperson) er valgfri. `agp`, `inntekt` og `refusjon` må være med,
+men kan være `null`, og forespørselens to flagg styrer hvilke. Nav
+avviser meldingen med en gang (`400`, koden) når:
+
+- `arbeidsgiverperiodePaakrevd` er sann og `agp` mangler;
+- `inntektPaakrevd` er sann og `inntekt` mangler, **eller** den er usann
+  og `inntekt` er med;
+- `aarsakInnsending` er `Endring` mens forespørselen er `AKTIV`, eller
+  `Ny` når den er `BESVART`;
+- forespørselen er `FORKASTET`, eller `sykmeldtFnr` ikke er forespørselens.
+
+En `agp` Nav ikke ba om, tas imot, men bare hvis den viser minst én
+arbeidsdag i starten av sykmeldingen (wikien, «Validering av
+ikke-forespurt AGP»). `refusjon: null` betyr at arbeidsgiveren ikke
+krever refusjon.
 
 - **`agp`**: periodene i arbeidsgiverperioden, og `redusertLoennIAgp`
   (beløp og en av 15 begrunnelser) bare når arbeidsgiveren ikke betalte
@@ -161,15 +204,16 @@ Beløpene er `number` i spesifikasjonen, altså kroner med desimaler.
 
 Nav tar imot meldingen med `201` og en `innsendingId` (`409` ved
 duplikat). Status er så `MOTTATT`, og etter noen minutter `GODKJENT`
-eller `FEILET` med `valideringsfeil`. Den eneste forretningsregelen i
-dag er at inntekten må stemme med a-ordningen, eller ha en årsak.
+eller `FEILET` med `valideringsfeil`. Den eneste regelen som kjøres
+etterpå, er at inntekten må stemme med a-ordningen, eller ha en årsak.
 Ellers `INNTEKT_AVVIKER_FRA_A_ORDNINGEN`. `GET /v1/inntekt?navReferanseId=…&inntektsdato=…`
 gir de tre månedene og gjennomsnittet Nav selv validerer mot, og
 wikien anbefaler å vise dem før innsending.
 
 En **korrigering** sendes som en ny, komplett melding på samme
 `navReferanseId` med `aarsakInnsending: Endring`. Den siste
-`GODKJENT`-meldingen gjelder.
+`GODKJENT`-meldingen gjelder. En melding som `FEILET`, lar forespørselen
+stå `AKTIV`, så den nye meldingen er `Ny`, ikke `Endring`.
 
 ### Regelen fra nav.no
 
@@ -184,35 +228,40 @@ En **korrigering** sendes som en ny, komplett melding på samme
 
 | Inntektsmeldingen trenger | I regnmed i dag |
 | --- | --- |
-| Underenhet (`orgnr` i forespørselen) | `employee.business_unit_orgnumber` (migrasjon 0073) |
+| Underenhet (`orgnr` i forespørselen) | `employee.business_unit_orgnumber` (migrasjon 0073). Kolonnen kan være tom, og en ansatt uten underenhet blir aldri spurt etter |
 | Den sykmeldte | `employee.fodselsnummer`, matchet mot `fnr` i forespørselen |
 | Arbeidsgiverperioden | **Mangler.** regnmed registrerer ikke fravær i det hele tatt: ingen sykefravær, egenmelding eller permisjon. Forespørselen bærer sykmeldings- og egenmeldingsperiodene, og arbeidsgiverperioden må bekreftes av et menneske |
 | Redusert lønn i arbeidsgiverperioden | **Mangler.** Lønnskjøringen betaler fast månedslønn eller førte timer og vet ikke om noen ble trukket for fravær |
-| Månedsinntekt (§ 8-28) | **Delvis.** `payroll_line` har det regnmed selv har utbetalt, per utbetalingsmåned som i a-meldingen. Måneder fra før selskapet tok i bruk regnmed finnes ikke. `GET /v1/inntekt` gir Navs eget tall |
-| Årsak til å fravike hovedregelen | **Delvis.** `employee.last_salary_change` (0073) kan foreslå `VarigLoennsendring`. Ferie, permisjon og stillingsendringer er ikke registrert |
+| Månedsinntekt (§ 8-28) | **Delvis.** `payroll_line` har det regnmed selv har utbetalt, per utbetalingsmåned som i a-meldingen. Feriepenger skal ikke med, så regnmeds tall må skille lønn fra feriepenger, ikke summere alt. Måneder fra før selskapet tok i bruk regnmed finnes ikke. `GET /v1/inntekt` gir Navs eget tall |
+| Årsak til å fravike hovedregelen | **Delvis.** `employee.last_salary_change` (0073) kan foreslå `VarigLoennsendring`, og `ansatt_fra` (0035) `Nyansatt`. Stillingsprosenten finnes (0073), men bare den gjeldende, så en endring har ingen dato. Ferie og permisjon er ikke registrert |
 | Refusjon | **Mangler.** Om selskapet betaler lønn under sykefraværet er en avgjørelse per ansatt. Hverken kravet eller Navs utbetaling bokføres i dag |
 | Naturalytelser | Lønnen har ingen naturalytelser (docs/lonn.md), så listen er alltid tom. Det er riktig for regnmeds lønn |
 | `arbeidsgiverTlf` (påkrevd) | **Mangler.** Verken selskapet eller personene har telefonnummer |
 | `kontaktinformasjon` | Navnet på personen som sender, speilet fra regnid |
 | Tilgang | Ingen rett for fravær. `LONN_LES` er nærmest, men revisor har den |
-| Token | `regnmed-gov::maskinporten` har én leverandør per skinne med skinnens egne scope (`amelding::SCOPES`, `tax_card::SCOPES`). Sykepenger blir én til, med `nav:helseytelser/sykepenger` alene |
+| Token | `regnmed-api` bygger én `TokenProvider` per skinne med skinnens egne scope (`amelding::SCOPES`, `tax_card::SCOPES`, i `main.rs`). Sykepenger blir én til, med `nav:helseytelser/sykepenger` alene |
 
 ## 3. Flyten i regnmed
 
 1. **Hent forespørsler.** En jobb i arbeideren kaller
    `POST /v1/forespoersler` daglig for hvert selskap med systembruker,
-   med `fraLoepenr` lik høyeste `loepenr` regnmed har lagret. Hver
-   forespørsel lagres ordrett og innsettings-bart, med
-   statusendringer som nye rader. Den knyttes til den ansatte på `fnr`
-   og underenhet. En forespørsel uten ansatt vises som et avvik, og
-   forsvinner ikke.
+   én gang per **underenhet** de ansatte står på, uten vannmerke:
+   hele listen hentes, som for trekkpålegg. Et selskap har en håndfull
+   forespørsler, og bare hele listen viser at en er blitt `BESVART` eller
+   `FORKASTET` (§1). En forespørsel lagres ordrett og innsettings-bart,
+   og en statusendring blir en ny rad. Den knyttes til den ansatte på
+   `fnr` og underenhet. En forespørsel uten ansatt vises som et avvik og
+   forsvinner ikke, og en ansatt uten underenhet vises som en mangel,
+   siden ingen forespørsel for den ansatte kan finnes.
 2. **Varsle** dem som har den nye retten (§4), med frist «så snart
    arbeidsgiverperioden er over».
-3. **Forslag.** regnmed fyller ut et utkast: arbeidsgiverperioden fra
-   forespørselens egenmeldings- og sykmeldingsperioder, inntekten fra
-   `GET /v1/inntekt` med regnmeds egne tall ved siden av, og
-   `VarigLoennsendring` hvis `last_salary_change` faller i perioden. Et
-   avvik mellom Navs og regnmeds tall vises, og ingen av dem velges
+3. **Forslag.** regnmed fyller ut et utkast og følger forespørselens
+   flagg (§1): arbeidsgiverperioden fra egenmeldings- og
+   sykmeldingsperiodene bare når den er forespurt, og inntekten bare når
+   den er forespurt — fra `GET /v1/inntekt`, med regnmeds egne tall ved
+   siden av. `VarigLoennsendring` eller `Nyansatt` foreslås når
+   `last_salary_change` eller `ansatt_fra` faller i beregningsperioden.
+   Et avvik mellom Navs og regnmeds tall vises, og ingen av dem velges
    stille.
 4. **Et menneske sender.** Inntektsmeldingen er en erklæring fra
    arbeidsgiveren og sendes aldri automatisk. Agenter kan lage utkast,
@@ -220,9 +269,13 @@ En **korrigering** sendes som en ny, komplett melding på samme
 5. **Lagre kvitteringen.** Det som ble sendt, og svaret, lagres
    innsettings-bart. Jobben henter status til meldingen er `GODKJENT`
    eller `FEILET`, og `FEILET` vises med Navs `valideringsfeil`. En
-   korrigering er en ny innsending, aldri en retting.
+   korrigering er en ny innsending, aldri en retting, med
+   `aarsakInnsending` etter forespørselens status (`Ny` etter `FEILET`,
+   §1).
 6. **Ingen forespørsel.** Portalen sier at meldingen må sendes på nav.no
-   og lister tilfellene fra §1.
+   og lister tilfellene fra §1. Jobben i steg 1 henter også
+   inntektsmeldinger sendt utenfor regnmed (`POST /v1/inntektsmeldinger`),
+   så det som er sendt på nav.no, står ved siden av det regnmed sendte.
 
 ## 4. Avgjørelser
 
@@ -232,29 +285,33 @@ Disse er brukerens:
   API-et Nav dokumenterer for leverandører. Foreldre- og pleiepenger
   følger samme mønster, med egne scope, og tas når Nav bekrefter at de er
   åpne (§5).
-- **Polling eller hendelser.** Forslaget er daglig polling, som for
-  trekkpålegg. Hendelser krever et offentlig webhook-endepunkt, et
-  ekstra scope og ressursen `nav_sykepenger_dialog`. Sykepenger venter
-  ikke på minuttet.
+- **Polling eller hendelser.** Forslaget er daglig polling av hele
+  listen (§3, steg 1). Hendelser krever et offentlig webhook-endepunkt,
+  et ekstra scope og ressursen `nav_sykepenger_dialog`. Sykepenger
+  venter ikke på minuttet.
 - **Hente sykmelding og søknad?** API-et tilbyr det, men regnmed trenger
   dem ikke til inntektsmeldingen. Forslaget er nei, fordi det er
   helseopplysninger regnmed da ville lagret uten grunn.
-- **Ny rett**, for eksempel `LONN_SYKEFRAVAER`, i `bokforing`- og
-  `admin`-bunten, men **ikke** for `revisor`. Revisor har `LONN_LES`,
-  men trenger ikke vite hvem som er syk. Retten styrer både hvem som ser
-  forespørslene og hvem som sender. Den kan delegeres til en agent bare
-  for utkast (§3, steg 4).
+- **To nye rettigheter**, fordi delegerbarhet er per rett
+  (`Right::can_be_delegated`): én for å se forespørsler og lage utkast,
+  som kan delegeres til en agent, og én for å sende, som ikke kan det —
+  samme grunn som `MVA_SEND`: en innsending skal ha en person bak seg.
+  Begge legges i `bokforing`-bunten (og dermed `admin`), men **ikke**
+  hos `revisor`. Revisor har `LONN_LES`, men trenger ikke vite hvem som
+  er syk.
 - **Telefonnummer.** Enten et telefonnummer på selskapet (firmaopplysninger),
   eller på personen som sender. Forslaget er selskapet: Nav spør etter
   «telefonnummer arbeidsgiver».
 - **Refusjon** er med i inntektsmeldingen fra start, som et felt
   brukeren fyller ut. Bokføringen av refusjonskravet og Navs utbetaling
-  er en egen sak: Nav betaler med en oppgjørsrapport, og den må
-  avstemmes mot banken.
+  er en egen sak: Nav betaler med en oppgjørsrapport (Altinn-ressursen
+  `nav_utbetaling_oppgjorsrapport-refusjon-arbeidsgiver`, i de samme
+  pakkene), og den må avstemmes mot banken.
 - **Oppbevaring.** Forespørsler og inntektsmeldinger er særlige
-  kategorier (docs/kundevilkar.md, bilag 1). De er ikke
-  regnskapsmateriale. Hvor lenge de skal lagres, må bestemmes før det
-  bygges.
+  kategorier (docs/kundevilkar.md, bilag 1). Når refusjonen bokføres,
+  dokumenterer inntektsmeldingen et krav, og kan da være
+  regnskapsmateriale. Hvor lenge de skal lagres, må bestemmes sammen
+  med det, før det bygges.
 
 ## 5. Før noe kan prøves i Navs testmiljø
 
@@ -267,14 +324,25 @@ Disse er brukerens:
 3. Navs bruksvilkår er akseptert, og kontaktinformasjon er sendt til
    nav.prosjekt.2.inntektsmelding@nav.no.
 4. BogenTech har tilgang til Dolly (organisasjonsnummer til
-   dolly@nav.no), og en testperson er sykmeldt hos en underenhet av
-   testselskapet (311032240), slik at Nav lager en forespørsel.
-5. Avklart med Nav:
-   - om foreldrepenger- og k9-API-ene er åpne for leverandører;
-   - om a-meldinger levert til Skatteetatens testmiljø når Navs
-     testmiljø, slik at `GET /v1/inntekt` og valideringen har tall å
-     sammenligne med. Hvis ikke, må testselskapets inntekt lages i
-     Dolly.
+   dolly@nav.no, deretter tjenesten «Dolly» delegert i Altinn), og en
+   forespørsel er laget slik wikiens side «Testdata» beskriver:
+   - daglig leder for testselskapet (311032240) er importert i Dolly fra
+     Tenor;
+   - en testperson har arbeidsforhold i Aa-registeret og inntekt i
+     Inntektstub på en **underenhet** av testselskapet (begge påkrevd);
+   - sykmeldingen er tilbakedatert, sendt til arbeidsgiveren, og
+     søknaden er sendt i «Ditt sykefravær» med TestID, med sykmelding og
+     egenmelding over 16 dager til sammen;
+   - samme person er ansatt i regnmed med samme fødselsnummer og
+     underenhet.
+5. Avklart med Nav: om foreldrepenger- og k9-API-ene er åpne for
+   leverandører.
+
+Inntekten Nav validerer mot i testmiljøet, er den som er lagt inn i
+Dolly, ikke a-meldingene regnmed har levert til Skatteetatens
+testmiljø. En `GODKJENT` i test viser derfor at veien gjennom API-et
+virker, ikke at regnmeds eget tall etter § 8-28 er riktig. Det siste
+testes mot regnmeds egne lønnslinjer.
 
 ## 6. Ferdig når
 
