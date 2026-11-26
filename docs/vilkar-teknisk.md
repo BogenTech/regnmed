@@ -14,12 +14,41 @@ til en integrasjon) godtar den under Administrasjon → Firmaopplysninger;
 aksepten lagres innsettings-bart i `terms_acceptance` (migrasjon 0077)
 med selskap, person, navn, tidspunkt og hashen. Hvert kall til
 myndighetene på kundens vegne — a-melding, aksjonærregisteroppgave,
-skattekortbestilling — nekter til gjeldende versjon er godtatt.
+skattekortbestilling — nekter til versjonen som gjelder i dag (eller en
+nyere) er godtatt.
 
 **Endres vilkårsfila, endres versjonen**, og hvert selskap må godta på
-nytt før neste innsending. Det gjelder også skrivefeil — det er prisen
-for at «godtatt» alltid betyr én bestemt tekst. Derfor står ingenting
-som beskriver koden i selve vilkårene.
+nytt. Det gjelder også skrivefeil — det er prisen for at «godtatt»
+alltid betyr én bestemt tekst. Derfor står ingenting som beskriver koden
+eller gjennomgangen av den i selve vilkårene: sporingstabellen og
+spørsmålene til advokaten står i `docs/kundevilkar-gjennomgang.md`.
+
+## Varsling av nye vilkår (§14.1)
+
+En versjon gjelder fra datoen i arkivfilnavnet, ikke fra den dagen den
+rulles ut. Vilkårene lover minst 30 dagers varsel, så en ny tekst
+arkiveres med en dato minst 30 dager fram i tid. Fram til den datoen:
+
+- gjelder versjonen før, og et selskap som har godtatt den, kan sende
+  inn som før;
+- viser portalen den nye teksten og datoen den gjelder fra, og en
+  administrator kan godta den med en gang;
+- `GET /companies/{id}/terms` svarer `kan_sende_inn: true` og
+  `godtatt: false`, med `gjelder_fra` satt til den nye datoen.
+
+Fra datoen nekter innsendingen for selskaper som ikke har godtatt den nye
+versjonen. Endringer Digdir, Skatteetaten eller regelverket krever, kan
+dateres tidligere (§14.1). En versjon datert i dag eller tidligere
+binder fra utrullingen.
+
+Testen `an_announced_version_binds_only_from_its_date` fester regelen.
+`the_current_text_is_archived` krever at vilkårsfila har den nyeste
+datoen i arkivet, og at to versjoner ikke gjelder fra samme dato
+(utover de tre utkastene fra 2026-11-12, som er eldre enn regelen).
+
+**Ikke bygget:** e-postvarselet §14.1 også lover. Portalen viser den nye
+versjonen, men regnmed sender ingen e-post om den; det må gjøres for
+hånd til e-postvarslingen finnes.
 
 ## Versjoner
 

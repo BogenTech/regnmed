@@ -13,6 +13,11 @@
 //! that files with an authority on a customer's behalf calls
 //! [`require_accepted`] first — Digdir's and Skatteetaten's terms allow no
 //! filing without an agreement with the customer.
+//!
+//! A version takes effect on the date in its archive file name, so a
+//! changed text can be ANNOUNCED (terms §14.1, 30 days' notice): until its
+//! date the version before it still governs, and a company that accepted
+//! that one can keep filing.
 
 use std::sync::LazyLock;
 
@@ -100,8 +105,42 @@ pub async fn list_versions() -> Json<serde_json::Value> {
     ))
 }
 
+/// The date the current text takes effect; it may still lie ahead.
+fn effective_date() -> &'static str {
+    versions()
+        .into_iter()
+        .find(|(_, sha, _)| *sha == VERSION.as_str())
+        .map_or("", |(date, _, _)| date)
+}
+
+/// Whether the accepted versions cover the version in force on `today`
+/// (`YYYY-MM-DD`): that one, or a newer one already announced. Before the
+/// first version takes effect any acceptance counts.
+fn covered(versions: &[(&str, &str, &str)], accepted: &[String], today: &str) -> bool {
+    let in_force = versions
+        .iter()
+        .map(|(date, _, _)| *date)
+        .filter(|date| *date <= today)
+        .max()
+        .unwrap_or("");
+    accepted.iter().any(|sha| {
+        versions
+            .iter()
+            .any(|(date, s, _)| s == sha && *date >= in_force)
+    })
+}
+
+/// Whether the company may file today under the terms it has accepted.
+fn may_file(history: &[regnmed_db::terms::Acceptance]) -> bool {
+    let accepted: Vec<String> = history.iter().map(|a| a.terms_sha256.clone()).collect();
+    // shortcut: the day turns at midnight UTC, not Oslo, so a new version
+    // takes effect up to two hours late -- the old text governs meanwhile.
+    let today = chrono::Utc::now().date_naive().to_string();
+    covered(&versions(), &accepted, &today)
+}
+
 pub async fn current() -> Json<serde_json::Value> {
-    Json(json!({ "versjon": *VERSION, "tekst": TEXT }))
+    Json(json!({ "versjon": *VERSION, "gjelder_fra": effective_date(), "tekst": TEXT }))
 }
 
 fn status_json(
@@ -110,6 +149,10 @@ fn status_json(
 ) -> serde_json::Value {
     json!({
         "versjon": *VERSION,
+        "gjelder_fra": effective_date(),
+        // May the company file today? True also while a newer, announced
+        // version waits for acceptance -- until its date.
+        "kan_sende_inn": may_file(history),
         "godtatt": a.is_some(),
         "godtatt_av": a.as_ref().map(|a| a.accepted_by.clone()),
         "godtatt_tidspunkt": a.as_ref().map(|a| a.accepted_at),
@@ -192,14 +235,12 @@ pub async fn authority_calls(
     )))
 }
 
-/// Refuses unless the company has accepted the current terms. Called by
-/// every endpoint that files with an authority on the company's behalf,
-/// before anything is stored or sent.
+/// Refuses unless the company has accepted the terms in force today (or
+/// a newer version already announced). Called by every endpoint that files
+/// with an authority on the company's behalf, before anything is stored or
+/// sent.
 pub async fn require_accepted(state: &AppState, company_id: Uuid) -> Result<(), ApiError> {
-    if regnmed_db::terms::acceptance(&state.pool, company_id, &VERSION)
-        .await?
-        .is_none()
-    {
+    if !may_file(&regnmed_db::terms::acceptances(&state.pool, company_id).await?) {
         return Err(ApiError::BadRequest(
             "selskapet har ikke godtatt kundevilkårene for innsending til myndighetene. En \
              administrator godtar dem under Administrasjon → Firmaopplysninger."
@@ -222,6 +263,7 @@ mod tests {
             "f2d730ceb33dde33c066d7cc74bfb9d0c725e3958aea3e0711fab11da3a885cd",
             "f376538b16f2bed77e6efabfd80cd7fd247797893c07644a32ea153dcd4329f9",
             "bec6783875729d4f63883b3595bdbf184c0982c92f01958485badc29e0e456b7",
+            "d9a890536ea971eb960c7071f73a254e6aeaa149df14c13af6087a04c63a6f3e",
         ];
         for known in KNOWN {
             assert!(
@@ -241,6 +283,21 @@ mod tests {
              (the date it takes effect) so customers bound by the old text can still read it",
             *VERSION
         );
+        // The file is the newest text: an older-dated text would take
+        // effect before the one it replaces.
+        assert!(
+            all.iter().all(|(date, _, _)| *date <= effective_date()),
+            "docs/kundevilkar.md must carry the newest date in docs/kundevilkar/"
+        );
+        // One version per date, or "in force on that date" is ambiguous.
+        // The three drafts of 2026-11-12 predate the rule and stay.
+        let mut dates: Vec<_> = all.iter().map(|(date, _, _)| *date).collect();
+        dates.retain(|date| *date != "2026-11-12");
+        dates.sort();
+        assert!(
+            dates.windows(2).all(|w| w[0] != w[1]),
+            "two terms versions take effect on the same date"
+        );
         for (date, sha, text) in &all {
             assert!(
                 chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok(),
@@ -255,5 +312,22 @@ mod tests {
                 "an archived version was edited after the fact"
             );
         }
+    }
+
+    #[test]
+    fn an_announced_version_binds_only_from_its_date() {
+        let versions = [("2026-01-01", "old", ""), ("2026-03-01", "new", "")];
+        let accepted = |shas: &[&str]| shas.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // During the notice period the old acceptance still files, and an
+        // early acceptance of the new text does too.
+        assert!(covered(&versions, &accepted(&["old"]), "2026-02-28"));
+        assert!(covered(&versions, &accepted(&["new"]), "2026-02-28"));
+        assert!(!covered(&versions, &accepted(&[]), "2026-02-28"));
+        // From its date only the new text does.
+        assert!(!covered(&versions, &accepted(&["old"]), "2026-03-01"));
+        assert!(covered(&versions, &accepted(&["new"]), "2026-03-01"));
+        assert!(!covered(&versions, &accepted(&["unknown"]), "2026-03-01"));
+        // Before the first version takes effect, any acceptance counts.
+        assert!(covered(&versions, &accepted(&["new"]), "2025-12-31"));
     }
 }

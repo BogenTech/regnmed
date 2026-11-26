@@ -2,7 +2,8 @@
   // Kundevilkårene (#185, docs/kundevilkar.md §1.4): innsending til
   // myndighetene på selskapets vegne krever at en administrator har godtatt
   // akkurat denne teksten. Versjonen er tekstens hash — serveren nekter en
-  // versjon som ikke er den gjeldende.
+  // versjon som ikke er den nyeste. En ny versjon kan varsles før den
+  // gjelder (§14.1); til da kan selskapet sende inn under den gamle.
   import { api, post } from "../../lib/api.js";
   import { formatDate, formatTime } from "../../lib/format.js";
   import { harRett } from "../../lib/me.svelte.js";
@@ -119,6 +120,11 @@
         Godtatt av <b>{status.godtatt_av}</b>
         {formatTime(status.godtatt_tidspunkt)}.
       </p>
+    {:else if status.kan_sende_inn}
+      <p class="text-sm mb-2" role="status">
+        Nye kundevilkår gjelder fra <b>{formatDate(status.gjelder_fra)}</b>. De må godtas før da,
+        ellers stopper innsendingen til myndighetene.
+      </p>
     {:else}
       <p class="text-sm mb-2">
         Før regnmed kan sende a-melding, aksjonærregisteroppgave og andre oppgaver til
@@ -132,7 +138,9 @@
         class="whitespace-pre-wrap text-xs border border-base-300 rounded p-3 max-h-96 overflow-y-auto mb-2"
         tabindex="0"
         aria-label="Kundevilkårene">{vilkar.tekst}</pre>
-      <p class="text-xs opacity-60 mb-2">Versjon {vilkar.versjon.slice(0, 12)}</p>
+      <p class="text-xs opacity-60 mb-2">
+        Versjon {vilkar.versjon.slice(0, 12)}, gjelder fra {formatDate(vilkar.gjelder_fra)}
+      </p>
       {#if !status.godtatt}
         {#if erAdmin}
           <button class="btn btn-sm btn-primary" disabled={godtar} onclick={godta}>
