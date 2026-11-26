@@ -1,9 +1,9 @@
 <script>
-  // Kundevilkårene (#185, docs/kundevilkar.md §1.4): innsending til
-  // myndighetene på selskapets vegne krever at en administrator har godtatt
-  // akkurat denne teksten. Versjonen er tekstens hash — serveren nekter en
-  // versjon som ikke er den nyeste. En ny versjon kan varsles før den
-  // gjelder (§14.1); til da kan selskapet sende inn under den gamle.
+  // Customer terms (#185, docs/kundevilkar.md §1.4): filing with the
+  // authorities on the company's behalf requires an admin to have accepted
+  // exactly this text. The version is the text's hash, and the server
+  // refuses any version but the newest. A new version can be announced
+  // before it takes effect (§14.1); until then the company files under the old one.
   import { api, post } from "../../lib/api.js";
   import { formatDate, formatTime } from "../../lib/format.js";
   import { harRett } from "../../lib/me.svelte.js";

@@ -62,3 +62,9 @@ holder. Hvert av dem er en vurdering, ikke en sannhet.
    kryptert nettverk fra Tailscale Inc. Tailscale ser ikke innholdet, og
    vi har derfor ikke ført det som underdatabehandler. Er det riktig?
 8. **Verneting (§15.2)** og om voldgift er bedre for oss.
+9. **Aksept av varslede vilkår (§14.1).** En ny versjon varsles før den
+   gjelder. Et selskap som bare har godtatt den nye versjonen, får sende
+   inn også i varslingsperioden, mens den gamle teksten gjelder — uten å
+   ha godtatt den gamle (`docs/vilkar-teknisk.md`). Binder aksepten av
+   den nye teksten kunden også for perioden før den trer i kraft, eller
+   må kunden godta den gjeldende i tillegg?

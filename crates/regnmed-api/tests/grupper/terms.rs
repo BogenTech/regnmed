@@ -78,6 +78,9 @@ async fn only_an_admin_accepts_and_only_the_text_they_saw() {
 
     let (_, status_before) = call(&state, Some(bookkeeper), "GET", &base, None).await;
     assert_eq!(status_before["godtatt"], false);
+    assert_eq!(status_before["kan_sende_inn"], false);
+    assert_eq!(status_before["gjelder_fra"], terms["gjelder_fra"]);
+    assert_eq!(terms["gjelder_fra"].as_str().unwrap().len(), 10);
 
     // A bookkeeper cannot bind the company.
     let accept = format!("{base}/accept");
@@ -120,6 +123,7 @@ async fn only_an_admin_accepts_and_only_the_text_they_saw() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["godtatt"], true);
     assert_eq!(body["godtatt_av"], "admin");
+    assert_eq!(body["kan_sende_inn"], true);
     let first = body["godtatt_tidspunkt"].clone();
 
     // Accepting again keeps the first acceptance.
