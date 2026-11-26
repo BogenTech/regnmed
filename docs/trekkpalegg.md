@@ -219,10 +219,10 @@ betalingsinformasjonen. Veiledningen sier:
    kontonummeret), og forhåndsvisningen sier fra om endringen.
    2610 er en egen konto under standardkontoen 2600 «Skattetrekk og
    andre trekk», så trekket står for seg i balansen og ikke blandes med
-   forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
-   (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
-   første gang en kjøring trekker et pålegg, med navnet
-   «Utleggstrekk». **Finnes 2610 alt** — et selskap som har importert
+   forskuddstrekket på 2600 eller med annen leverandørgjeld på 2400.
+   Kontoen er reskontroflagget (`reskontro_kind = 'leverandor'`) og
+   opprettes i selskapets kontoplan første gang en kjøring trekker et
+   pålegg, med navnet «Utleggstrekk». **Finnes 2610 alt** — et selskap som har importert
    kontoplanen, kan bruke nummeret til noe annet — brukes den bare hvis
    den alt er leverandørreskontro. Ellers flagges den ikke om (historikken
    har posteringer uten part); forhåndsvisningen sier fra før kjøringen,
