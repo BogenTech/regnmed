@@ -224,11 +224,11 @@ betalingsinformasjonen. Veiledningen sier:
    trekkes, bokføres, betales og rapporteres akkurat som et hentet og
    er merket med kilden (`manuell`, med hvem som registrerte det).
    Registreringen er innsettings-bar som de hentede versjonene: en
-   endring eller en stopp er en ny rad, aldri en retting. Kommer et hentet pålegg med samme
-   KID, avløser det den manuelle registreringen fra neste kjøring, og
-   forhåndsvisningen sier fra. Dette dekker også trekkene etter den
-   gamle ordningen (§1), som aldri kommer gjennom API-et. Har den
-   ansatte både et manuelt pålegg og et hentet med **en annen** KID —
+   endring eller en stopp er en ny rad, aldri en retting. Kommer et
+   hentet pålegg med samme KID, avløser det den manuelle registreringen
+   fra neste kjøring, og forhåndsvisningen sier fra. Dette dekker også
+   trekkene etter den gamle ordningen (§1), som aldri kommer gjennom
+   API-et. Har den ansatte både et manuelt pålegg og et hentet med **en annen** KID —
    typisk et gammelt trekk fra brev og et nytt samordnet — vises begge
    som et avvik, og kjøringen trekker det hentede: et samordnet trekk
    avslutter de andre (§1). Det manuelle står til noen med `LONN_SKRIV`
