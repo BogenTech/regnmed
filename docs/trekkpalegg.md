@@ -187,9 +187,9 @@ betalingsinformasjonen. Veiledningen sier:
    a-melding gjennom regnmed, og trekk etter den gamle ordningen kommer
    bare som brev (§1). Begge deler står i #339 (pålegg registrert for
    hånd). Til det er bygget, sier forhåndsvisningen av kjøringen at
-   slike pålegg ikke er med og må håndteres utenfor regnmed — og at
-   a-meldingen fra regnmed da ikke viser trekket, så selskapet må rette
-   den.
+   slike pålegg ikke er med, og at regnmed ikke kan rapportere et trekk
+   som er gjort utenfor: a-meldingen fra regnmed er da ufullstendig for
+   den ansatte den måneden (#339).
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -212,7 +212,10 @@ betalingsinformasjonen. Veiledningen sier:
    kroner og `trekkprosent` en prosent, begge som JSON-tall (`double`,
    §1). De leses fra tallets **tekst** — kroner til øre, prosenten til
    basispunkter — slik `regnmed-core::currency::parse_rate` leser
-   valutakurser, og aldri gjennom et flyttall. Trekket **rundes ned
+   valutakurser, og aldri gjennom et flyttall. En prosent med flere
+   enn to desimaler passer ikke i basispunkter og avskjæres ikke: den
+   vises som et avvik og trekkes ikke, som `parse_rate` avviser en kurs
+   med flere desimaler enn den rommer. Trekket **rundes ned
    til hele kroner**, slik forskuddstrekket gjør (`regnmed-core::payroll`):
    a-meldingens `beloep` er hele kroner, og det som bokføres, betales og
    rapporteres, skal være samme tall. Lønnskjøringen er én per måned
