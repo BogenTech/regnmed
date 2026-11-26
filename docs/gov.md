@@ -612,8 +612,13 @@ godkjent, får ressursen gjennom en **endringsforespørsel**
 `systemuser/changerequest/vendor`), som selskapet godkjenner på samme
 måte som den første forespørselen. Forespørselen ber om alle
 ressursene i `rights` og er idempotent, så de systembrukeren alt har,
-endres ikke. Sendt for 311032240 samme dag (`change-status <id>`);
-venter på godkjenning med TestID. Klient-systembrukere (regnskapsfører)
+endres ikke. Sendt for 311032240 samme dag og **godkjent** av dets
+daglige leder med TestID (`change-status <id>` → `Accepted`).
+Godkjenningssiden lister alle fire ressursene under «vil legges til»,
+også de tre systembrukeren alt hadde — slik Altinn viser en
+endringsforespørsel, ikke et tegn på at de manglet. Første klikk etter
+innloggingen er ikke godkjenningen: siden venter på «Godkjenn
+oppdatert systemtilgang». Klient-systembrukere (regnskapsfører)
 kan ikke endres slik — Altinn krever at de slettes og opprettes på
 nytt.
 
