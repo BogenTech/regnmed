@@ -157,8 +157,13 @@ betalingsinformasjonen. Veiledningen sier:
    `maksAntall` — én side kan ikke antas å være alt. Vannmerket flyttes
    til høyeste `sekvensnummer` i **samme transaksjon** som versjonene
    lagres, så et kall som feiler halvveis hentes på nytt neste gang i
-   stedet for å hoppes over. Samme kall kan startes fra portalen («Hent
-   trekkpålegg»). Som for skattekortet skrives forespørselen **før**
+   stedet for å hoppes over. Om `fraSekvensnummer` er inkluderende, er
+   ikke dokumentert (§4), så en versjon kan komme igjen: lagringen er
+   idempotent — en versjon som alt finnes (`on conflict do nothing`),
+   hoppes over, og er innholdet en annen enn det lagrede, stopper
+   hentingen med en feil i stedet for å skrive over. Ellers ville én
+   gjentatt versjon rulle tilbake hele hentingen, også de nye, hver dag.
+   Samme kall kan startes fra portalen («Hent trekkpålegg»). Som for skattekortet skrives forespørselen **før**
    kallet, og en feil lagres med koden.
 
    Kravet om en levert a-melding er API-ets, ikke vårt: et selskap som
@@ -172,8 +177,12 @@ betalingsinformasjonen. Veiledningen sier:
    hvorfor et trekk var det det var.
 3. **Knytt til den ansatte** på `skyldner` mot fødselsnummeret i
    ansattregisteret. Et pålegg uten ansatt vises som et avvik i portalen;
-   det forsvinner ikke. Har den ansatte et nyere samordnet pålegg, er
-   det det som gjelder.
+   det forsvinner ikke. En ansatt har bare ett samordnet pålegg (§1), og
+   et erstattet pålegg kommer fra API-et som `avsluttet`. Har den ansatte
+   likevel **to aktive** pålegg, velger regnmed ikke mellom dem:
+   forhåndsvisningen viser det som et avvik, og kjøringen trekker det med
+   høyest `sekvensnummer` og advarer om det andre, så selskapet kan
+   kontakte innkrevingsmyndigheten.
 4. **Trekk i lønnskjøringen.** For hver ansatt finner kjøringen det
    aktive pålegget og perioden som dekker utbetalingsdatoen, og beregner
    trekket. En prosent regnes av det trekkpliktige bruttobeløpet i
@@ -186,17 +195,28 @@ betalingsinformasjonen. Veiledningen sier:
    OpenAPI-spesifikasjonen før koden skrives (§4). Trekket **rundes ned
    til hele kroner**, slik forskuddstrekket gjør (`regnmed-core::payroll`):
    a-meldingens `beloep` er hele kroner, og det som bokføres, betales og
-   rapporteres, skal være samme tall. Lønnskjøringen er én per måned (unik per selskap, år og måned i `payroll_run`), så et
-   månedsbeløp trekkes i sin helhet i den ene kjøringen. Trekket
-   reduserer netto og vises i forhåndsvisningen og på lønnsslippen, med
-   pålegg og versjon.
+   rapporteres, skal være samme tall. Lønnskjøringen er én per måned
+   (unik per selskap, år og måned i `payroll_run`), så et månedsbeløp
+   trekkes i sin helhet i den ene kjøringen. Trekket reduserer netto og
+   vises i forhåndsvisningen og på lønnsslippen, med pålegg og versjon —
+   den ansatte ser alltid sitt eget pålegg på sin egen lønnsslipp
+   (arbeidsmiljøloven § 14-15 (4) krever en skriftlig oppgave over
+   trekkene).
 5. **Bokfør** i samme bilag som lønnen, med **én linje per pålegg**
    (lønnsbilaget er ellers samlet), siden hver har sin KID: trekket
    krediteres på
    **2610 Utleggstrekk** med innkrevingsmyndigheten
    (`betalingsmottaker`, med `kontonummer` som bankkonto) som part, i
-   stedet for på 2930 Skyldig lønn. 2610 er en egen konto under
-   standardkontoen 2600 «Skattetrekk og andre trekk», så trekket står
+   stedet for på 2930 Skyldig lønn. Parten slås opp på
+   organisasjonsnummeret i `betalingsmottaker` og opprettes som
+   leverandør hvis den ikke finnes. Har en eksisterende part en annen
+   bankkonto enn påleggets `kontonummer`, betaler regnmed ikke til den
+   lagrede: betalingslisten tar bankkontoen fra parten (et øyeblikksbilde
+   når kjøringen lages), og et trekk betalt til feil konto er
+   arbeidsgiverens ansvar. Kjøringen skriver da påleggets konto på parten
+   gjennom samme vei som portalen (`update_party_contact`, som validerer
+   kontonummeret), og forhåndsvisningen sier fra om endringen.
+   2610 er en egen konto under standardkontoen 2600 «Skattetrekk og andre trekk», så trekket står
    for seg i balansen og ikke blandes med forskuddstrekket på 2600 eller
    med annen leverandørgjeld på 2400. Kontoen er reskontroflagget
    (`reskontro_kind = 'leverandor'`) og opprettes i selskapets kontoplan
@@ -229,8 +249,10 @@ betalingsinformasjonen. Veiledningen sier:
 Alle avgjørelsene forslaget ventet på er tatt:
 
 - **Godkjenning** (2026-11-25): et nytt eller endret pålegg virker fra
-  **neste lønnskjøring uten godkjenning**, og de som har `LONN_LES`
-  varsles. Pålegget er bindende, og et trekk som ikke gjennomføres er
+  **neste lønnskjøring uten godkjenning**, og de som har `LONN_KJOR`
+  varsles — de som kjører lønnen, ikke alle som kan lese den (`revisor`
+  og integrasjoner kan ha `LONN_LES`; de leser pålegget, men får ikke
+  varsel). Pålegget er bindende, og et trekk som ikke gjennomføres er
   arbeidsgiverens ansvar (innledningen), så en godkjenning kunne bare
   utsatt trekket, aldri stoppet det — og utsettelsen ville vært
   selskapets risiko. Det samme gjelder motsatt vei: et stoppet eller
@@ -244,13 +266,18 @@ Alle avgjørelsene forslaget ventet på er tatt:
      mekanismen er at den returnerer settet av (`trekkid`,
      `trekkversjon`) den brukte, bokføringskallet sender settet tilbake,
      og serveren nekter hvis settet den selv ville brukt er et annet.
+     Feltet er **påkrevd** når et pålegg gjelder for kjøringen: et kall
+     uten settet nektes som et kall med feil sett. Lønnskjøringen er et
+     offentlig API-endepunkt (docs/integrations.md), og en klient som
+     ikke kjenner feltet, skal ikke kunne kjøre forbi vakten.
   3. Kjøringen advarer når siste vellykkede henting er eldre enn tre
      dager — tre tapte daglige hentinger (steg 1) — siden den da kan
      trekke etter pålegg som er stoppet eller erstattet. Har selskapet
      aldri hentet, gjelder advarselen i steg 1.
-  4. Pålegget selv, varselet og koblingen til den ansatte er synlige
+  4. Andres pålegg, varselet og koblingen til den ansatte er synlige
      bare for dem med `LONN_LES`: gjeld hos en ansatt er sensitive
-     opplysninger. Bokføringen kan ikke skjules på samme måte: hvert
+     opplysninger. Den ansatte ser sitt eget pålegg på lønnsslippen
+     (steg 4). Bokføringen kan ikke skjules på samme måte: hvert
      trekk er en egen åpen post på 2610 med påleggets KID (steg 5–6),
      så den som kan lese hovedboken, leverandørreskontroen eller
      betalingslisten — også rollen `les`, som ellers ikke ser lønn — ser
@@ -294,7 +321,8 @@ Alle avgjørelsene forslaget ventet på er tatt:
 3. Skatteetaten har lagt inn trekkpålegg i testmiljøet for det
    syntetiske selskapet.
 4. OpenAPI-spesifikasjonen er lest, og enheten til `trekkbeloep` (kroner
-   eller øre) står i dette dokumentet med kilde.
+   eller øre) og om `fraSekvensnummer` er inkluderende, står i dette
+   dokumentet med kilde.
 
 ## 5. Ferdig når
 
