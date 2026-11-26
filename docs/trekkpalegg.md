@@ -405,9 +405,10 @@ er grunnlaget her:
 | Skatt og avgift (gammel ordning) | `utleggstrekkSkatt`, i sum å betale | **én samlet betaling med én KID** for alle trukket på samme utbetaling — samme KID som selskapet alltid har brukt | bruttolønn, **samme grunnlag som forskuddstrekket** |
 | Øvrige krav (gammel ordning) | **rapporteres ikke** | KID og konto fra brevet | står i brevet |
 
-For alle tre gjelder fristen (første virkedag etter utbetaling, §2 steg
-5), «trekke så mye som mulig» og taket i §3, og ingen av dem har
-sommer- eller desemberfritak. Veiledningen unntar også mva-, særavgifts-
+Samordnet og skatt betales innen første virkedag etter utbetaling (§2
+steg 5); for øvrige krav sier tabellen «Se trekkpålegget», så fristen
+er et felt fra brevet. For alle tre gjelder «trekke så mye som mulig»
+og taket i §3, og ingen av dem har sommer- eller desemberfritak. Veiledningen unntar også mva-, særavgifts-
 og tollkrav fra a-meldingen; de er «øvrige» her.
 
 Forskjellen i prosentgrunnlag betyr ingenting i dag, fordi lønnen i
@@ -423,6 +424,7 @@ dem, så den blir riktig når naturalytelser kommer.
 | Beløp per måned **eller** prosent | kroner, lagret som øre; prosent med høyst to desimaler (§2 steg 4). **Øvrige: bare beløp** — grunnlaget for en prosent står i brevet, og regnmed gjetter det ikke |
 | Gjelder fra (og eventuelt til) | gyldige datoer, fra ≤ til |
 | KID og betalingsmottaker (organisasjonsnummer, kontonummer) | samordnet og øvrige: fra brevet, kontrollsiffer og MOD11. Skatt: ingen — se betalingen under |
+| Betalingsfrist | bare øvrige: fra brevet (dager etter utbetaling) |
 | Brevet | påkrevd, PDF eller bilde |
 
 Brevet lagres **med pålegget**, innholdsadressert og hash-sjekket ved
@@ -458,14 +460,18 @@ gjelden (§3, punkt 4 under Godkjenning).
 
 - **Samordnet og øvrige** som steg 5–6: én linje per pålegg på kontoen
   for utleggstrekk, med betalingsmottakeren fra brevet som leverandør
-  og brevets KID i `payable_terms`.
-- **Skatt:** alle skattetrekk på samme utbetaling blir **én** linje, med
-  Skatteetaten som leverandør og selskapets egen KID for
-  utleggstrekk skatt — den samme hvert år, laget i Skatteetatens
-  KID-generator. Den og kontonummeret er nye lønnsinnstillinger ved
-  siden av kontoen for utleggstrekk (§2 steg 5), daterte og
-  innsettings-bare, og kjøringen nekter å trekke et skattetrekk uten
-  dem, med beskjed om hva som mangler. Linjeteksten navngir ingen.
+  og brevets KID i `payable_terms`. Forfall er utbetalingsdatoen for
+  samordnet og brevets frist for øvrige.
+- **Skatt:** alle skattetrekk på samme utbetaling blir **én** linje med
+  selskapets egen KID for utleggstrekk skatt — den samme hvert år,
+  laget i Skatteetatens KID-generator — og forfall på utbetalingsdatoen.
+  KID-en, kontonummeret og mottakerens organisasjonsnummer, alle fra
+  Skatteetatens betalingsinformasjon for skatter og avgifter, er nye
+  lønnsinnstillinger ved siden av kontoen for utleggstrekk (§2 steg
+  5), daterte og innsettings-bare. Parten finnes eller opprettes etter
+  regelen i steg 5. Kjøringen nekter å trekke et skattetrekk uten
+  innstillingene, med beskjed om hva som mangler. Linjeteksten navngir
+  ingen.
 
 ### Når et hentet pålegg kommer
 
