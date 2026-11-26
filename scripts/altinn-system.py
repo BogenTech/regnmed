@@ -6,6 +6,14 @@
     scripts/altinn-system.py update     # etter endring i SYSTEM under
     scripts/altinn-system.py request <orgnr>   # standard systembruker for et selskap
     scripts/altinn-system.py status <id>       # en forespørsels status og confirmUrl
+    scripts/altinn-system.py change <orgnr>    # ask an EXISTING system user for the
+                                               # rights added to SYSTEM since
+    scripts/altinn-system.py change-status <id>  # a change request's status and confirmUrl
+
+A new resource in `rights` only reaches new system users. One that is
+already approved gets it through a change request (`change`), which the
+company approves the same way as the first request. The request is
+idempotent: resources the system user already has are left alone.
 
 ÉTT system, ikke to: en Maskinporten-klient kan bare knyttes til ett
 system (AUTH.VLD-00004), og systembrukertokenet finner systemet gjennom
@@ -27,6 +35,7 @@ import base64, json, os, subprocess, sys, time, urllib.error, urllib.parse, urll
 AUTH = "https://platform.tt02.altinn.no/authentication/api/v1"
 PLATFORM = f"{AUTH}/systemregister/vendor"
 REQUESTS = f"{AUTH}/systemuser/request/vendor"
+CHANGES = f"{AUTH}/systemuser/changerequest/vendor"
 VENDOR = "935115086"
 SYSTEM_ID = f"{VENDOR}_regnmed"
 
@@ -48,11 +57,12 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, henter skattekort og leverer aksjonærregisteroppgaven.",
+        "Leverer a-melding, henter skattekort og trekkpålegg og leverer aksjonærregisteroppgaven.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, hentar skattekort og leverer aksjonærregisteroppgåva.",
+        "Leverer a-melding, hentar skattekort og trekkpålegg og leverer aksjonærregisteroppgåva.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
-        "Files the a-melding, fetches tax cards and files the shareholder register return.",
+        "Files the a-melding, fetches tax cards and garnishment orders, and files the "
+        "shareholder register return.",
     },
     # Egen virksomhet: Skatteetatens ressurser (API-dokumentasjonen, ikke gjettet).
     "rights": [
@@ -61,6 +71,8 @@ SYSTEM = {
             "ske-innrapportering-amelding",
             "ske-skattekort-til-arbeidsgiver",
             "ske-innrapportering-aksjonaerregisteroppgave",
+            # Garnishment orders (#334, docs/trekkpalegg.md); scope ordered in SSV-6690.
+            "ske-informasjon-om-trekkpaalegg",
         )
     ],
     # Regnskapsfører: de tre pakkene ER-rollen gir, alle fra REGN (regel 2).
@@ -129,9 +141,12 @@ def call(method, url, body=None, scope="altinn:authentication/systemregister.wri
         text = e.read().decode()
         print(e.code)
     try:
-        print(json.dumps(json.loads(text), indent=2, ensure_ascii=False))
+        parsed = json.loads(text)
     except ValueError:
         print(text)
+        return None
+    print(json.dumps(parsed, indent=2, ensure_ascii=False))
+    return parsed
 
 
 if __name__ == "__main__":
@@ -152,6 +167,20 @@ if __name__ == "__main__":
         }, scope="altinn:authentication/systemuser.request.write")
     elif cmd == "status" and len(sys.argv) == 3:
         call("GET", f"{REQUESTS}/{sys.argv[2]}",
+             scope="altinn:authentication/systemuser.request.read")
+    elif cmd == "change" and len(sys.argv) == 3:
+        # Look up the system user's id, then ask for every right in SYSTEM.
+        query = urllib.parse.urlencode({"system-id": SYSTEM_ID, "orgno": sys.argv[2]})
+        found = call("GET", f"{AUTH}/systemuser/vendor/byquery?{query}",
+                     scope="altinn:authentication/systemuser.request.write")
+        if not isinstance(found, dict) or not found.get("id"):
+            sys.exit(f"no system user for {SYSTEM_ID} at {sys.argv[2]}")
+        params = urllib.parse.urlencode(
+            {"correlation-id": str(uuid.uuid4()), "system-user-id": found["id"]})
+        call("POST", f"{CHANGES}?{params}", {"requiredRights": SYSTEM["rights"]},
+             scope="altinn:authentication/systemuser.request.write")
+    elif cmd == "change-status" and len(sys.argv) == 3:
+        call("GET", f"{CHANGES}/{sys.argv[2]}",
              scope="altinn:authentication/systemuser.request.read")
     else:
         sys.exit(__doc__)

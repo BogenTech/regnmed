@@ -603,6 +603,20 @@ eksempel. Hele kjeden fra registrering til token er dermed prøvd mot
 ekte testmiljø; neste ledd er et ekte kall mot et av Skatteetatens
 API-er med tokenet.
 
+**Ny ressurs på en godkjent systembruker, 2026-11-26.** Trekkpålegg
+(`ske-informasjon-om-trekkpaalegg`, docs/trekkpalegg.md) er lagt i
+`rights` og systemet oppdatert i TT02 (`update`, bekreftet med
+`show`). Det når bare nye systembrukere: en systembruker som alt er
+godkjent, får ressursen gjennom en **endringsforespørsel**
+(`scripts/altinn-system.py change <orgnr>`, Altinns
+`systemuser/changerequest/vendor`), som selskapet godkjenner på samme
+måte som den første forespørselen. Forespørselen ber om alle
+ressursene i `rights` og er idempotent, så de systembrukeren alt har,
+endres ikke. Sendt for 311032240 samme dag (`change-status <id>`);
+venter på godkjenning med TestID. Klient-systembrukere (regnskapsfører)
+kan ikke endres slik — Altinn krever at de slettes og opprettes på
+nytt.
+
 Tre ting å vite til neste gang:
 
 - **Tenor-listen blander hovedenheter og underenheter.** En

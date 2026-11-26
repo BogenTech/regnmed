@@ -366,8 +366,10 @@ Alle avgjørelsene forslaget ventet på er tatt:
    SSV-6690**, på brukerstøttedesken under Hente data → Søknad om
    tilgang (docs/gov.md), ikke med e-posten dokumentasjonen nevner.
 2. regnmeds system i Altinns systemregister (TT02) har fått ressursen
-   `ske-informasjon-om-trekkpaalegg`, og testselskapets systembruker er
-   godkjent på nytt med den.
+   `ske-informasjon-om-trekkpaalegg` (**gjort 2026-11-26**), og
+   testselskapets systembruker er godkjent på nytt med den
+   (endringsforespørsel sendt samme dag, venter på godkjenning —
+   docs/gov.md).
 3. Skatteetaten har lagt inn trekkpålegg i testmiljøet for det
    syntetiske selskapet.
 4. Testmiljøet har vist det spesifikasjonen ikke sier: om `opprettet`
