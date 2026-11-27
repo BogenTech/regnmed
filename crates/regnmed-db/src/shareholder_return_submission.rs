@@ -103,12 +103,18 @@ async fn load(pool: &PgPool, row: &sqlx::postgres::PgRow) -> Result<Submission> 
 /// otherwise a new one rendered from the aksjeeierbok as it stands.
 ///
 /// Refuses, with every hindrance named, an oppgave that cannot be rendered
-/// (`ReturnError`, e.g. an unverified transaction type code), and a year
-/// that already has a receipt.
+/// (`ReturnError`, e.g. an unverified transaction type code).
+///
+/// A year that already has a receipt is filed again only as a correction
+/// (`correct`): Skatteetaten has no correction call, a correction is a new
+/// complete oppgave, and the one in force is the one their caseworker
+/// processed last (docs/aksjonaer.md, «Korrigering»). So it waits for the
+/// answer to the delivered one, and it must say something different.
 pub async fn prepare_submission(
     pool: &PgPool,
     company_id: Uuid,
     year: i32,
+    correct: bool,
     created_by: &str,
 ) -> Result<Submission> {
     let set = crate::share_register::build_return(pool, company_id, year).await?;
@@ -140,39 +146,60 @@ pub async fn prepare_submission(
         .execute(&mut *tx)
         .await?;
 
-    let latest = sqlx::query(&format!(
+    let rows = sqlx::query(&format!(
         "select {COLUMNS},
                 exists (select 1 from shareholder_return_submission_event e
                         where e.submission_id = s.id and e.kind = 'receipt') as delivered
          from shareholder_return_submission s
          where s.company_id = $1 and s.income_year = $2
-         order by s.created_at desc limit 1"
+         order by s.created_at desc"
     ))
     .bind(company_id)
     .bind(year)
-    .fetch_optional(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-
-    if let Some(row) = &latest {
-        if row.get::<bool, _>("delivered") {
-            bail!(
-                "aksjonærregisteroppgaven for {year} er allerede levert. En ny oppgave for samme \
-                 år sendes ikke herfra ennå — hvordan Skatteetaten behandler den er ikke \
-                 verifisert"
-            );
-        }
-        // Its rows are committed, so reading them outside the lock-holding
-        // transaction sees all of them.
-        let stored = load(pool, row).await?;
-        let same = stored.main_form == main
+    // Their rows are committed, so reading them outside the lock-holding
+    // transaction sees all of them.
+    let same_as = |stored: &Submission| {
+        stored.main_form == main
             && stored
                 .sub_forms
                 .iter()
                 .map(|(id, xml, _)| (*id, xml.as_str()))
-                .eq(subs.iter().map(|(id, xml)| (*id, xml.as_str())));
-        if same {
+                .eq(subs.iter().map(|(id, xml)| (*id, xml.as_str())))
+    };
+
+    // An undelivered filing that still says the same: a retry, same keys.
+    if let Some(row) = rows.first().filter(|r| !r.get::<bool, _>("delivered")) {
+        let stored = load(pool, row).await?;
+        if same_as(&stored) {
             return Ok(stored);
         }
+    }
+    if let Some(row) = rows.iter().find(|r| r.get::<bool, _>("delivered")) {
+        if !correct {
+            bail!(
+                "aksjonærregisteroppgaven for {year} er allerede levert. Er noe feil, send en \
+                 korrigert oppgave — den erstatter den du har levert"
+            );
+        }
+        let delivered = load(pool, row).await?;
+        if let SubmissionStatus::Delivered { outcome: None, .. } =
+            status(pool, delivered.id).await?
+        {
+            bail!(
+                "Skatteetaten har ikke svart på oppgaven som er levert for {year} ennå. Hent \
+                 svaret før du korrigerer — oppgaven som gjelder er den de behandler sist"
+            );
+        }
+        if same_as(&delivered) {
+            bail!(
+                "ingenting å korrigere: oppgaven for {year} er lik den som er levert. Rett \
+                 aksjeeierboken først"
+            );
+        }
+    } else if correct {
+        bail!("det finnes ingen levert aksjonærregisteroppgave for {year} å korrigere");
     }
 
     let id = Uuid::new_v4();
