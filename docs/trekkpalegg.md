@@ -576,3 +576,27 @@ betalt fra betalingslisten og rapportert i en a-melding som
 Skatteetaten tar imot uten avvik, og et hentet pålegg med samme KID
 avløser det i neste kjøring. Et skattetrekk etter gammel ordning
 rapporteres som `utleggstrekkSkatt` og betales som én samlet post.
+
+**Bevist i testmiljøet 2026-11-27** for alt unntatt avløsningen, som
+venter på #334. Selskap 311032240 (Tenor), én ansatt med 40 000 kr
+fastlønn og 35 % prosenttrekk, september 2026 (utbetalt 25.09):
+
+1. To pålegg registrert i portalen, hvert med et brev: samordnet
+   4 000 kr per måned med KID 6487719756, og skatt etter gammel ordning
+   med 10 %. Skatteetatens KID, kontonummer og organisasjonsnummer for
+   skattetrekket står i innstillingene.
+2. Forhåndsvisningen viste begge påleggene med KID, versjon og brev.
+   Kjøringen trakk 4 000 + 4 000 kr etter 14 000 kr forskuddstrekk,
+   og netto ble 18 000 kr.
+3. Kjøringen opprettet konto 2610 som leverandørreskontro og
+   bokførte to poster på den: én for det samordnede pålegget med
+   påleggets KID, og én samlet skattepost med selskapets KID, begge
+   med forfall på utbetalingsdatoen.
+4. Begge postene sto i betalingslisten med KID og forfall. Listen
+   ble opprettet, godkjent og registrert som betalt, og postene ble
+   lukket i reskontroen.
+5. A-meldingen for 2026-09 ble sendt til TT02 og har
+   `sumUtleggstrekk` 8 000 og to `utleggstrekk`
+   (`utleggstrekkSamordnet` og `utleggstrekkSkatt`, −4 000 hver,
+   dato 2026-09-25). Tilbakemeldingen er «mottatt», uten avvik for
+   måneden.
