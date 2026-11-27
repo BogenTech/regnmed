@@ -1,6 +1,8 @@
-//! Trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339).
+//! Trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339) and
+//! fetched from Skatteetaten (§2, #334).
 //!
 //! - GET  /companies/{id}/payroll/garnishments                    orders + settings (LONN_LES)
+//! - POST /companies/{id}/payroll/garnishments/fetch              fetch from Skatteetaten (LONN_SKRIV)
 //! - POST /companies/{id}/payroll/garnishments                    register (LONN_SKRIV)
 //! - POST /companies/{id}/payroll/garnishments/letters?filename=  raw letter body (LONN_SKRIV)
 //! - GET  /companies/{id}/payroll/garnishments/letters/{lid}      the letter (LONN_LES)
@@ -72,6 +74,76 @@ fn order_json(company_id: Uuid, o: &db::Order) -> serde_json::Value {
     })
 }
 
+/// A fetched order: its newest stored version, as the run reads it.
+fn fetched_json(f: &db::FetchedOrder, last: Option<&db::LastList>) -> serde_json::Value {
+    let in_list = last.is_some_and(|l| l.listed.contains(&f.trekkid));
+    let mut j = json!({
+        "trekkid": f.trekkid,
+        "trekkversjon": f.version,
+        "employee_id": f.employee.as_ref().map(|e| e.0),
+        "navn": f.employee.as_ref().map(|e| &e.1),
+        "i_siste_liste": in_list,
+        "hentet": f.fetched_at,
+    });
+    let extra = match &f.order {
+        Err(e) => json!({ "feil": e }),
+        Ok(o) => json!({
+            "saksnummer": o.case_number,
+            "status": if o.active { "aktiv" } else { "avsluttet" },
+            "opprettet": o.created,
+            "kid": o.kid,
+            "mottaker_orgnr": o.payee,
+            "mottaker_konto": o.account,
+            "perioder": o.periods.iter().map(|p| {
+                let mut period = match &p.size {
+                    Ok(size) => size_json(*size),
+                    Err(e) => json!({ "feil": e }),
+                };
+                period.as_object_mut().expect("object").extend([
+                    ("fra".into(), json!(p.from)),
+                    ("til".into(), json!(p.to)),
+                ]);
+                period
+            }).collect::<Vec<_>>(),
+        }),
+    };
+    j.as_object_mut()
+        .expect("object")
+        .extend(extra.as_object().expect("object").clone());
+    j
+}
+
+/// «Hent trekkpålegg» (§2 step 1): the same fetch the daily job runs.
+pub async fn fetch(
+    State(state): State<AppState>,
+    person: AuthPerson,
+    Path(company_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require(&state, person.person_id, company_id, Right::PayrollWrite).await?;
+    let Some(rail) = state.garnishment.clone() else {
+        return Err(ApiError::BadRequest(
+            "henting av trekkpålegg fra Skatteetaten er ikke satt opp her".into(),
+        ));
+    };
+    crate::terms::require_accepted(&state, company_id).await?;
+    let by = person.display();
+    let summary = db::fetch(&state.pool, company_id, &rail, by)
+        .await
+        .map_err(bad)?;
+    regnmed_db::schedule::ensure(
+        &state.pool,
+        company_id,
+        regnmed_db::job::Kind::GarnishmentFetch,
+        by,
+    )
+    .await?;
+    Ok(Json(json!({
+        "henting": summary.fetch_id,
+        "antall": summary.listed,
+        "nye_versjoner": summary.new_versions,
+    })))
+}
+
 pub fn letter_url(company_id: Uuid, letter_id: Uuid) -> String {
     format!("/companies/{company_id}/payroll/garnishments/letters/{letter_id}")
 }
@@ -96,8 +168,25 @@ pub async fn list(
     require(&state, person.person_id, company_id, Right::PayrollRead).await?;
     let orders = db::list(&state.pool, company_id).await?;
     let settings = db::settings_history(&state.pool, company_id).await?;
+    let mut conn = state.pool.acquire().await.map_err(anyhow::Error::from)?;
+    let (fetched, last) = db::fetched(&mut conn, company_id).await?;
+    drop(conn);
+    let attempts = db::fetch_attempts(&state.pool, company_id).await?;
     Ok(Json(json!({
         "palegg": orders.iter().map(|o| order_json(company_id, o)).collect::<Vec<_>>(),
+        "hentede": fetched.iter().map(|f| fetched_json(f, last.as_ref())).collect::<Vec<_>>(),
+        "henting": {
+            "tilgjengelig": state.garnishment.is_some(),
+            "siste_vellykkede": last.as_ref().map(|l| l.at),
+            "forsok": attempts.iter().map(|a| json!({
+                "id": a.id,
+                "av": a.requested_by,
+                "tidspunkt": a.created_at,
+                "ok": a.ok,
+                "antall": a.listed,
+                "feil": a.detail,
+            })).collect::<Vec<_>>(),
+        },
         "innstillinger": settings.first().map(settings_json),
         "innstillingshistorikk": settings.iter().map(settings_json).collect::<Vec<_>>(),
     })))

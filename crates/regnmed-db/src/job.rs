@@ -40,6 +40,8 @@ pub enum Kind {
     PeppolSenderSetup,
     /// Files one approved mva-melding through Altinn (docs/mva.md).
     VatFilingSubmit,
+    /// The daily fetch of trekkpålegg from Skatteetaten (docs/trekkpalegg.md §2).
+    GarnishmentFetch,
 }
 
 impl Kind {
@@ -52,6 +54,7 @@ impl Kind {
             Kind::InvoiceDispatch => "invoice_dispatch",
             Kind::PeppolSenderSetup => "peppol_sender_setup",
             Kind::VatFilingSubmit => "vat_filing_submit",
+            Kind::GarnishmentFetch => "garnishment_fetch",
         }
     }
     pub fn parse(s: &str) -> Option<Kind> {
@@ -63,6 +66,7 @@ impl Kind {
             "invoice_dispatch" => Some(Kind::InvoiceDispatch),
             "peppol_sender_setup" => Some(Kind::PeppolSenderSetup),
             "vat_filing_submit" => Some(Kind::VatFilingSubmit),
+            "garnishment_fetch" => Some(Kind::GarnishmentFetch),
             _ => None,
         }
     }
@@ -416,6 +420,8 @@ pub struct Runtime {
     pub directory_answer: Option<regnmed_core::peppol::DirectoryAnswer>,
     /// Altinn's mva-melding app; None until ID-porten filing is configured.
     pub vat_filing: Option<std::sync::Arc<crate::vat_filing::Rail>>,
+    /// Skatteetaten's trekkpålegg API; None without Maskinporten.
+    pub garnishment: Option<std::sync::Arc<crate::garnishment::Rail>>,
 }
 
 async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Value> {
@@ -465,6 +471,15 @@ async fn execute(pool: &PgPool, job: &Claimed, runtime: &Runtime) -> Result<Valu
             crate::peppol_worker::run_sender_setup(pool, job, runtime).await
         }
         Some(Kind::VatFilingSubmit) => crate::vat_filing::run_submit(pool, job, runtime).await,
+        Some(Kind::GarnishmentFetch) => {
+            let rail = runtime
+                .garnishment
+                .as_deref()
+                .context("henting av trekkpålegg er ikke satt opp på denne arbeideren")?;
+            let summary =
+                crate::garnishment::fetch(pool, job.company_id, rail, &job.created_by).await?;
+            Ok(serde_json::to_value(summary)?)
+        }
         None => bail!("unknown job kind {}", job.kind),
     }
 }

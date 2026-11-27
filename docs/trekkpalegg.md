@@ -1,13 +1,14 @@
 # Trekkpålegg
 
-**Status** (2026-11-27): pålegg **registrert for hånd** (§6, #339) er
-bygget — de trekkes, bokføres, betales fra betalingslisten og
-rapporteres i a-meldingen. **Henting fra Skatteetaten** (§2 steg 1–3,
-#334) er ikke bygget; den venter på scopet (SSV-6690). Det felles
-kjernen §6 og #334 deler — kontoen, trekket med taket, bokføringen,
-a-meldingsfeltene og forhåndsvisningens sett — er bygget slik at
-hentede pålegg kan kobles på som flere rader av samme slag
-(`regnmed-db::garnishment::Effective`).
+**Status** (2026-11-27): begge kildene er bygget. Pålegg **registrert
+for hånd** (§6, #339) trekkes, bokføres, betales fra betalingslisten og
+rapporteres i a-meldingen, bevist i testmiljøet. Pålegg **hentet fra
+Skatteetaten** (§2, #334) går gjennom samme kjerne
+(`regnmed-db::garnishment::Effective`) og er testet mot Skatteetatens
+dokumenterte format, men **ikke prøvd mot testmiljøet**: scopet
+`skatteetaten:trekkpaalegg` er ikke tildelt ennå (SSV-6690), så §5 står
+åpen. Hva som ble avgjort da koden ble skrevet, står i «Bygget slik
+(#334)» på slutten av §2.
 
 Et trekkpålegg (utleggstrekk i lønn) pålegger arbeidsgiveren å holde
 tilbake en del av den ansattes lønn og betale den til innkrevings-
@@ -107,7 +108,9 @@ Reglene Skatteetaten selv skriver:
 - `trekkid` er stabil, `trekkversjon` øker med 1, og `sekvensnummer` er
   et globalt, alltid stigende løpenummer. `opprettet` er et tidspunkt
   uten forklaring; om det gjelder pålegget eller versjonen, sier verken
-  dokumentasjonen eller spesifikasjonen (§4).
+  dokumentasjonen eller spesifikasjonen (§4). Dokumentasjonens egne
+  eksempler peker mot **versjonen**: 10003 har `opprettet` 05.05.2025 i
+  versjon 1 og 08.08.2025 i versjon 2.
 - `kidnummer` er fast for en `trekkid`. `kontonummer` og
   `betalingsmottaker` er innkrevingsmyndighetens, felles for alle.
 - `skyldner` er den ansattes fødsels- eller D-nummer.
@@ -177,7 +180,11 @@ betalingsinformasjonen. Veiledningen sier:
    (`trekkid`, `trekkversjon`) regnmed ikke har, lagres; en den alt
    har, hoppes over. Samme henting kan startes fra portalen («Hent
    trekkpålegg»). Som for skattekortet skrives forespørselen **før**
-   kallet, og en feil lagres med koden.
+   kallet, og en feil lagres med koden. Den daglige jobben settes opp
+   første gang noen henter fra portalen og Skatteetaten svarer, ikke
+   av seg selv når vilkårene er oppfylt: ingen maskin kaller
+   Skatteetaten for et selskap før et menneske har sett at kallet
+   virker.
 
    Et pålegg som er aktivt i regnmed, men ikke er med i siste
    vellykkede liste, trekkes **ikke**: det vises som et avvik, og
@@ -190,13 +197,9 @@ betalingsinformasjonen. Veiledningen sier:
    (docs/lonn.md), og de to må regne ut samme sett (punkt 2 under
    Godkjenning i §3).
 
-   **Ikke dekket:** API-et gir pålegg først etter selskapets første
-   a-melding gjennom regnmed, og trekk etter den gamle ordningen kommer
-   bare som brev (§1). Begge deler dekkes av pålegg registrert for hånd
-   (§6, #339). Til det er bygget, sier forhåndsvisningen av kjøringen at
-   slike pålegg ikke er med, og at regnmed ikke kan rapportere et trekk
-   som er gjort utenfor: a-meldingen fra regnmed er da ufullstendig for
-   den ansatte den måneden (#339).
+   **Ikke dekket av API-et:** pålegg før selskapets første a-melding
+   gjennom regnmed, og trekk etter den gamle ordningen, som bare kommer
+   som brev (§1). Begge registreres for hånd (§6, #339).
 2. **Lagre ordrett.** Hver versjon lagres som den kom
    (`trekkid` + `trekkversjon` unik), innsettings-bart. Det er beviset for
    hvorfor et trekk var det det var.
@@ -296,6 +299,58 @@ betalingsinformasjonen. Veiledningen sier:
    `utleggstrekkSamordnet`, negativt beløp og utbetalingsdatoen, og
    `sumUtleggstrekk`.
 
+### Bygget slik (#334, 2026-11-27)
+
+- **Klienten** er `regnmed-gov::garnishment`: ett kall,
+  `GET /api/trekkpaalegg/v1` med systembrukertokenet, mot testmiljøet
+  med mindre `TREKKPALEGG_URL` sier noe annet. Enhver annen status enn
+  2xx er en feil med Skatteetatens svar ordrett; en 404 leses ikke som
+  «ingen pålegg», siden det ikke er avklart hva den betyr (§4).
+- **Listen leses hel eller ikke i det hele tatt.** Mangler et pålegg
+  `trekkid`, `trekkversjon`, `skyldner` eller betalingsinformasjonen,
+  eller gjelder det en annen trekkpliktig enn selskapet, lagres hele
+  hentingen som en feil og ingenting fra den beholdes — en halv liste
+  ville fått de utelatte til å se stoppet ut.
+- **Lagringen** (migrasjon 0111): `garnishment_fetch` (forespørselen,
+  skrevet før kallet), `garnishment_fetch_outcome` (svaret: trekkid-ene i
+  listen, eller feilen) og `garnishment_fetched` (hver versjon ordrett,
+  unik på selskap + `trekkid` + `trekkversjon`). Alle tre er
+  innsettings-bare. Den ansatte lagres ikke: koblingen er `skyldner` mot
+  ansattregisteret, utledet ved lesing, så en ansatt som registreres
+  etter at pålegget kom, blir funnet.
+- **Størrelsen** leses fra tallets tekst (kroner til øre, prosent til
+  basispunkter); mer enn to desimaler, negativt tall, eller både/ingen av
+  `trekkbeloep` og `trekkprosent` i en periode gir et avvik, ikke et
+  gjettet trekk. En periode med `sluttdato` før `startdato` dekker
+  ingen dato (spesifikasjonen tillater det for pålegg avsluttet før
+  start).
+- **Avvikene** står i forhåndsvisningen som advarsler som begynner med
+  «Avvik:», og pålegget trekkes ikke: aktivt, men ikke i siste liste;
+  ingen ansatt med fødselsnummeret; uleselig størrelse; og to aktive på
+  samme ansatte (da trekkes det med senest første `opprettet`, og det
+  andre navngis).
+- **Settet** bærer (`trekkid`, `trekkversjon`) som
+  `{"trekkid": …, "trekkversjon": …}` ved siden av
+  `{"registrering": …, "versjon": …}`, og en ny versjon etter
+  forhåndsvisningen stopper kjøringen som en endret registrering gjør.
+  `payroll_garnishment` peker på den hentede versjonen (`fetched_id`).
+- **Avløsningen** (§6 «Når et hentet pålegg kommer») utledes i
+  `regnmed-db::garnishment::effective`: når et hentet pålegg trekkes for
+  en ansatt, trekkes ingen av den ansattes registrerte pålegg. Samme KID
+  på en samordnet registrering sies som avløsning; alt annet er et avvik
+  med beskjed om å stoppe registreringen når innkrevingsmyndigheten har
+  bekreftet. Ingenting skrives. Et hentet pålegg som selv er et avvik,
+  avløser ingenting — da trekkes registreringen som før.
+- **Gammel liste** (§3 punkt 3): eldre enn tre døgn gir en advarsel.
+- **Synlighet**: hentede pålegg, forsøkene og feiltekstene står bak
+  `LONN_LES` (`GET …/payroll/garnishments`, felt `hentede` og
+  `henting`); å hente krever `LONN_SKRIV` og godtatte kundevilkår. Hver
+  henting står i registeret over kall til myndighetene
+  (docs/vilkar-teknisk.md), uten feilteksten.
+- **Arbeideren** henter med samme Maskinporten-klient som API-et
+  (`deploy/test/patches/regnmed-worker.yaml`); uten den feiler den
+  daglige jobben med en melding om at arbeideren ikke er satt opp.
+
 ## 3. Avgjørelser
 
 Alle avgjørelsene forslaget ventet på er tatt:
@@ -386,6 +441,11 @@ Et trekkpålegg hentet fra Skatteetatens testmiljø blir trukket i en
 lønnskjøring, bokført, betalt fra betalingslisten og rapportert i en
 a-melding som Skatteetaten tar imot uten avvik. Samme beviskrav som for
 a-meldingen og skattekortet i docs/lonn.md.
+
+**Ikke bevist ennå** (2026-11-27): koden er testet mot lister i
+dokumentasjonens form (docs/trekkpalegg/liste-fra-dokumentasjonen.json,
+de siste versjonene av Skatteetatens egne eksempler), ikke mot et
+ekte svar. Det venter på punkt 1 og 3 i §4.
 
 ## 6. Pålegg registrert for hånd (#339) — bygget
 
@@ -555,19 +615,15 @@ Det som ikke står over, og som ble avgjort da koden ble skrevet:
 
 ### Utsatt
 
-- **«Samme KID: det hentede avløser det manuelle»** (avsnittet over)
-  hører til #334 og er ikke bygget: det finnes ingen hentede pålegg å
-  avløse med. Når #334 bygges, skal regelen ligge der settet regnes ut
-  (`regnmed-db::garnishment::effective`).
-- **Varsel til dem med `LONN_KJOR`** (§3) gjelder hentede pålegg, som
-  kommer uten at noen i selskapet har gjort noe. Et pålegg registrert
-  for hånd har en person bak, så det varsles ikke.
-- **Advarselen om gammel henting** (§3 punkt 3) og **avviket for
-  pålegg uten ansatt** (§2 steg 3) gjelder bare hentede pålegg.
-- **Å lese `trekkbeloep`/`trekkprosent` fra JSON-tallets tekst** (§2
-  steg 4) hører til #334. Portalen leser beløp og prosent som tekst og
-  sender heltall (øre og basispunkter), så API-et for registrering tar
-  aldri imot et flyttall.
+- **«Samme KID: det hentede avløser det manuelle»** er bygget med #334
+  (§2, «Bygget slik»), og det samme er advarselen om gammel henting,
+  avviket for pålegg uten ansatt og lesingen av JSON-tallenes tekst.
+- **Varsel til dem med `LONN_KJOR`** (§3) er **ikke bygget**, heller
+  ikke for hentede pålegg: regnmed har ingen varslingskanal til personer
+  med en gitt rettighet. Vernet som står, er forhåndsvisningen, som
+  viser hvert hentet pålegg før kjøringen kan bokføres (§3 punkt 1–2).
+  Et pålegg registrert for hånd har en person bak, så det varsles ikke
+  uansett.
 
 ### Ferdig når
 
@@ -577,8 +633,9 @@ Skatteetaten tar imot uten avvik, og et hentet pålegg med samme KID
 avløser det i neste kjøring. Et skattetrekk etter gammel ordning
 rapporteres som `utleggstrekkSkatt` og betales som én samlet post.
 
-**Bevist i testmiljøet 2026-11-27** for alt unntatt avløsningen, som
-venter på #334. Selskap 311032240 (Tenor), én ansatt med 40 000 kr
+**Bevist i testmiljøet 2026-11-27** for alt unntatt avløsningen, som er
+bygget med #334 men venter på at et hentet pålegg finnes i testmiljøet
+(§5). Selskap 311032240 (Tenor), én ansatt med 40 000 kr
 fastlønn og 35 % prosenttrekk, september 2026 (utbetalt 25.09):
 
 1. To pålegg registrert i portalen, hvert med et brev: samordnet

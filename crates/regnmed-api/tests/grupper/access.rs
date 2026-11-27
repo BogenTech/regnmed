@@ -1337,6 +1337,11 @@ async fn garnishments_are_for_payroll_readers_only() {
         ),
         (
             "POST",
+            format!("/companies/{c}/payroll/garnishments/fetch"),
+            String::new(),
+        ),
+        (
+            "POST",
             format!("/companies/{c}/payroll/garnishments/{some}/stop"),
             "{}".to_string(),
         ),

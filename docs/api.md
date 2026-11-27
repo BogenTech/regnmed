@@ -199,6 +199,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/employees/{employee_id}/link/history` | GET |
 | `/companies/{company_id}/payroll` | GET POST |
 | `/companies/{company_id}/payroll/garnishments` | GET POST |
+| `/companies/{company_id}/payroll/garnishments/fetch` | POST |
 | `/companies/{company_id}/payroll/garnishments/letters` | POST |
 | `/companies/{company_id}/payroll/garnishments/letters/{letter_id}` | GET |
 | `/companies/{company_id}/payroll/garnishments/{order_id}` | PUT |

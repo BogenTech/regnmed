@@ -1,11 +1,11 @@
-//! Trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339, migration
-//! 0110), and the parts of the payroll run every order goes through: which
-//! orders apply on a pay date, the account the trekk is credited to and the
-//! payee as a supplier.
+//! Trekkpålegg in payroll (docs/trekkpalegg.md): orders registered by hand
+//! (§6, #339, migration 0110), orders fetched from Skatteetaten (§2, #334,
+//! migration 0111), and the parts of the payroll run every order goes
+//! through: which orders apply on a pay date, the account the trekk is
+//! credited to and the payee as a supplier.
 //!
-//! Orders fetched from Skatteetaten (#334) are not built. They are meant to
-//! reach the run as more [`Effective`] rows; the rule that a fetched order
-//! replaces a hand entry with the same KID belongs to #334.
+//! Both sources reach the run as [`Effective`] rows. Where they meet for
+//! the same employee, a fetched order replaces the hand entries ([`effective`]).
 
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, NaiveDate, Utc};
@@ -658,12 +658,293 @@ async fn insert_settings(conn: &mut PgConnection, company_id: Uuid, s: &Settings
     Ok(())
 }
 
+// ---- fetched from Skatteetaten (§2, #334) -----------------------------------
+
+/// The Skatteetaten rail: the shared Maskinporten client with the
+/// trekkpålegg scope. Used by the API's «Hent trekkpålegg» and by the
+/// worker's daily job.
+pub struct Rail {
+    pub tokens: regnmed_gov::maskinporten::TokenProvider,
+    pub client: regnmed_gov::garnishment::GarnishmentClient,
+}
+
+impl Rail {
+    /// None without MASKINPORTEN_CLIENT_ID: the rail is off, not broken.
+    pub fn from_env() -> Result<Option<Self>> {
+        if std::env::var("MASKINPORTEN_CLIENT_ID").is_err() {
+            return Ok(None);
+        }
+        let mut config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
+        config.scopes = regnmed_gov::garnishment::SCOPES.into();
+        Ok(Some(Self {
+            tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
+            client: regnmed_gov::garnishment::GarnishmentClient::from_env(),
+        }))
+    }
+}
+
+/// What one fetch stored.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FetchSummary {
+    pub fetch_id: Uuid,
+    /// Orders in the list (active and ended).
+    pub listed: usize,
+    /// Versions regnmed did not have before.
+    pub new_versions: usize,
+}
+
+/// Fetches the employer's whole list and stores it (§2 steps 1–2). The
+/// request is recorded BEFORE the call, and a failure is recorded with
+/// Skatteetaten's answer, so the terms' §7.1 register shows every call.
+pub async fn fetch(pool: &PgPool, company_id: Uuid, rail: &Rail, by: &str) -> Result<FetchSummary> {
+    let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await?;
+    let fetch_id = record_fetch(pool, company_id, by).await?;
+    match rail.client.list(&rail.tokens, &orgnumber).await {
+        Ok(answer) => store_list(pool, company_id, fetch_id, &answer).await,
+        Err(e) => {
+            let e = format!("{e:#}");
+            record_failure(pool, fetch_id, &e).await?;
+            bail!("Skatteetaten ga ikke trekkpåleggene: {e}")
+        }
+    }
+}
+
+/// The request row, written before the call.
+pub async fn record_fetch(pool: &PgPool, company_id: Uuid, by: &str) -> Result<Uuid> {
+    let id = Uuid::now_v7();
+    sqlx::query("insert into garnishment_fetch (id, company_id, requested_by) values ($1, $2, $3)")
+        .bind(id)
+        .bind(company_id)
+        .bind(by)
+        .execute(pool)
+        .await?;
+    Ok(id)
+}
+
+async fn record_failure(pool: &PgPool, fetch_id: Uuid, detail: &str) -> Result<()> {
+    sqlx::query(
+        "insert into garnishment_fetch_outcome (fetch_id, ok, detail) values ($1, false, $2)",
+    )
+    .bind(fetch_id)
+    .bind(detail)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Stores a list answer for a recorded fetch: every version regnmed does
+/// not have, verbatim, and the list itself as the newest successful one.
+/// A list that cannot be read, or holds an order for another employer, is
+/// stored as a failure and nothing from it is kept.
+pub async fn store_list(
+    pool: &PgPool,
+    company_id: Uuid,
+    fetch_id: Uuid,
+    answer: &serde_json::Value,
+) -> Result<FetchSummary> {
+    let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await?;
+    let orders = regnmed_gov::garnishment::parse_list(answer).and_then(|orders| {
+        match orders.iter().find(|o| o.employer != orgnumber) {
+            Some(o) => Err(format!(
+                "trekkpålegg {} gjelder trekkpliktig {}, ikke {orgnumber}",
+                o.trekkid, o.employer
+            )),
+            None => Ok(orders),
+        }
+    });
+    let orders = match orders {
+        Ok(orders) => orders,
+        Err(e) => {
+            record_failure(pool, fetch_id, &format!("{e}\n{answer}")).await?;
+            bail!("svaret fra Skatteetaten kunne ikke leses: {e}");
+        }
+    };
+    let mut tx = pool.begin().await?;
+    // A run checks its set under the same lock (§3 point 2).
+    lock_company(&mut tx, company_id).await?;
+    let mut new_versions = 0;
+    for o in &orders {
+        new_versions += sqlx::query(
+            "insert into garnishment_fetched
+                 (id, company_id, fetch_id, trekkid, trekkversjon, skyldner, opprettet, raw)
+             values ($1, $2, $3, $4, $5, $6, $7, $8)
+             on conflict (company_id, trekkid, trekkversjon) do nothing",
+        )
+        .bind(Uuid::now_v7())
+        .bind(company_id)
+        .bind(fetch_id)
+        .bind(&o.trekkid)
+        .bind(o.version)
+        .bind(&o.debtor)
+        .bind(o.created)
+        .bind(&o.raw)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected() as usize;
+    }
+    let listed: Vec<&str> = orders.iter().map(|o| o.trekkid.as_str()).collect();
+    sqlx::query(
+        "insert into garnishment_fetch_outcome (fetch_id, ok, listed) values ($1, true, $2)",
+    )
+    .bind(fetch_id)
+    .bind(&listed)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(FetchSummary {
+        fetch_id,
+        listed: orders.len(),
+        new_versions,
+    })
+}
+
+/// One fetched order as regnmed holds it: its newest stored version.
+#[derive(Debug, Clone)]
+pub struct FetchedOrder {
+    /// The stored version's row.
+    pub id: Uuid,
+    /// The newest stored version, parsed; `Err` when it cannot be read.
+    pub order: std::result::Result<regnmed_gov::garnishment::Order, String>,
+    pub trekkid: String,
+    pub version: i32,
+    /// The earliest `opprettet` stored for the order (§2 step 3).
+    pub first_created: DateTime<Utc>,
+    /// Matched on `skyldner`; None when no employee has the number.
+    pub employee: Option<(Uuid, String)>,
+    pub fetched_at: DateTime<Utc>,
+}
+
+/// The newest successful list: when, and the trekkids it held.
+#[derive(Debug, Clone)]
+pub struct LastList {
+    pub at: DateTime<Utc>,
+    pub listed: Vec<String>,
+}
+
+/// Every fetched order (newest version each) and the newest successful list.
+pub async fn fetched(
+    conn: &mut PgConnection,
+    company_id: Uuid,
+) -> Result<(Vec<FetchedOrder>, Option<LastList>)> {
+    let rows = sqlx::query(
+        "select distinct on (f.trekkid) f.id, f.trekkid, f.trekkversjon, f.raw, f.created_at,
+                min(f.opprettet) over (partition by f.trekkid) as first_created,
+                e.id as employee_id, e.navn
+         from garnishment_fetched f
+         left join employee e on e.company_id = f.company_id and e.fodselsnummer = f.skyldner
+         where f.company_id = $1
+         order by f.trekkid, f.trekkversjon desc",
+    )
+    .bind(company_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    let orders = rows
+        .iter()
+        .map(|r| FetchedOrder {
+            id: r.get("id"),
+            order: regnmed_gov::garnishment::parse_order(&r.get::<serde_json::Value, _>("raw")),
+            trekkid: r.get("trekkid"),
+            version: r.get("trekkversjon"),
+            first_created: r.get("first_created"),
+            employee: r
+                .get::<Option<Uuid>, _>("employee_id")
+                .map(|id| (id, r.get("navn"))),
+            fetched_at: r.get("created_at"),
+        })
+        .collect();
+    let last = sqlx::query(
+        "select o.listed, o.created_at from garnishment_fetch_outcome o
+         join garnishment_fetch r on r.id = o.fetch_id
+         where r.company_id = $1 and o.ok
+         order by o.created_at desc limit 1",
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await?
+    .map(|r| LastList {
+        at: r.get("created_at"),
+        listed: r.get("listed"),
+    });
+    Ok((orders, last))
+}
+
+/// One fetch attempt, for the portal: when, who, and what came back.
+#[derive(Debug, Clone)]
+pub struct FetchAttempt {
+    pub id: Uuid,
+    pub requested_by: String,
+    pub created_at: DateTime<Utc>,
+    /// None while the call is out (or was lost).
+    pub ok: Option<bool>,
+    pub listed: Option<usize>,
+    pub detail: Option<String>,
+}
+
+pub async fn fetch_attempts(pool: &PgPool, company_id: Uuid) -> Result<Vec<FetchAttempt>> {
+    let rows = sqlx::query(
+        "select r.id, r.requested_by, r.created_at, o.ok, cardinality(o.listed) as listed,
+                o.detail
+         from garnishment_fetch r left join garnishment_fetch_outcome o on o.fetch_id = r.id
+         where r.company_id = $1 order by r.created_at desc limit 20",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| FetchAttempt {
+            id: r.get("id"),
+            requested_by: r.get("requested_by"),
+            created_at: r.get("created_at"),
+            ok: r.get("ok"),
+            listed: r.get::<Option<i32>, _>("listed").map(|n| n as usize),
+            detail: r.get("detail"),
+        })
+        .collect())
+}
+
+/// How old the newest successful list may be before a run warns (§3
+/// point 3): three missed daily fetches.
+const STALE_AFTER_DAYS: i64 = 3;
+
 // ---- what the run uses ---------------------------------------------------
+
+/// Where an order the run withholds came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// Registered by hand from a letter (§6).
+    Registered {
+        id: Uuid,
+        letter_id: Uuid,
+        letter_filename: String,
+    },
+    /// Fetched from Skatteetaten (§2): the stored version's row.
+    Fetched {
+        id: Uuid,
+        trekkid: String,
+        case_number: String,
+    },
+}
+
+/// An order's identity in the preview set (§3 point 2): (registration,
+/// version) for a hand entry, (trekkid, trekkversjon) for a fetched one.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Key {
+    Registered(Uuid, i32),
+    Fetched(String, i32),
+}
 
 /// One order the run withholds on a pay date, whatever its source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effective {
-    pub garnishment_id: Uuid,
+    pub source: Source,
+    /// The registration's version, or the trekkversjon.
     pub version: i32,
     pub employee_id: Uuid,
     pub kind: Kind,
@@ -672,13 +953,22 @@ pub struct Effective {
     pub payee_orgnumber: Option<String>,
     pub payee_account: Option<String>,
     pub due_days: Option<i32>,
-    pub letter_id: Uuid,
-    pub letter_filename: String,
+}
+
+impl Effective {
+    pub fn key(&self) -> Key {
+        match &self.source {
+            Source::Registered { id, .. } => Key::Registered(*id, self.version),
+            Source::Fetched { trekkid, .. } => Key::Fetched(trekkid.clone(), self.version),
+        }
+    }
 }
 
 /// The orders in force on `paid_date`, in the order the cap is spent on
-/// them (samordnet, skatt, øvrige; oldest first within a type), and
-/// warnings for registrations that wait for attestation.
+/// them (samordnet, skatt, øvrige; oldest first within a type), and the
+/// warnings the preview shows: registrations waiting for attestation,
+/// fetched orders that cannot be withheld, and where a fetched order
+/// replaces a hand entry.
 pub async fn effective(
     conn: &mut PgConnection,
     company_id: Uuid,
@@ -712,7 +1002,11 @@ pub async fn effective(
         }
         if let Some(v) = applies {
             out.push(Effective {
-                garnishment_id: o.id,
+                source: Source::Registered {
+                    id: o.id,
+                    letter_id: v.letter_id,
+                    letter_filename: v.letter_filename.clone(),
+                },
                 version: v.version,
                 employee_id: o.employee_id,
                 kind: o.kind,
@@ -721,12 +1015,169 @@ pub async fn effective(
                 payee_orgnumber: v.payee_orgnumber.clone(),
                 payee_account: v.payee_account.clone(),
                 due_days: v.due_days,
-                letter_id: v.letter_id,
-                letter_filename: v.letter_filename.clone(),
             });
         }
     }
+
+    let fetched_orders = fetched_in_force(conn, company_id, paid_date, &mut warnings).await?;
+    for (f, name) in &fetched_orders {
+        // §6 «Når et hentet pålegg kommer»: one coordinated trekk per
+        // employee, and it ends the others. Derived here, never written.
+        out.retain(|r| {
+            if r.employee_id != f.employee_id {
+                return true;
+            }
+            let Source::Fetched { trekkid, .. } = &f.source else {
+                unreachable!("fetched_in_force returns fetched orders")
+            };
+            if r.kind == Kind::Coordinated && r.kid == f.kid {
+                warnings.push(format!(
+                    "{name}: trekkpålegget registrert for hånd (KID {}) er avløst av trekkpålegg \
+                     {trekkid} fra Skatteetaten med samme KID, og trekkes ikke lenger.",
+                    r.kid.as_deref().unwrap_or("")
+                ));
+            } else {
+                warnings.push(format!(
+                    "Avvik: {name} har et trekkpålegg registrert for hånd ({}{}) i tillegg til \
+                     det samordnede trekkpålegget {trekkid} fra Skatteetaten. Et samordnet trekk \
+                     avslutter de andre, så bare {trekkid} trekkes. Kontakt \
+                     innkrevingsmyndigheten, og stopp registreringen under Lønn → Trekkpålegg \
+                     når det er bekreftet.",
+                    r.kind.label(),
+                    r.kid
+                        .as_deref()
+                        .map(|k| format!(", KID {k}"))
+                        .unwrap_or_default()
+                ));
+            }
+            false
+        });
+    }
+    out.extend(fetched_orders.into_iter().map(|(f, _)| f));
+    // Stable: within a type the hand entries keep their order.
+    out.sort_by_key(|o| o.kind);
     Ok((out, warnings))
+}
+
+/// The fetched orders the run withholds on `paid_date`, with the employee's
+/// name, after the checks §2 and §3 put on them. Each order that cannot be
+/// withheld is a warning, never silently dropped.
+async fn fetched_in_force(
+    conn: &mut PgConnection,
+    company_id: Uuid,
+    paid_date: NaiveDate,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<(Effective, String)>> {
+    let (orders, last) = fetched(conn, company_id).await?;
+    if let Some(last) = &last
+        && Utc::now() - last.at > chrono::Duration::days(STALE_AFTER_DAYS)
+    {
+        warnings.push(format!(
+            "Trekkpåleggene ble sist hentet fra Skatteetaten {} — mer enn {STALE_AFTER_DAYS} \
+             dager siden. Hent dem på nytt under Lønn → Trekkpålegg før lønnen kjøres, så et \
+             stoppet eller endret pålegg ikke trekkes.",
+            last.at.date_naive().format("%d.%m.%Y"),
+        ));
+    }
+    // (employee, first created, effective, name)
+    let mut candidates: Vec<(Uuid, DateTime<Utc>, Effective, String)> = Vec::new();
+    for f in &orders {
+        let order = match &f.order {
+            Ok(o) => o,
+            Err(e) => {
+                warnings.push(format!(
+                    "Avvik: trekkpålegg {} versjon {} fra Skatteetaten kan ikke leses ({e}), og \
+                     trekkes ikke. Kontakt innkrevingsmyndigheten.",
+                    f.trekkid, f.version
+                ));
+                continue;
+            }
+        };
+        if !order.active {
+            continue;
+        }
+        let who = f
+            .employee
+            .as_ref()
+            .map_or("En person som ikke er i ansattregisteret", |e| e.1.as_str());
+        if !last.as_ref().is_some_and(|l| l.listed.contains(&f.trekkid)) {
+            warnings.push(format!(
+                "Avvik: {who}: trekkpålegg {} er aktivt i regnmed, men var ikke med i siste liste \
+                 fra Skatteetaten, og trekkes ikke. Kontakt innkrevingsmyndigheten.",
+                f.trekkid
+            ));
+            continue;
+        }
+        let Some((employee_id, name)) = &f.employee else {
+            warnings.push(format!(
+                "Avvik: trekkpålegg {} (sak {}) fra Skatteetaten gjelder en person som ikke finnes \
+                 i ansattregisteret, og trekkes ikke. Kontroller fødselsnummeret på den ansatte, \
+                 eller kontakt innkrevingsmyndigheten.",
+                f.trekkid, order.case_number
+            ));
+            continue;
+        };
+        let Some(period) = order.period_on(paid_date) else {
+            continue;
+        };
+        let size = match &period.size {
+            Ok(size) => *size,
+            Err(why) => {
+                warnings.push(format!(
+                    "Avvik: {name}: trekkpålegg {} versjon {} har en trekkstørrelse regnmed ikke \
+                     kan lese uten å gjette ({why}), og trekkes ikke. Kontakt \
+                     innkrevingsmyndigheten.",
+                    f.trekkid, f.version
+                ));
+                continue;
+            }
+        };
+        candidates.push((
+            *employee_id,
+            f.first_created,
+            Effective {
+                source: Source::Fetched {
+                    id: f.id,
+                    trekkid: f.trekkid.clone(),
+                    case_number: order.case_number.clone(),
+                },
+                version: f.version,
+                employee_id: *employee_id,
+                kind: Kind::Coordinated,
+                size,
+                kid: Some(order.kid.clone()),
+                payee_orgnumber: Some(order.payee.clone()),
+                payee_account: Some(regnmed_core::pain001::normalize_account_number(
+                    &order.account,
+                )),
+                due_days: None,
+            },
+            name.clone(),
+        ));
+    }
+    // One coordinated order per employee (§1). Two active: the one created
+    // last is withheld, and the warning names the other (§2 step 3).
+    candidates.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+    let mut out: Vec<(Effective, String)> = Vec::new();
+    for (employee_id, _, e, name) in candidates {
+        if let Some((kept, _)) = out.iter().find(|(k, _)| k.employee_id == employee_id) {
+            let trekkid = |e: &Effective| match &e.source {
+                Source::Fetched { trekkid, .. } => trekkid.clone(),
+                Source::Registered { .. } => String::new(),
+            };
+            warnings.push(format!(
+                "Avvik: {name} har to aktive trekkpålegg fra Skatteetaten ({} og {}). Bare {} \
+                 trekkes, siden det er opprettet sist; kontakt innkrevingsmyndigheten om {}.",
+                trekkid(kept),
+                trekkid(&e),
+                trekkid(kept),
+                trekkid(&e),
+            ));
+            continue;
+        }
+        out.push((e, name));
+    }
+    Ok(out)
 }
 
 /// The account trekk is credited to, and whether the run must create it.

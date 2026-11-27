@@ -34,6 +34,8 @@ fn right_for(kind: Kind) -> Right {
         // The result can hold the company's one-time verification link.
         Kind::PeppolSenderSetup => Right::CompanyAdmin,
         Kind::VatFilingSubmit => Right::VatReturnSubmit,
+        // Counts and Skatteetaten's error text: payroll territory (§3 point 4).
+        Kind::GarnishmentFetch => Right::PayrollRead,
     }
 }
 

@@ -327,14 +327,23 @@ fn months(trekk: &Value) -> Result<bool, Decision> {
 /// `38.0` -> 3800, `22.25` -> 2225, read from the number's decimal text so
 /// no float is ever involved. More than two decimals is refused rather
 /// than rounded.
-fn basis_points(n: &Value) -> Option<i64> {
+pub(crate) fn basis_points(n: &Value) -> Option<i64> {
+    hundredths(n).filter(|bp| *bp <= 10_000)
+}
+
+/// A non-negative JSON number times 100, from its decimal text: kroner to
+/// øre, a percent to basis points. More than two decimals is `None`.
+pub(crate) fn hundredths(n: &Value) -> Option<i64> {
     let text = n.as_number()?.to_string();
     let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
     if fraction.len() > 2 || whole.starts_with('-') {
         return None;
     }
-    let bp = whole.parse::<i64>().ok()? * 100 + format!("{fraction:0<2}").parse::<i64>().ok()?;
-    (bp <= 10_000).then_some(bp)
+    whole
+        .parse::<i64>()
+        .ok()?
+        .checked_mul(100)?
+        .checked_add(format!("{fraction:0<2}").parse::<i64>().ok()?)
 }
 
 #[cfg(test)]

@@ -609,10 +609,10 @@ pub struct PayrollRun {
     /// (employee_id, navn) for the run's lines — enough for the portal
     /// to offer a payslip per person without asking again.
     pub employees: Vec<(Uuid, String)>,
-    /// The trekkpålegg this run withholds, as (order, version). The
-    /// preview returns it and the booking must send it back unchanged
+    /// The trekkpålegg this run withholds: (registration, version) or
+    /// (trekkid, trekkversjon). The preview returns it and the booking must send it back unchanged
     /// (docs/trekkpalegg.md §3 point 2).
-    pub garnishment_set: Vec<(Uuid, i32)>,
+    pub garnishment_set: Vec<crate::garnishment::Key>,
     /// Where the trekk is credited, when anything is withheld.
     pub garnishment_account: Option<String>,
     /// Things worth saying out loud about the run. Never fatal — a
@@ -1112,7 +1112,7 @@ pub async fn run_payroll_as_previewed(
     zone_slug: &str,
     poster: &[PayrollEntry],
     created_by: &str,
-    garnishment_set: Option<&[(Uuid, i32)]>,
+    garnishment_set: Option<&[crate::garnishment::Key]>,
 ) -> Result<PayrollRun> {
     payroll_run(
         pool,
@@ -1173,7 +1173,7 @@ async fn payroll_run(
     poster: &[PayrollEntry],
     created_by: &str,
     // None = preview; Some(set) = book, with the set the caller previewed.
-    previewed: Option<Option<&[(Uuid, i32)]>>,
+    previewed: Option<Option<&[crate::garnishment::Key]>>,
 ) -> Result<PayrollRun> {
     let preview = previewed.is_none();
     ensure!((1..=12).contains(&month), "måned må være 1-12");
@@ -1699,10 +1699,10 @@ async fn payroll_run(
             ));
         }
     }
-    let mut garnishment_set: Vec<(Uuid, i32)> = lines
+    let mut garnishment_set: Vec<crate::garnishment::Key> = lines
         .iter()
         .flat_map(|l| &l.garnishments)
-        .map(|w| (w.order.garnishment_id, w.order.version))
+        .map(|w| w.order.key())
         .collect();
     garnishment_set.sort();
     if let Some(sent) = previewed {
@@ -2211,14 +2211,21 @@ async fn payroll_run(
             for w in &l.garnishments {
                 sqlx::query(
                     "insert into payroll_garnishment
-                     (id, run_id, employee_id, garnishment_id, version, kind, wanted_ore,
-                      withheld_ore, kid)
-                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                     (id, run_id, employee_id, garnishment_id, fetched_id, version, kind,
+                      wanted_ore, withheld_ore, kid)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 )
                 .bind(Uuid::now_v7())
                 .bind(run_id)
                 .bind(l.employee_id)
-                .bind(w.order.garnishment_id)
+                .bind(match &w.order.source {
+                    crate::garnishment::Source::Registered { id, .. } => Some(*id),
+                    crate::garnishment::Source::Fetched { .. } => None,
+                })
+                .bind(match &w.order.source {
+                    crate::garnishment::Source::Fetched { id, .. } => Some(*id),
+                    crate::garnishment::Source::Registered { .. } => None,
+                })
                 .bind(w.order.version)
                 .bind(w.order.kind.slug())
                 .bind(w.wanted_ore)
@@ -2535,13 +2542,18 @@ pub async fn payslip(
         .into_iter()
         .filter(|g| g.employee_id == employee_id && g.withheld_ore != 0)
         .map(|g| PayslipLine {
-            text: match &g.kid {
-                Some(kid) => format!(
+            text: match (&g.kid, &g.trekkid) {
+                (Some(kid), Some(trekkid)) => format!(
+                    "Utleggstrekk, {} (trekkpålegg {trekkid}, KID {kid}, versjon {})",
+                    g.kind.label(),
+                    g.version
+                ),
+                (Some(kid), None) => format!(
                     "Utleggstrekk, {} (KID {kid}, versjon {})",
                     g.kind.label(),
                     g.version
                 ),
-                None => format!("Utleggstrekk skatt (versjon {})", g.version),
+                (None, _) => format!("Utleggstrekk skatt (versjon {})", g.version),
             },
             amount_ore: -g.withheld_ore,
         })
@@ -3316,10 +3328,15 @@ async fn add_unpaid_employments(
     Ok(())
 }
 
-/// What a stored run withheld per employee and order (migration 0110).
+/// What a stored run withheld per employee and order (migrations 0110,
+/// 0111).
 pub struct RunGarnishment {
     pub employee_id: Uuid,
-    pub garnishment_id: Uuid,
+    /// The registration, for a hand entry.
+    pub garnishment_id: Option<Uuid>,
+    /// The trekkid, for a fetched order.
+    pub trekkid: Option<String>,
+    /// The registration's version, or the trekkversjon.
     pub version: i32,
     pub kind: regnmed_core::garnishment::Kind,
     pub wanted_ore: i64,
@@ -3329,8 +3346,10 @@ pub struct RunGarnishment {
 
 pub async fn run_garnishments(pool: &PgPool, run_id: Uuid) -> Result<Vec<RunGarnishment>> {
     let rows = sqlx::query(
-        "select employee_id, garnishment_id, version, kind, wanted_ore, withheld_ore, kid
-         from payroll_garnishment where run_id = $1 order by id",
+        "select g.employee_id, g.garnishment_id, f.trekkid, g.version, g.kind, g.wanted_ore,
+                g.withheld_ore, g.kid
+         from payroll_garnishment g left join garnishment_fetched f on f.id = g.fetched_id
+         where g.run_id = $1 order by g.id",
     )
     .bind(run_id)
     .fetch_all(pool)
@@ -3341,6 +3360,7 @@ pub async fn run_garnishments(pool: &PgPool, run_id: Uuid) -> Result<Vec<RunGarn
             Ok(RunGarnishment {
                 employee_id: r.get("employee_id"),
                 garnishment_id: r.get("garnishment_id"),
+                trekkid: r.get("trekkid"),
                 version: r.get("version"),
                 kind: regnmed_core::garnishment::Kind::from_slug(&kind)
                     .context("unknown garnishment kind")?,

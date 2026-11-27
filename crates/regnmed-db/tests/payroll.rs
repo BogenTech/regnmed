@@ -3877,7 +3877,7 @@ mod garnishment {
         pool: &PgPool,
         company: Uuid,
         poster: &[PayrollEntry],
-        set: Option<&[(Uuid, i32)]>,
+        set: Option<&[g::Key]>,
     ) -> anyhow::Result<payroll::PayrollRun> {
         payroll::run_payroll_as_previewed(
             pool,
@@ -3932,7 +3932,7 @@ mod garnishment {
 
         let poster = [entry(kari)];
         let shown = preview(&pool, company, &poster).await.unwrap();
-        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+        assert_eq!(shown.garnishment_set, vec![g::Key::Registered(order, 1)]);
         assert_eq!(shown.garnishment_account.as_deref(), Some("2610"));
         let line = &shown.lines[0];
         assert_eq!(line.garnishments[0].withheld_ore, 400_000);
@@ -4081,7 +4081,7 @@ mod garnishment {
         assert!(err.to_string().contains("forhåndsvis"), "{err}");
 
         let again = preview(&pool, company, &poster).await.unwrap();
-        assert_eq!(again.garnishment_set, vec![(order, 2)]);
+        assert_eq!(again.garnishment_set, vec![g::Key::Registered(order, 2)]);
         let run = book(&pool, company, &poster, Some(&again.garnishment_set))
             .await
             .unwrap();
@@ -4207,7 +4207,7 @@ mod garnishment {
         .await
         .unwrap();
         let shown = preview(&pool, company, &poster).await.unwrap();
-        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+        assert_eq!(shown.garnishment_set, vec![g::Key::Registered(order, 1)]);
 
         // A change waits again, while the attested version keeps running.
         g::change(
@@ -4227,7 +4227,7 @@ mod garnishment {
         .await
         .unwrap();
         let shown = preview(&pool, company, &poster).await.unwrap();
-        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+        assert_eq!(shown.garnishment_set, vec![g::Key::Registered(order, 1)]);
         assert_eq!(shown.lines[0].garnishments[0].withheld_ore, 400_000);
         let listed = g::list(&pool, company).await.unwrap();
         assert_eq!(listed[0].status(), "aktiv, endringen venter på attestering");
@@ -4295,7 +4295,11 @@ mod garnishment {
         .unwrap();
 
         let shown = preview(&pool, company, &poster).await.unwrap();
-        let mut expected = vec![(tax_kari, 1), (tax_ola, 1), (other, 1)];
+        let mut expected = vec![
+            g::Key::Registered(tax_kari, 1),
+            g::Key::Registered(tax_ola, 1),
+            g::Key::Registered(other, 1),
+        ];
         expected.sort();
         assert_eq!(shown.garnishment_set, expected);
         let run = book(&pool, company, &poster, Some(&shown.garnishment_set))
@@ -4374,5 +4378,399 @@ mod garnishment {
             -650_000
         );
         assert_eq!(account_amount(&pool, run.voucher_id, "2610").await, 0);
+    }
+
+    // ---- fetched from Skatteetaten (§2, #334) ------------------------------
+    //
+    // The lists are built in the shape of Skatteetaten's documentation
+    // examples (docs/trekkpalegg/liste-fra-dokumentasjonen.json) and stored
+    // through the same `store_list` the live fetch uses; only the HTTP call
+    // is left out (the API test serves it from a mock).
+
+    async fn orgnumber(pool: &PgPool, company: Uuid) -> String {
+        sqlx::query_scalar("select orgnr from company where id = $1")
+            .bind(company)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    struct Fetched<'a> {
+        trekkid: &'a str,
+        version: i32,
+        debtor: &'a str,
+        created: &'a str,
+        status: &'a str,
+        /// The size of the period from March on; January–February is 1 000 kr.
+        size: serde_json::Value,
+    }
+
+    impl Fetched<'_> {
+        fn json(&self, employer: &str) -> serde_json::Value {
+            let mut march =
+                serde_json::json!({"startdato": "2026-03-01", "sluttdato": "2026-12-31"});
+            march
+                .as_object_mut()
+                .unwrap()
+                .extend(self.size.as_object().unwrap().clone());
+            serde_json::json!({
+                "trekkid": self.trekkid,
+                "skyldner": self.debtor,
+                "opprettet": self.created,
+                "saksnummer": format!("TREKK/2026/{}", self.trekkid),
+                "trekkstatus": self.status,
+                "trekkpliktig": employer,
+                "trekkversjon": self.version,
+                "sekvensnummer": 100 + self.version,
+                "betalingsinformasjon": {
+                    "kidnummer": KID,
+                    "kontonummer": ACCOUNT,
+                    "betalingsmottaker": PAYEE,
+                },
+                "trekkstoerrelseForPeriode": [
+                    { "startdato": "2026-01-01", "sluttdato": "2026-02-28",
+                      "trekkbeloep": { "trekkbeloep": 1000 } },
+                    march,
+                ],
+            })
+        }
+    }
+
+    fn amount(kroner: &str) -> serde_json::Value {
+        serde_json::json!({"trekkbeloep": {
+            "trekkbeloep": serde_json::from_str::<serde_json::Value>(kroner).unwrap()}})
+    }
+
+    fn order<'a>(trekkid: &'a str, version: i32, debtor: &'a str) -> Fetched<'a> {
+        Fetched {
+            trekkid,
+            version,
+            debtor,
+            created: "2026-02-10T15:00:00.00Z",
+            status: "aktiv",
+            size: amount("4000"),
+        }
+    }
+
+    async fn store(pool: &PgPool, company: Uuid, orders: &[Fetched<'_>]) -> g::FetchSummary {
+        let employer = orgnumber(pool, company).await;
+        let list = serde_json::Value::Array(orders.iter().map(|o| o.json(&employer)).collect());
+        let fetch = g::record_fetch(pool, company, "Test").await.unwrap();
+        g::store_list(pool, company, fetch, &list).await.unwrap()
+    }
+
+    const KARI: &str = "26829398612";
+
+    /// §2 steps 1–7 short of the HTTP call: fetched, stored verbatim,
+    /// withheld from the period covering the pay date, booked with the
+    /// order's KID, reported and shown on the payslip by trekkid.
+    #[tokio::test]
+    async fn a_fetched_order_is_withheld_booked_and_reported() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        payroll::update_employment_details(&pool, company, kari, &complete_details("974760673"))
+            .await
+            .unwrap();
+        let summary = store(&pool, company, &[order("20001", 1, KARI)]).await;
+        assert_eq!((summary.listed, summary.new_versions), (1, 1));
+        // The same list again stores nothing new.
+        let again = store(&pool, company, &[order("20001", 1, KARI)]).await;
+        assert_eq!((again.listed, again.new_versions), (1, 0));
+
+        let poster = [entry(kari)];
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(
+            shown.garnishment_set,
+            vec![g::Key::Fetched("20001".into(), 1)]
+        );
+        // The March period says 4 000 kr, not January's 1 000.
+        assert_eq!(shown.lines[0].garnishments[0].withheld_ore, 400_000);
+
+        let run = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap();
+        assert_eq!(
+            account_amount(&pool, run.voucher_id, "2610").await,
+            -400_000
+        );
+        let fetched_id: Option<Uuid> =
+            sqlx::query_scalar("select fetched_id from payroll_garnishment where run_id = $1")
+                .bind(run.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(fetched_id.is_some());
+        let items = regnmed_db::payments::payable_items(&pool, company)
+            .await
+            .unwrap();
+        let item = items
+            .iter()
+            .find(|i| i.kid.as_deref() == Some(KID))
+            .unwrap();
+        assert_eq!(item.amount_ore, 400_000);
+        assert_eq!(item.due_date, Some(date(2026, 3, 25)));
+
+        let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+            .await
+            .unwrap();
+        let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+        xsd_valid(&xml);
+        let flat: String = xml.lines().map(str::trim).collect();
+        assert!(
+            flat.contains("<beskrivelse>utleggstrekkSamordnet</beskrivelse><beloep>-4000</beloep>"),
+            "{flat}"
+        );
+        let slip = payroll::payslip(&pool, company, run.id, kari)
+            .await
+            .unwrap();
+        assert!(slip.deductions[0].text.contains("trekkpålegg 20001"));
+    }
+
+    /// §3 point 2 for fetched orders: a new version after the preview
+    /// stops the run until it is previewed again.
+    #[tokio::test]
+    async fn a_new_version_after_the_preview_stops_the_run() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        store(&pool, company, &[order("20002", 1, KARI)]).await;
+        let poster = [entry(kari)];
+        let shown = preview(&pool, company, &poster).await.unwrap();
+
+        let mut v2 = order("20002", 2, KARI);
+        v2.size = amount("4500.50");
+        store(&pool, company, &[v2]).await;
+        let err = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("forhåndsvis"), "{err}");
+        let again = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(
+            again.garnishment_set,
+            vec![g::Key::Fetched("20002".into(), 2)]
+        );
+        // Rounded down to whole kroner, like a hand entry.
+        assert_eq!(again.lines[0].garnishments[0].withheld_ore, 450_000);
+        book(&pool, company, &poster, Some(&again.garnishment_set))
+            .await
+            .unwrap();
+    }
+
+    /// §6: the same KID means the letter and the API describe one order --
+    /// the fetched one takes over, derived, with nothing written.
+    #[tokio::test]
+    async fn a_fetched_order_with_the_same_kid_replaces_the_hand_entry() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let hand = register(&pool, company, kari, coordinated(300_000), by).await;
+        let poster = [entry(kari)];
+        let before = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(before.garnishment_set, vec![g::Key::Registered(hand, 1)]);
+
+        store(&pool, company, &[order("20003", 1, KARI)]).await;
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(
+            shown.garnishment_set,
+            vec![g::Key::Fetched("20003".into(), 1)]
+        );
+        assert_eq!(shown.lines[0].garnishments.len(), 1);
+        assert!(
+            shown.warnings.iter().any(|w| w.contains("avløst")),
+            "{:?}",
+            shown.warnings
+        );
+        assert!(!shown.warnings.iter().any(|w| w.starts_with("Avvik")));
+        // The hand entry is still registered and active: nothing was written.
+        let orders = g::list(&pool, company).await.unwrap();
+        assert_eq!(orders[0].status(), "aktiv");
+        assert_eq!(orders[0].versions.len(), 1);
+        // The set from before the fetch no longer books.
+        let err = book(&pool, company, &poster, Some(&before.garnishment_set))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("forhåndsvis"), "{err}");
+    }
+
+    /// §6: another KID (an old-scheme trekk next to a new coordinated one)
+    /// is an anomaly on both, and only the fetched one is withheld.
+    #[tokio::test]
+    async fn a_different_kid_is_an_anomaly_and_the_fetched_order_is_withheld() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let mut other_kid = coordinated(300_000);
+        other_kid.kid = Some("12345678903".into());
+        register(&pool, company, kari, other_kid, by).await;
+        register(&pool, company, kari, tax(1000), by).await;
+
+        store(&pool, company, &[order("20004", 1, KARI)]).await;
+        let shown = preview(&pool, company, &[entry(kari)]).await.unwrap();
+        assert_eq!(
+            shown.garnishment_set,
+            vec![g::Key::Fetched("20004".into(), 1)]
+        );
+        let anomalies: Vec<&String> = shown
+            .warnings
+            .iter()
+            .filter(|w| w.starts_with("Avvik") && w.contains("20004"))
+            .collect();
+        assert_eq!(anomalies.len(), 2, "{:?}", shown.warnings);
+        assert!(anomalies.iter().any(|w| w.contains("12345678903")));
+        assert!(anomalies.iter().any(|w| w.contains("utleggstrekk skatt")));
+    }
+
+    /// §2 steps 1 and 3: what the list cannot back is shown, never
+    /// withheld -- an order missing from the newest list, one nobody in
+    /// the register owes, an unreadable size, and an ended order.
+    #[tokio::test]
+    async fn what_cannot_be_withheld_is_shown_as_an_anomaly() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        let ola = employee(&pool, company, "15929998666", "Ola Testesen", 5_000_000).await;
+        store(&pool, company, &[order("20005", 1, KARI)]).await;
+        let mut unreadable = order("20007", 1, "15929998666");
+        unreadable.size = serde_json::json!({"trekkprosent": {"trekkprosent": 12.345}});
+        let mut ended = order("20008", 1, "20857597940");
+        ended.status = "avsluttet";
+        // The newest list no longer has 20005.
+        store(
+            &pool,
+            company,
+            &[order("20006", 1, "01010112345"), unreadable, ended],
+        )
+        .await;
+
+        let shown = preview(&pool, company, &[entry(kari), entry(ola)])
+            .await
+            .unwrap();
+        assert!(
+            shown.garnishment_set.is_empty(),
+            "{:?}",
+            shown.garnishment_set
+        );
+        let says = |needle: &str| shown.warnings.iter().any(|w| w.contains(needle));
+        assert!(
+            says("20005 er aktivt i regnmed, men var ikke med i siste liste"),
+            "{:?}",
+            shown.warnings
+        );
+        assert!(says("20006 (sak TREKK/2026/20006)"), "{:?}", shown.warnings);
+        assert!(
+            says("20007 versjon 1 har en trekkstørrelse"),
+            "{:?}",
+            shown.warnings
+        );
+        assert!(!says("20008"), "{:?}", shown.warnings);
+    }
+
+    /// §2 step 3: two active orders on one employee -- the one created last
+    /// is withheld, by its EARLIEST stored `opprettet`.
+    #[tokio::test]
+    async fn of_two_active_orders_the_one_created_last_is_withheld() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        let older = Fetched {
+            created: "2026-01-05T10:00:00Z",
+            ..order("20009", 1, KARI)
+        };
+        let newer = || Fetched {
+            created: "2026-02-05T10:00:00Z",
+            ..order("20010", 1, KARI)
+        };
+        store(&pool, company, &[older, newer()]).await;
+        // A new version of the older order carries a later `opprettet`, but
+        // the order was still created first.
+        let older_v2 = Fetched {
+            created: "2026-03-01T10:00:00Z",
+            ..order("20009", 2, KARI)
+        };
+        store(&pool, company, &[older_v2, newer()]).await;
+        let shown = preview(&pool, company, &[entry(kari)]).await.unwrap();
+        assert_eq!(
+            shown.garnishment_set,
+            vec![g::Key::Fetched("20010".into(), 1)]
+        );
+        assert!(
+            shown
+                .warnings
+                .iter()
+                .any(|w| w.contains("to aktive") && w.contains("20009")),
+            "{:?}",
+            shown.warnings
+        );
+    }
+
+    /// §3 point 3: a list older than three days is warned about.
+    #[tokio::test]
+    async fn a_stale_list_is_warned_about() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
+        let fetch = Uuid::now_v7();
+        sqlx::query(
+            "insert into garnishment_fetch (id, company_id, requested_by, created_at)
+             values ($1, $2, 'Test', now() - interval '4 days')",
+        )
+        .bind(fetch)
+        .bind(company)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "insert into garnishment_fetch_outcome (fetch_id, ok, listed, created_at)
+             values ($1, true, '{}', now() - interval '4 days')",
+        )
+        .bind(fetch)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let shown = preview(&pool, company, &[entry(kari)]).await.unwrap();
+        assert!(
+            shown.warnings.iter().any(|w| w.contains("sist hentet")),
+            "{:?}",
+            shown.warnings
+        );
+        store(&pool, company, &[]).await;
+        let fresh = preview(&pool, company, &[entry(kari)]).await.unwrap();
+        assert!(!fresh.warnings.iter().any(|w| w.contains("sist hentet")));
+    }
+
+    /// A list for another employer is refused whole and recorded as a
+    /// failure; and what was stored cannot be changed.
+    #[tokio::test]
+    async fn a_foreign_list_is_refused_and_the_store_is_insert_only() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let fetch = g::record_fetch(&pool, company, "Test").await.unwrap();
+        let foreign = serde_json::Value::Array(vec![order("20011", 1, KARI).json("123456785")]);
+        let err = g::store_list(&pool, company, fetch, &foreign)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("trekkpliktig"), "{err}");
+        let attempts = g::fetch_attempts(&pool, company).await.unwrap();
+        assert_eq!(attempts[0].ok, Some(false));
+        let (orders, last) = g::fetched(&mut pool.acquire().await.unwrap(), company)
+            .await
+            .unwrap();
+        assert!(orders.is_empty() && last.is_none());
+
+        store(&pool, company, &[order("20012", 1, KARI)]).await;
+        for sql in [
+            "update garnishment_fetched set raw = '{}' where company_id = $1",
+            "delete from garnishment_fetched where company_id = $1",
+            "delete from garnishment_fetch_outcome where fetch_id in
+                 (select id from garnishment_fetch where company_id = $1)",
+        ] {
+            assert!(
+                sqlx::query(sql).bind(company).execute(&pool).await.is_err(),
+                "{sql}"
+            );
+        }
     }
 }

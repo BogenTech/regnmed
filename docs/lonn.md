@@ -687,7 +687,8 @@ listingen.
 | GET | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding` (måned uten kjøring) |
 | GET/POST | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding/submissions` |
 | GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
-| GET/POST | `/companies/{id}/payroll/garnishments` (trekkpålegg, docs/trekkpalegg.md §6) |
+| GET/POST | `/companies/{id}/payroll/garnishments` (trekkpålegg, docs/trekkpalegg.md §2 og §6) |
+| POST | `/companies/{id}/payroll/garnishments/fetch` (hent fra Skatteetaten) |
 | POST | `/companies/{id}/payroll/garnishments/letters?filename=` (brevet, rå kropp) |
 | GET | `/companies/{id}/payroll/garnishments/letters/{brev}` |
 | PUT | `/companies/{id}/payroll/garnishments/{pålegg}` (ny versjon) |
@@ -1105,13 +1106,10 @@ Rekkefølgen er omtrent den de bør tas i.
    den er på plass er dette internt regnskap, ikke rapportering —
    **selskapet må fortsatt levere a-melding på annet vis.** Dette er
    den viktigste mangelen.
-2. **Trekkpålegg hentet fra Skatteetaten** (#334). Pålegg registrert
-   for hånd fra brevet trekkes, bokføres, betales og rapporteres (se
-   «Trekkpålegg» under, #339), men regnmed henter ingen pålegg selv.
-   **Et pålegg som ikke er registrert, trekkes ikke.** Portalen sier
-   det i forhåndsvisningen av hver kjøring. Skatteetatens API går på
-   samme systembrukerskinne som a-meldingen og venter på scopet
-   (SSV-6690); planen står i docs/trekkpalegg.md §2.
+2. **Trekkpålegg hentet fra Skatteetaten** (#334) er bygget
+   (docs/trekkpalegg.md §2), men ikke prøvd mot testmiljøet: scopet
+   venter (SSV-6690). Til det er tildelt, trekkes bare pålegg
+   registrert for hånd (#339).
 3. **Inntektsmelding til Nav** (#184). Når Nav ber om inntektsmelding
    for en sykmeldt, må selskapet sende den selv, på nav.no eller i et
    annet system. regnmed registrerer ikke fravær. Navs API tar bare

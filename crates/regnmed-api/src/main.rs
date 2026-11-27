@@ -141,6 +141,13 @@ async fn main() -> Result<()> {
         Err(_) => None,
     };
 
+    // Trekkpålegg (docs/trekkpalegg.md): same client, its own scope, and
+    // Skatteetatens TEST environment unless TREKKPALEGG_URL says otherwise.
+    let garnishment = regnmed_db::garnishment::Rail::from_env()?.map(|rail| {
+        println!("trekkpålegg fetching is on ({})", rail.client.base_url);
+        std::sync::Arc::new(rail)
+    });
+
     // Asking companies to approve regnmed in Altinn: same client, its own scopes.
     let system_user = match std::env::var("MASKINPORTEN_CLIENT_ID") {
         Ok(_) => {
@@ -229,6 +236,7 @@ async fn main() -> Result<()> {
         amelding,
         shareholder_return,
         tax_card,
+        garnishment,
         bank_feed,
         peppol_webhook_secret,
         system_user,

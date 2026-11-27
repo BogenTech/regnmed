@@ -112,6 +112,9 @@ pub struct AppState {
     /// Skattekort til arbeidsgiver (docs/lonn.md). None when
     /// MASKINPORTEN_* is unset.
     pub tax_card: Option<Arc<TaxCardRail>>,
+    /// Trekkpålegg from Skatteetaten (docs/trekkpalegg.md §2). None when
+    /// MASKINPORTEN_* is unset.
+    pub garnishment: Option<Arc<regnmed_db::garnishment::Rail>>,
     /// Direct bank connection (docs/bank.md tier 2): the configured providers,
     /// in priority order. None when there is none — the portal then shows no
     /// bank-connection card at all.
@@ -842,6 +845,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/payroll/garnishments",
             get(garnishment::list).post(garnishment::register),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/fetch",
+            axum::routing::post(garnishment::fetch),
         )
         .route(
             "/companies/{company_id}/payroll/garnishments/letters",

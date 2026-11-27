@@ -119,6 +119,7 @@ bygges ikke to ganger.
 | Type | Hva | Høyst per døgn | Endres med | Opprettes |
 |---|---|---|---|---|
 | `bank_sync` | henter fra banken for alle selskapets koblinger (docs/bank.md) | 4 (bankene begrenser henting uten at brukeren er til stede) | `BANK_AVSTEM` | når en bankkobling fullføres, til et nattlig standardtidspunkt spredt per selskap (02:00–04:59) |
+| `garnishment_fetch` | henter hele listen over trekkpålegg fra Skatteetaten (docs/trekkpalegg.md §2); kjøres bare når selskapet har godkjent systembruker og en kvittert a-melding | 1 | `LONN_SKRIV` | første gang noen henter trekkpålegg fra portalen og Skatteetaten svarer, til samme nattlige standardtid |
 
 `GET /companies/{id}/schedules` viser selskapets planer med neste kjøring og
 utfallet av den siste; `PUT /companies/{id}/schedules/{kind}` setter klokkeslett

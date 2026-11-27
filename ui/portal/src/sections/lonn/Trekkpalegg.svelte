@@ -1,6 +1,7 @@
 <script>
-  // Trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339), from the
-  // letter, with the letter stored beside it. A change or a stop is a new
+  // Trekkpålegg fetched from Skatteetaten (docs/trekkpalegg.md §2, #334) and
+  // registered by hand (§6, #339), from the letter, with the letter stored
+  // beside it. A change or a stop is a new
   // version; nothing is edited afterwards. Visible only with LONN_LES —
   // without it the server says no and the card does not show.
   import { api, post, send } from "../../lib/api.js";
@@ -165,6 +166,27 @@
   const sizeText = (v) =>
     v.belop_ore != null ? kr(v.belop_ore) + " kr/mnd" : (v.prosent_bp / 100).toFixed(2).replace(".", ",") + " %";
 
+  // Fetched from Skatteetaten (§2, #334): the newest version of each order,
+  // shown with the period that covers today. Nothing here is edited: a
+  // change comes as a new version on the next fetch.
+  const periodNow = (f) =>
+    (f.perioder ?? []).filter((p) => p.fra <= today() && (!p.til || today() <= p.til)).at(-1);
+  const lastAttempt = $derived(data?.henting?.forsok?.[0]);
+
+  async function fetchNow() {
+    busy = true;
+    try {
+      const r = await post("/companies/" + companyId + "/payroll/garnishments/fetch", {});
+      toast(r.nye_versjoner ? r.nye_versjoner + " nye eller endrede pålegg hentet" : "Ingen endringer fra Skatteetaten", true);
+      await load();
+    } catch (e) {
+      toast(e.message, false);
+      await load();
+    } finally {
+      busy = false;
+    }
+  }
+
   // Payroll settings: the account and the company's own KID for skatt. The
   // object's keys are the request's wire names.
   let settings = $state(null);
@@ -196,8 +218,67 @@
     <p class="text-sm opacity-80 mb-3 max-w-3xl">
       Pålegg om utleggstrekk som kommer i brev, registreres her og trekkes i lønnskjøringen: bokført
       som leverandørpost med KID, betalt fra betalingslisten og rapportert i a-meldingen. Pålegg
-      hentet direkte fra Skatteetaten kommer senere.
+      fra Skatteetaten hentes hver natt og trekkes uten at noen må godkjenne dem; et hentet pålegg
+      med samme KID som et registrert, avløser det registrerte.
     </p>
+
+    <section class="mb-4" aria-labelledby="trekk-hentet">
+      <div class="flex flex-wrap items-center gap-3 mb-2">
+        <h3 id="trekk-hentet" class="font-semibold">Fra Skatteetaten</h3>
+        <span class="text-xs opacity-70">
+          {data.henting.siste_vellykkede
+            ? "Sist hentet " + formatDate(data.henting.siste_vellykkede)
+            : "Aldri hentet"}
+        </span>
+        {#if data.henting.tilgjengelig}
+          <button class="btn btn-sm" disabled={busy} onclick={fetchNow}>Hent trekkpålegg</button>
+        {/if}
+      </div>
+      {#if lastAttempt && lastAttempt.ok === false}
+        <div role="alert" class="alert alert-warning alert-soft text-sm mb-2">
+          Siste henting {formatDate(lastAttempt.tidspunkt)} feilet: {lastAttempt.feil}
+        </div>
+      {/if}
+      {#if data.hentede.length}
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Ansatt</th>
+                <th>Trekkpålegg</th>
+                <th class="text-right">Trekk nå</th>
+                <th>KID</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each data.hentede as f (f.trekkid)}
+                {@const p = periodNow(f)}
+                <tr>
+                  <td class="whitespace-nowrap">
+                    {#if f.navn}{f.navn}{:else}<span class="badge badge-sm badge-warning">ikke i ansattregisteret</span>{/if}
+                  </td>
+                  <td class="text-xs">{f.trekkid} v{f.trekkversjon}{f.saksnummer ? ", sak " + f.saksnummer : ""}</td>
+                  <td class="text-right whitespace-nowrap">{p && !p.feil ? sizeText(p) : "–"}</td>
+                  <td class="font-mono text-xs">{f.kid ?? ""}</td>
+                  <td>
+                    {#if f.feil}
+                      <span class="badge badge-sm badge-warning">kan ikke leses</span>
+                    {:else}
+                      <span class="badge badge-sm" class:badge-warning={f.status === "aktiv" && !f.i_siste_liste}>
+                        {f.status === "aktiv" && !f.i_siste_liste ? "aktiv, ikke i siste liste" : f.status}
+                      </span>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="text-sm opacity-70">Ingen pålegg fra Skatteetaten.</p>
+      {/if}
+    </section>
 
     {#if data.palegg.length}
       <div class="overflow-x-auto mb-3">
