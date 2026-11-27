@@ -274,8 +274,11 @@ en inn her før den er prøvd. Det praktiske første forsøket er å spørre i
 samme henvendelse til Skatteetatens brukerstøtte: innsendingsflyten er
 deres, så de vet hvilken delegering den krever.
 
-4. Point the env variables above at the test environment and run
-   `regnmed mva-melding … --validate`.
+4. ~~Point the env variables above at the test environment and run
+   `regnmed mva-melding … --validate`.~~ Valideringen vil ha et
+   ID-porten-token (se under), så flagget er fjernet fra CLI-en.
+   Validering og innsending skjer i portalen («Godkjenn og send»,
+   docs/mva.md).
 
 For a regnskapsfører acting on behalf of clients, the client company
 **delegates** the scope to the accounting firm in Altinn (Altinn
@@ -315,19 +318,18 @@ tilbakemeldingen som Altinn-hendelse (`regnmed-gov::altinn_events`,
 webhook `/webhooks/altinn`) i «Tilbakemelding som hendelse». Merk:
 Events-API-et krever et VEKSLET Altinn-token, ikke Maskinporten-tokenet.
 
-## Mva-melding APIs (crates/regnmed-gov/src/mvamelding.rs)
+## Mva-melding APIs (crates/regnmed-gov/src/vat_return.rs)
 
-- **Validation** (implemented): POST the melding XML to Skatteetaten's
-  validation endpoint (test:
+- **Validering** (bygget): meldingen postes til Skatteetatens
+  valideringstjeneste (test:
   `https://idporten-api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider`,
-  override with `MVA_VALIDATION_URL`). The returned
-  `valideringsresultat` is kept verbatim — it is documentation of a
-  control — and any avvik fail the CLI run.
-- **Submission** (pending): the Altinn3 instance flow (create instance →
-  upload melding + konvolutt → confirm → poll feedback). Deliberately
-  not implemented until we hold real test credentials, so it can be
-  developed against the actual test environment instead of guessed.
-  Tracked in issue #8.
+  overstyres med `MVA_VALIDATION_URL`) med personens ID-porten-token.
+  `valideringsresultat` lagres ordrett — det er dokumentasjon av en
+  kontroll — og avvik stopper innsendingen.
+- **Innsending** (bygget, #311/#312): Altinn 3-instansflyten (opprett
+  instans → last opp konvolutt og melding → bekreft → hent
+  tilbakemelding), kjørt av arbeideren etter at en person har godkjent
+  meldingen med ID-porten. Hele flyten står i docs/mva.md.
 
 ## Aksjonærregisteroppgaven (crates/regnmed-core::shareholder_return)
 
@@ -496,9 +498,10 @@ gjennom Altinn. Det er en egen godkjenning, ikke innlogging i regnmed, så
 godkjenning krever ny innlogging (`prompt=login`), og en regnmed-bruker er
 bundet til én ID-porten-identitet per klient. Det som kan ha nådd Altinn
 forblir `uavklart` til det er lest der eller en person har sjekket Altinn og
-lukket det med notat. Flyten er testet mot mock og
-er **ikke kjørt mot TT02 ennå**: den krever en ID-porten-klient i
-Samarbeidsportalen. Hva som må bekreftes der, står i docs/mva.md.
+lukket det med notat. Flyten er **kjørt mot TT02** 2026-11-22 og
+2026-11-23 med TestID: to testselskaper fikk kvittering uten avvik
+(M-2026-3456 og M-2026-3463). Hva det beviste, og hva som ikke er
+bekreftet ennå, står i docs/mva.md. Produksjon er ikke satt opp.
 
 **Altså: ÉN ting låser opp tre av fire — Altinn systembruker.** Det er
 Digdirs nyere mekanisme, den samme docs/aksjonaer.md alt hadde notert

@@ -17,6 +17,10 @@
 //! 7. Regelverkssatser: no monitored sats domain is older than its
 //!    known change cadence — the machine's side of the yearly
 //!    regelverksrevisjon (docs/regelverk.md).
+//! 8. Importert historikk: the hashed SAF-T source files (informational).
+//! 9. Dokumentasjon: bilag without attachments (informational).
+//! 10. Balansedokumentasjon: bokføringsloven §11 at the latest lock.
+//! 11. Mva-meldinger: filed terms with the melding's and receipt's hashes.
 
 use anyhow::Result;
 use regnmed_core::audit::{AnchorInfo, AuditInput, Check};
@@ -369,6 +373,10 @@ pub async fn build_audit_report(
             )
         },
     });
+
+    // 11. Mva-meldinger (docs/mva.md): what was filed, by whom, and the
+    // hashes of the melding sent and the receipt Skatteetaten returned.
+    checks.push(crate::vat_filing::audit_check(pool, company_id).await?);
 
     let anchors = crate::company_anchors(pool, company_id, None)
         .await?

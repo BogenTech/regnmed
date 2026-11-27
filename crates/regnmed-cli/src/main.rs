@@ -229,8 +229,9 @@ enum Command {
         #[arg(long = "termin")]
         period: Option<u8>,
     },
-    /// Generate the mva-melding XML for a VAT period; optionally validate
-    /// it against Skatteetaten's API (Maskinporten env, see docs/gov.md)
+    /// Generate the mva-melding XML for a VAT period. Validation and filing
+    /// need a person's ID-porten sign-in, so they happen in the portal
+    /// ("Godkjenn og send", docs/mva.md), never from here.
     #[command(name = "mva-melding")]
     VatReturn {
         /// Company id (or use --orgnr)
@@ -248,9 +249,6 @@ enum Command {
         /// Output file; "-" writes to stdout
         #[arg(long)]
         out: Option<std::path::PathBuf>,
-        /// Also validate against Skatteetaten's validation API
-        #[arg(long)]
-        validate: bool,
     },
 }
 
@@ -885,8 +883,7 @@ async fn main() -> Result<()> {
             year,
             period,
             out,
-            validate,
-        } => vat_return(&pool, company, orgnumber, year, period, out, validate).await?,
+        } => vat_return(&pool, company, orgnumber, year, period, out).await?,
     }
     Ok(())
 }
@@ -929,7 +926,6 @@ async fn vat_return(
     year: i32,
     period: u8,
     out: Option<std::path::PathBuf>,
-    validate: bool,
 ) -> Result<()> {
     let company_id = resolve_company(pool, company, orgnumber.as_deref()).await?;
     let scheme = regnmed_db::period_scheme_on(
@@ -993,21 +989,6 @@ async fn vat_return(
         }
     }
 
-    if validate {
-        let config = regnmed_gov::maskinporten::MaskinportenConfig::from_env()?;
-        let tokens = regnmed_gov::maskinporten::TokenProvider::new(config);
-        let client = regnmed_gov::vat_return::VatReturnClient::from_env();
-        let outcome = client.validate(&tokens, &xml).await?;
-        if outcome.valid {
-            println!("Skatteetaten: melding validert uten avvik");
-        } else {
-            println!("Skatteetaten fant avvik:");
-            for finding in &outcome.findings {
-                println!("  - {finding}");
-            }
-            anyhow::bail!("mva-melding did not validate");
-        }
-    }
     Ok(())
 }
 
@@ -1520,7 +1501,7 @@ mod tests {
         ("mva-report", &["company", "orgnr", "termin", "year"]),
         (
             "mva-melding",
-            &["company", "orgnr", "out", "termin", "validate", "year"],
+            &["company", "orgnr", "out", "termin", "year"],
         ),
     ];
 

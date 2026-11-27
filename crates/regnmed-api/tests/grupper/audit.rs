@@ -167,7 +167,7 @@ async fn revisor_generates_the_verification_report() {
     let report: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(report["alle_ok"], true, "{report}");
     let checks = report["kontroller"].as_array().unwrap();
-    assert_eq!(checks.len(), 11);
+    assert_eq!(checks.len(), 12);
     for check in checks {
         assert_eq!(check["ok"], true, "{check}");
     }
@@ -192,6 +192,11 @@ async fn revisor_generates_the_verification_report() {
             .iter()
             .any(|k| k["navn"] == "Reskontro mot hovedbok"
                 && k["detalj"].as_str().unwrap().contains("1 reskontrokonto")),
+        "{report}"
+    );
+    assert!(
+        checks.iter().any(|k| k["navn"] == "Mva-meldinger"
+            && k["detalj"] == "ingen mva-melding er sendt fra regnmed"),
         "{report}"
     );
     // A ledger without imports says so — the check never hides.

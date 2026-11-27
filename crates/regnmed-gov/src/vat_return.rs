@@ -15,8 +15,6 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::time::Duration;
 
-use crate::maskinporten::TokenProvider;
-
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const TOTAL_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -71,15 +69,6 @@ impl VatReturnClient {
             "https://idporten-api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider"
                 .to_string()
         }))
-    }
-
-    pub async fn validate(
-        &self,
-        tokens: &TokenProvider,
-        melding_xml: &str,
-    ) -> Result<ValidationOutcome> {
-        self.validate_with_token(&tokens.token().await?, melding_xml)
-            .await
     }
 
     /// Validates with the person's ID-porten token.
