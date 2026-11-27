@@ -483,6 +483,9 @@ pub async fn tax_return(
 #[derive(Deserialize)]
 pub struct SubmissionQuery {
     year: i32,
+    /// A new complete oppgave for a year already delivered.
+    #[serde(default, rename = "korriger")]
+    correct: bool,
 }
 
 fn submission_json(
@@ -579,6 +582,7 @@ pub async fn submit_tax_return(
         &state.pool,
         company_id,
         q.year,
+        q.correct,
         by,
     )
     .await

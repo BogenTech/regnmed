@@ -23,7 +23,16 @@
   let oppgave = $state(null); // null = loading, { error } = failed
   let innsending = $state({ mulig: false, innsendinger: [] });
   let sender = $state(false);
-  let levert = $derived(innsending.innsendinger.some((i) => i.status !== "ikke_levert"));
+  // Newest first, so the first delivered one is the one in force.
+  let sisteLevert = $derived(innsending.innsendinger.find((i) => i.status !== "ikke_levert"));
+  let levert = $derived(!!sisteLevert);
+  // A correction is a new complete oppgave, and waits for the answer to
+  // the one before it: Skatteetaten keeps the one they processed last.
+  let venterSvar = $derived(sisteLevert?.status === "levert");
+  // Every delivered filing with an older delivered one below it corrects it.
+  const erKorrigering = (index) =>
+    innsending.innsendinger[index].status !== "ikke_levert" &&
+    innsending.innsendinger.slice(index + 1).some((i) => i.status !== "ikke_levert");
 
   const base = () => "/companies/" + companyId + "/reports/aksjonaeroppgave";
   const sti = () => base() + "/submissions?year=" + year;
@@ -80,19 +89,28 @@
   }
 
   async function sendInn() {
+    const korriger = levert;
     const ok = await bekreft(
-      "Sende aksjonærregisteroppgaven for " +
-        year +
-        " til Skatteetaten? Hovedskjema og " +
-        oppgave.antall_aksjonarer +
-        " underskjema sendes slik de står her.",
-      { tittel: "Send RF-1086", ok: "Send inn" },
+      korriger
+        ? "Sende en korrigert aksjonærregisteroppgave for " +
+            year +
+            "? Hele oppgaven sendes på nytt, med hovedskjema og " +
+            oppgave.antall_aksjonarer +
+            " underskjema slik de står her, og erstatter den du har levert."
+        : "Sende aksjonærregisteroppgaven for " +
+            year +
+            " til Skatteetaten? Hovedskjema og " +
+            oppgave.antall_aksjonarer +
+            " underskjema sendes slik de står her.",
+      korriger
+        ? { tittel: "Korriger RF-1086", ok: "Send korrigert oppgave" }
+        : { tittel: "Send RF-1086", ok: "Send inn" },
     );
     if (!ok) return;
     sender = true;
     try {
-      await post(sti(), {});
-      toast("Aksjonærregisteroppgaven er levert", true);
+      await post(sti() + (korriger ? "&korriger=true" : ""), {});
+      toast(korriger ? "Den korrigerte oppgaven er levert" : "Aksjonærregisteroppgaven er levert", true);
     } catch (error) {
       toast(error.message, false);
     } finally {
@@ -174,17 +192,22 @@
     <div class="flex flex-wrap gap-2">
       {#if innsending.mulig && kanSkrive}
         <button
-          class="btn btn-sm btn-primary"
-          disabled={!oppgave.leverbar || levert || sender}
+          class="btn btn-sm {levert ? 'btn-outline' : 'btn-primary'}"
+          disabled={!oppgave.leverbar || venterSvar || sender}
           onclick={sendInn}
         >
-          {levert ? "Levert" : "Send til Skatteetaten"}
+          {levert ? "Send korrigert oppgave" : "Send til Skatteetaten"}
         </button>
       {/if}
       <button class="btn btn-sm btn-outline" disabled={!oppgave.leverbar} onclick={lastNed}>
         Last ned RF-1086 (zip)
       </button>
     </div>
+    {#if innsending.mulig && kanSkrive && venterSvar}
+      <p class="text-xs opacity-60 mt-2">
+        En korrigering kan sendes når Skatteetaten har svart på oppgaven som er levert.
+      </p>
+    {/if}
     {#if !innsending.mulig}
       <p class="text-xs opacity-60 mt-2">
         Innsending er ikke satt opp på denne serveren. Last ned filene og lever dem gjennom et
@@ -196,9 +219,12 @@
   {#if innsending.innsendinger.length}
     <h3 class="font-semibold text-sm mt-3">Innsendinger</h3>
     <ul class="text-sm divide-y divide-base-200">
-      {#each innsending.innsendinger as i (i.id)}
+      {#each innsending.innsendinger as i, index (i.id)}
         <li class="py-1 flex flex-wrap items-center gap-x-2">
           <span class="opacity-70">{new Date(i.opprettet).toLocaleString("nb-NO")}</span>
+          {#if erKorrigering(index)}
+            <span class="badge badge-ghost badge-sm">Korrigering</span>
+          {/if}
           <span class={i.status === "avvist" ? "text-error" : ""}>{STATUS[i.status]}</span>
           <span class="opacity-70">{i.antall_underskjema} underskjema</span>
           {#if i.kvittering}
