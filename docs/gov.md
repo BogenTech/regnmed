@@ -583,8 +583,10 @@ per kundeform vi allerede har i produktet (#77s to ruter):
 
 Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
-`ske-innrapportering-aksjonaerregisteroppgave`. Den ruten berøres ikke
-av regel 1 i det hele tatt.
+`ske-innrapportering-aksjonaerregisteroppgave`, og senere
+`ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll` og
+`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten
+berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -624,7 +626,8 @@ begge er Altinns egne regler, ikke vår slutning:
    én.
 
 Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
-med begge kundeformene: `rights` med de tre Skatteetaten-ressursene
+med begge kundeformene: `rights` med Skatteetatens ressurser (tre ved
+registreringen, seks fra 2026-11-27)
 (egen virksomhet) og `accessPackages` med de tre REGN-pakkene
 (regnskapsfører). Hver forespørsel ber om sin del: en standard
 systembruker om rettighetene, en klient-systembruker om ÉN pakke.
@@ -675,6 +678,27 @@ innloggingen er ikke godkjenningen: siden venter på «Godkjenn
 oppdatert systemtilgang». Klient-systembrukere (regnskapsfører)
 kan ikke endres slik — Altinn krever at de slettes og opprettes på
 nytt.
+
+**`ske-kontroll` lagt til 2026-11-27** (kontrollopplysninger, #183,
+docs/saft/README.md) på samme måte: `rights` + beskrivelse i
+`scripts/altinn-system.py`, `update` mot TT02 (bekreftet med `show`),
+og en endringsforespørsel for 311032240 som ber om alle fem
+ressursene (id `6a10e8d6-a8cd-4e02-aaf7-df2c927a7651`), **godkjent**
+samme dag av selskapets daglige leder med TestID (`change-status` →
+`Accepted`, alle fem ressursene). TestID ber om den syntetiske
+personens fødselsnummer, ikke selskapets organisasjonsnummer. Scopet
+`skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
+
+**`app_skd_formueinntekt-skattemelding-v2` lagt til 2026-11-27**
+(skattemelding, #11): Skatteetatens Altinn 3-app for skattemeldingen,
+som ifølge onboardingsguiden kreves både for Skatteetatens API og for
+Altinns, og som en standard systembruker kan få direkte uten
+tilgangspakker. For regnskapsførerruten gir
+`regnskapsforer-med-signeringsrettighet` og `-uten-signeringsrettighet`
+tilgang (ikke `regnskapsforer-lonn`), men bare den med
+signeringsrettighet kan bekrefte i signeringssteget. `update` mot TT02 og ny endringsforespørsel for
+311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
+ressursene), **godkjent** samme dag med TestID (`Accepted`).
 
 Tre ting å vite til neste gang:
 

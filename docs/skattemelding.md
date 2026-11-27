@@ -50,7 +50,9 @@ bevisst, ikke oppdages når renderen er ferdig.
 person godkjenner med ID-porten rett fra regnmed (docs/mva.md, «Godkjenn
 og send») — uten #26. Den samme godkjenningsflyten er veien for
 skattemeldingen, og `skatteetaten:formueinntekt/skattemelding` er
-bestilt i test (SSV-6691, docs/gov.md). Avsnittene over beskriver
+bestilt i test (SSV-6691, docs/gov.md), og Altinn-ressursen
+`app_skd_formueinntekt-skattemelding-v2` ligger i systemets `rights`
+(docs/gov.md). Avsnittene over beskriver
 hvorfor en person må godkjenne; det står fortsatt.
 
 Dokumentet kan altså bygges lenge før det kan leveres — akkurat som
