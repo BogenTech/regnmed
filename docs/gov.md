@@ -664,6 +664,13 @@ oppdatert systemtilgang». Klient-systembrukere (regnskapsfører)
 kan ikke endres slik — Altinn krever at de slettes og opprettes på
 nytt.
 
+**`ske-kontroll` lagt til 2026-11-27** (kontrollopplysninger, #183,
+docs/saft/README.md) på samme måte: `rights` + beskrivelse i
+`scripts/altinn-system.py`, `update` mot TT02 (bekreftet med `show`),
+og en endringsforespørsel for 311032240 som ber om alle fem
+ressursene (status `New`, venter på godkjenning med TestID). Scopet
+`skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
+
 Tre ting å vite til neste gang:
 
 - **Tenor-listen blander hovedenheter og underenheter.** En

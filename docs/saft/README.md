@@ -96,9 +96,8 @@ og SBS-siden lenker dit. Kilder, alle lest 2026-11-26:
 
 Systemet vårt (`935115086_regnmed`, docs/gov.md) har allerede de to
 REGN-pakkene, så regnskapsførerruten krever ingen ny registrering. Den
-har **ikke** `ske-kontroll` i `rights`: egen-virksomhet-ruten krever at
-ressursen legges til i `scripts/altinn-system.py` og at systemet
-oppdateres i systemregisteret.
+har også `ske-kontroll` i `rights` for egen-virksomhet-ruten (lagt til
+2026-11-27, `scripts/altinn-system.py`).
 
 **Flyten** (Eksempler + OpenAPI):
 
@@ -144,7 +143,8 @@ kategori Innrapportering, test), sammen med de andre manglende scopene
 (docs/gov.md, punkt 3 under «Gjenstår»): `skatteetaten:innleveringkontroll`, en
 kontrollsak på en syntetisk Tenor-organisasjon, og spørsmålene om
 største filstørrelse, hvordan et sluttbrukersystem får `dialogid`, og
-hvilken id `PUT /innsending` skal ha. Egen-virksomhet-ruten krever i
-tillegg at `ske-kontroll` legges til systemets `rights`.
+hvilken id `PUT /innsending` skal ha. `ske-kontroll` er lagt til
+systemets `rights` i TT02 2026-11-27 (docs/gov.md); testselskapets
+systembruker får den når endringsforespørselen er godkjent.
 
 Ingen kode skrives før svarene foreligger.

@@ -57,12 +57,14 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, henter skattekort og trekkpålegg og leverer aksjonærregisteroppgaven.",
+        "Leverer a-melding, henter skattekort og trekkpålegg, leverer aksjonærregisteroppgaven "
+        "og leverer SAF-T ved kontroll.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, hentar skattekort og trekkpålegg og leverer aksjonærregisteroppgåva.",
+        "Leverer a-melding, hentar skattekort og trekkpålegg, leverer aksjonærregisteroppgåva "
+        "og leverer SAF-T ved kontroll.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
         "Files the a-melding, fetches tax cards and garnishment orders, and files the "
-        "shareholder register return.",
+        "shareholder register return and SAF-T for tax audits.",
     },
     # Egen virksomhet: Skatteetatens ressurser (API-dokumentasjonen, ikke gjettet).
     "rights": [
@@ -73,6 +75,8 @@ SYSTEM = {
             "ske-innrapportering-aksjonaerregisteroppgave",
             # Garnishment orders (#334, docs/trekkpalegg.md); scope ordered in SSV-6690.
             "ske-informasjon-om-trekkpaalegg",
+            # SAF-T delivered in a control (#183, docs/saft/README.md); scope ordered in SSV-6691.
+            "ske-kontroll",
         )
     ],
     # Regnskapsfører: de tre pakkene ER-rollen gir, alle fra REGN (regel 2).
