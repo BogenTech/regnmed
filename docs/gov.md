@@ -201,7 +201,7 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
 | `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
 | `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bedt om i beskrivelsen av SSV-6691 (ingen egen tjeneste i skjemaet) |
-| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test, SSV-6691 |
+| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test, SSV-6691; Altinn-ressursen ligger i systemets `rights` |
 
 De fire nederste radene er bestilt før koden finnes, og det er et
 bevisst unntak fra overskriften: én sak per kategori og ukers ledetid
@@ -584,9 +584,10 @@ per kundeform vi allerede har i produktet (#77s to ruter):
 Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
 `ske-innrapportering-aksjonaerregisteroppgave`, og senere
-`ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll` og
-`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten
-berøres ikke av regel 1 i det hele tatt.
+`ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll`,
+`app_skd_formueinntekt-skattemelding-v2` og
+`ske-innrapportering-betalinger-selvstendig-naeringsdrivende` (alle
+2026-11-27). Den ruten berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -627,7 +628,7 @@ begge er Altinns egne regler, ikke vår slutning:
 
 Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
 med begge kundeformene: `rights` med Skatteetatens ressurser (tre ved
-registreringen, seks fra 2026-11-27)
+registreringen, sju fra 2026-11-27)
 (egen virksomhet) og `accessPackages` med de tre REGN-pakkene
 (regnskapsfører). Hver forespørsel ber om sin del: en standard
 systembruker om rettighetene, en klient-systembruker om ÉN pakke.
@@ -696,9 +697,20 @@ Altinns, og som en standard systembruker kan få direkte uten
 tilgangspakker. For regnskapsførerruten gir
 `regnskapsforer-med-signeringsrettighet` og `-uten-signeringsrettighet`
 tilgang (ikke `regnskapsforer-lonn`), men bare den med
-signeringsrettighet kan bekrefte i signeringssteget. `update` mot TT02 og ny endringsforespørsel for
-311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
-ressursene), **godkjent** samme dag med TestID (`Accepted`).
+signeringsrettighet kan bekrefte i signeringssteget. `update` mot TT02
+og ny endringsforespørsel for 311032240 (id
+`b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks ressursene),
+**godkjent** samme dag med TestID (`Accepted`).
+
+**`ske-innrapportering-betalinger-selvstendig-naeringsdrivende` lagt
+til 2026-11-27** (betalinger til selvstendig næringsdrivende, tidligere
+RF-1321): enkeltrettigheten API-dokumentasjonen oppgir for en standard
+systembruker. Regnskapsførerruten dekkes av de to
+signeringspakkene systemet alt har; dokumentasjonens femte pakke,
+`skattegrunnlag`, kan ikke registreres som `accessPackages` (regel 2)
+og trengs ikke. `update` mot TT02 og ny endringsforespørsel for
+311032240 (id `98812aa0-4510-469e-87fd-0697965ef942`, alle sju
+ressursene, status `New`, venter på godkjenning med TestID).
 
 Tre ting å vite til neste gang:
 

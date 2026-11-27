@@ -57,14 +57,15 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, aksjonærregisteroppgaven, skattemeldingen og SAF-T ved kontroll, "
-        "og henter skattekort og trekkpålegg.",
+        "Leverer a-melding, aksjonærregisteroppgaven, skattemeldingen, betalinger til "
+        "selvstendig næringsdrivende og SAF-T ved kontroll, og henter skattekort og trekkpålegg.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, aksjonærregisteroppgåva, skattemeldinga og SAF-T ved kontroll, "
-        "og hentar skattekort og trekkpålegg.",
+        "Leverer a-melding, aksjonærregisteroppgåva, skattemeldinga, betalingar til "
+        "sjølvstendig næringsdrivande og SAF-T ved kontroll, og hentar skattekort og trekkpålegg.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
         "Files the a-melding, fetches tax cards and garnishment orders, and files the "
-        "shareholder register return, the tax return and SAF-T for tax audits.",
+        "shareholder register return, the tax return, payments to self-employed people and "
+        "SAF-T for tax audits.",
     },
     # Egen virksomhet: Skatteetatens ressurser (API-dokumentasjonen, ikke gjettet).
     "rights": [
@@ -80,6 +81,9 @@ SYSTEM = {
             # Skattemelding with næringsspesifikasjon (#11): Skatteetaten's Altinn 3 app,
             # needed for both their API and Altinn's (onboarding guide, docs/gov.md); scope in SSV-6691.
             "app_skd_formueinntekt-skattemelding-v2",
+            # Payments to self-employed people, former RF-1321 (third-party reporting,
+            # docs/gov.md); scope ordered in SSV-6691.
+            "ske-innrapportering-betalinger-selvstendig-naeringsdrivende",
         )
     ],
     # Regnskapsfører: de tre pakkene ER-rollen gir, alle fra REGN (regel 2).
