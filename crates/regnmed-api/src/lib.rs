@@ -146,6 +146,10 @@ pub struct TaxCardRail {
 pub struct ShareholderReturnRail {
     pub tokens: regnmed_gov::maskinporten::TokenProvider,
     pub client: regnmed_gov::shareholder_return::ShareholderReturnClient,
+    pub events: regnmed_gov::altinn_events::EventsClient,
+    /// ALTINN_EVENTS_ENDPOINT, as for the a-melding. None: the answer is
+    /// fetched with the button.
+    pub events_endpoint: Option<String>,
 }
 
 pub struct AmeldingRail {

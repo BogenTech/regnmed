@@ -620,6 +620,17 @@ pub async fn submit_tax_return(
                 by,
             )
             .await?;
+            crate::payroll::ensure_event_subscription(
+                &state,
+                &rail.tokens,
+                &rail.events,
+                rail.events_endpoint.as_deref(),
+                company_id,
+                &orgnumber,
+                regnmed_gov::altinn_events::SHAREHOLDER_RETURN_RESOURCE,
+                by,
+            )
+            .await;
         }
         Err(e) => {
             let e = format!("{e:#}");
@@ -661,34 +672,75 @@ pub async fn tax_return_outcome(
         ));
     };
     use regnmed_db::shareholder_return_submission as db;
-    let (s, status) = db::submission(&state.pool, company_id, submission_id)
+    db::submission(&state.pool, company_id, submission_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
-    if let db::SubmissionStatus::Delivered {
+    fetch_outcome(&state, &rail, company_id, submission_id, person.display())
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;
+    let (s, status) = db::submission(&state.pool, company_id, submission_id).await?;
+    Ok(Json(submission_json(&s, &status)))
+}
+
+/// Fetches Skatteetaten's answer for a delivered filing that still waits
+/// for it, and stores it when it exists. Shared by the button and the
+/// Altinn event.
+async fn fetch_outcome(
+    state: &AppState,
+    rail: &crate::ShareholderReturnRail,
+    company_id: Uuid,
+    submission_id: Uuid,
+    by: &str,
+) -> anyhow::Result<()> {
+    use regnmed_db::shareholder_return_submission as db;
+    let (s, status) = db::submission(&state.pool, company_id, submission_id).await?;
+    let db::SubmissionStatus::Delivered {
         dialog_id,
         forsendelse_id,
         outcome: None,
         ..
     } = &status
+    else {
+        return Ok(());
+    };
+    let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+        .await?
+        .orgnumber;
+    if let Some(o) = rail
+        .client
+        .outcome(&rail.tokens, &orgnumber, dialog_id, forsendelse_id)
+        .await?
     {
-        let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
-            .await?
-            .orgnumber;
-        let outcome = rail
-            .client
-            .outcome(&rail.tokens, &orgnumber, dialog_id, forsendelse_id)
-            .await
-            .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;
-        if let Some(o) = outcome {
-            db::record_outcome(
-                &state.pool,
-                s.id,
-                serde_json::to_value(o).expect("Outcome serializes"),
-                person.display(),
-            )
-            .await?;
+        db::record_outcome(&state.pool, s.id, serde_json::to_value(o)?, by).await?;
+    }
+    Ok(())
+}
+
+/// An Altinn event named an aksjonærregisteroppgave dialog
+/// (`/webhooks/altinn`). The event is untrusted: it only picks which of
+/// OUR waiting filings to look at, through our own authenticated client.
+/// Failures are logged; the button stays the fallback.
+pub(crate) async fn outcome_event(state: &AppState, dialog_id: &str) {
+    let Some(rail) = state.shareholder_return.clone() else {
+        return;
+    };
+    let waiting = match regnmed_db::shareholder_return_submission::awaiting_outcome_for_dialog(
+        &state.pool,
+        dialog_id,
+    )
+    .await
+    {
+        Ok(waiting) => waiting,
+        Err(e) => {
+            eprintln!("altinn events: looking up dialog {dialog_id}: {e:#}");
+            return;
+        }
+    };
+    for (company_id, submission_id) in waiting {
+        if let Err(e) =
+            fetch_outcome(state, &rail, company_id, submission_id, "altinn-events").await
+        {
+            eprintln!("altinn events: answer for filing {submission_id}: {e:#}");
         }
     }
-    let (s, status) = db::submission(&state.pool, company_id, submission_id).await?;
-    Ok(Json(submission_json(&s, &status)))
 }

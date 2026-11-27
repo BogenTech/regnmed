@@ -168,6 +168,8 @@ async fn main() -> Result<()> {
             Some(std::sync::Arc::new(regnmed_api::ShareholderReturnRail {
                 tokens: regnmed_gov::maskinporten::TokenProvider::new(config),
                 client,
+                events: regnmed_gov::altinn_events::EventsClient::from_env(),
+                events_endpoint: std::env::var("ALTINN_EVENTS_ENDPOINT").ok(),
             }))
         }
         Err(_) => None,

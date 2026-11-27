@@ -278,6 +278,26 @@ pub async fn record_outcome(
     Ok(())
 }
 
+/// The filings delivered into `dialog_id` that still wait for Skatteetaten's
+/// answer, as (company, submission). What an Altinn event naming the dialog
+/// may make us fetch — and nothing else.
+pub async fn awaiting_outcome_for_dialog(
+    pool: &PgPool,
+    dialog_id: &str,
+) -> Result<Vec<(Uuid, Uuid)>> {
+    let rows = sqlx::query(
+        "select s.company_id, s.id from shareholder_return_submission s
+         join shareholder_return_submission_event r
+           on r.submission_id = s.id and r.kind = 'receipt' and r.dialog_id = $1
+         where not exists (select 1 from shareholder_return_submission_event o
+                           where o.submission_id = s.id and o.kind = 'outcome')",
+    )
+    .bind(dialog_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+}
+
 /// The year's filings, newest first, each with its computed status.
 pub async fn list_submissions(
     pool: &PgPool,

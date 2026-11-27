@@ -31,7 +31,10 @@ use uuid::Uuid;
 
 use crate::maskinporten::TokenProvider;
 
-pub const SCOPES: &str = "skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten";
+/// `altinn:events.subscribe` rides along so the same provider can create
+/// the answer subscription (`altinn_events`); without it Altinn says 403.
+pub const SCOPES: &str = "skatteetaten:innrapporteringaksjonaerregisteroppgave \
+                          digdir:dialogporten altinn:events.subscribe";
 
 pub struct ShareholderReturnClient {
     /// `https://api-test.sits.no/api/aksjonaerregister/v1` in test.

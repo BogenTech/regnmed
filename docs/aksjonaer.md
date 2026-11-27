@@ -250,7 +250,8 @@ tre steg, hvert med sin egen `idempotencyKey`:
 
 Hvert kall bærer **systembrukertokenet for selskapet**
 (`TokenProvider::token_for_systemuser`, scope
-`skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten`).
+`skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten
+altinn:events.subscribe` — det siste for svarabonnementet).
 Klienten er
 `regnmed-gov::shareholder_return`; base-URL-en er testmiljøet
 (`https://api-test.sits.no/api/aksjonaerregister/v1`) med mindre
@@ -279,6 +280,18 @@ XML. `POST …/submissions/{id}/outcome` henter og lagrer det
 (hendelse `outcome`, én per innsending); statusen blir `godkjent`,
 `avvist` eller `behandlet`. Portalen har en knapp for det, og lenker til
 tilbakemeldingsdokumentene (de åpnes med innlogging hos Skatteetaten).
+
+**Svaret kommer av seg selv** når `ALTINN_EVENTS_ENDPOINT` er satt, på
+samme skinne som a-meldingen (docs/lonn.md, «Tilbakemelding som
+hendelse»). Første leverte oppgave abonnerer selskapet på nye overføringer
+i dialogene for ressursen
+`urn:altinn:resource:ske-innrapportering-aksjonaerregisteroppgave` (lest
+av en ekte RF-1086-dialog i TT02). Altinn poster hendelsen til
+`/webhooks/altinn`, og regnmed henter svaret med sin egen klient, bare
+for innsendinger levert i den dialogen som ennå venter. Hendelsen er
+usignert og brukes bare som et hint om hvilken dialog vi skal se i.
+Knappen består som reserve. Abonnementet står i registeret over
+myndighetskall som de andre (docs/vilkar-teknisk.md).
 
 Alle innsendinger for samme selskap og år havner i **samme dialog**, hver
 med sin egen `forsendelseId`; en ny oppgave for et år som alt er levert
@@ -313,8 +326,6 @@ levering og står på innsendingen for alltid.
   godtatt dem (docs/vilkar-teknisk.md, «Aksept»), men teksten er fortsatt et
   utkast som venter på advokat.
 - **Korrigering** av en levert oppgave.
-- **Svaret automatisk** (Altinn Events, slik a-meldingen har det) — i dag
-  hentes det med knappen.
 
 ## Endepunkter
 

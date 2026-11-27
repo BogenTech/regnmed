@@ -734,7 +734,17 @@ async fn submit(
                 by,
             )
             .await?;
-            ensure_event_subscription(state, &rail, company_id, &orgnumber, by).await;
+            ensure_event_subscription(
+                state,
+                &rail.tokens,
+                &rail.events,
+                rail.events_endpoint.as_deref(),
+                company_id,
+                &orgnumber,
+                regnmed_gov::altinn_events::AMELDING_RESOURCE,
+                by,
+            )
+            .await;
         }
         Err(e) => {
             regnmed_db::amelding_submission::record_failure(&state.pool, s.id, &e.to_string(), by)
@@ -789,25 +799,30 @@ async fn fetch_feedback(
 }
 
 /// Subscribes the company to Dialogporten's transmission events for its
-/// a-melding dialogs, once, so the feedback arrives at `/webhooks/altinn`.
-/// Best effort: without it the «Hent tilbakemelding» button still works,
-/// so a failure is logged, never returned to the person who just sent.
-async fn ensure_event_subscription(
+/// dialogs under `resource`, once, so Skatteetaten's answer arrives at
+/// `/webhooks/altinn`. Best effort: without it the fetch button still
+/// works, so a failure is logged, never returned to the person who just
+/// sent.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ensure_event_subscription(
     state: &AppState,
-    rail: &crate::AmeldingRail,
+    tokens: &regnmed_gov::maskinporten::TokenProvider,
+    events: &regnmed_gov::altinn_events::EventsClient,
+    endpoint: Option<&str>,
     company_id: Uuid,
     orgnumber: &str,
+    resource: &str,
     by: &str,
 ) {
-    use regnmed_gov::altinn_events::{AMELDING_RESOURCE, TRANSMISSION_CREATED};
-    let Some(endpoint) = &rail.events_endpoint else {
+    use regnmed_gov::altinn_events::TRANSMISSION_CREATED;
+    let Some(endpoint) = endpoint else {
         return;
     };
     let result = async {
         if regnmed_db::amelding_submission::event_subscription(
             &state.pool,
             company_id,
-            AMELDING_RESOURCE,
+            resource,
             TRANSMISSION_CREATED,
             endpoint,
         )
@@ -816,15 +831,14 @@ async fn ensure_event_subscription(
         {
             return Ok(());
         }
-        let subscription = rail
-            .events
-            .subscribe_amelding(&rail.tokens, orgnumber, endpoint)
+        let subscription = events
+            .subscribe(tokens, orgnumber, endpoint, resource)
             .await?;
         regnmed_db::amelding_submission::record_event_subscription(
             &state.pool,
             company_id,
             subscription.id,
-            AMELDING_RESOURCE,
+            resource,
             TRANSMISSION_CREATED,
             endpoint,
             by,
@@ -848,9 +862,17 @@ pub async fn altinn_event(
     State(state): State<AppState>,
     Json(event): Json<regnmed_gov::altinn_events::CloudEvent>,
 ) -> axum::http::StatusCode {
-    use regnmed_gov::altinn_events::{AMELDING_RESOURCE, VALIDATE_SUBSCRIPTION};
+    use regnmed_gov::altinn_events::{
+        AMELDING_RESOURCE, SHAREHOLDER_RETURN_RESOURCE, VALIDATE_SUBSCRIPTION,
+    };
     let ok = axum::http::StatusCode::OK;
     if event.kind == VALIDATE_SUBSCRIPTION {
+        return ok;
+    }
+    if let (Some(SHAREHOLDER_RETURN_RESOURCE), Some(dialog)) =
+        (event.resource.as_deref(), event.resourceinstance.as_deref())
+    {
+        crate::share_register::outcome_event(&state, dialog).await;
         return ok;
     }
     let (Some(rail), Some(AMELDING_RESOURCE), Some(dialog)) = (

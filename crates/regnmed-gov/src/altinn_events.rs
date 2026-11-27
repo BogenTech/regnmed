@@ -23,6 +23,10 @@ use crate::maskinporten::TokenProvider;
 pub const TRANSMISSION_CREATED: &str = "dialogporten.dialog.transmission.created.v1";
 /// The resource the a-melding dialogs belong to.
 pub const AMELDING_RESOURCE: &str = "urn:altinn:resource:ske-innrapportering-amelding";
+/// The resource the aksjonærregisteroppgave dialogs belong to (read off a
+/// real RF-1086 dialog in TT02, 2026-11-27).
+pub const SHAREHOLDER_RETURN_RESOURCE: &str =
+    "urn:altinn:resource:ske-innrapportering-aksjonaerregisteroppgave";
 /// The event Altinn sends to a new endpoint before anything else.
 pub const VALIDATE_SUBSCRIPTION: &str = "platform.events.validatesubscription";
 
@@ -81,13 +85,14 @@ impl EventsClient {
         Ok(body.trim().trim_matches('"').to_string())
     }
 
-    /// Subscribes `endpoint` to new transmissions in the customer's
-    /// a-melding dialogs.
-    pub async fn subscribe_amelding(
+    /// Subscribes `endpoint` to new transmissions in the customer's dialogs
+    /// for `resource` (a-melding, aksjonærregisteroppgave, ...).
+    pub async fn subscribe(
         &self,
         tokens: &TokenProvider,
         orgnumber: &str,
         endpoint: &str,
+        resource: &str,
     ) -> Result<Subscription> {
         let token = self.altinn_token(tokens, orgnumber).await?;
         let response = self
@@ -96,7 +101,7 @@ impl EventsClient {
             .bearer_auth(token)
             .json(&serde_json::json!({
                 "endPoint": endpoint,
-                "resourceFilter": AMELDING_RESOURCE,
+                "resourceFilter": resource,
                 "subjectFilter": format!("urn:altinn:organization:identifier-no:{orgnumber}"),
                 "typeFilter": TRANSMISSION_CREATED,
             }))
@@ -225,10 +230,11 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let (config, _) = crate::maskinporten::tests::test_config(&format!("{base}/token"));
         let subscription = EventsClient::new(base)
-            .subscribe_amelding(
+            .subscribe(
                 &TokenProvider::new(config),
                 "311032240",
                 "https://api.test.regnmed.no/webhooks/altinn",
+                AMELDING_RESOURCE,
             )
             .await
             .unwrap();

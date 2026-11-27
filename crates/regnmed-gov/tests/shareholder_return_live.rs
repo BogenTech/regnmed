@@ -222,3 +222,34 @@ async fn skatteetaten_takes_our_oppgave() {
     }
     panic!("no answer from Skatteetaten within three minutes");
 }
+
+/// Altinn takes an Events subscription for the RF-1086 dialogs under the
+/// rail's own systembruker token: created, read back, deleted. Files
+/// nothing with Skatteetaten.
+#[tokio::test]
+async fn altinn_subscribes_us_to_the_answers() {
+    if std::env::var("AKSJONAER_LIVE").as_deref() != Ok("1") {
+        eprintln!("skipping: AKSJONAER_LIVE=1 not set");
+        return;
+    }
+    use regnmed_gov::altinn_events::{EventsClient, SHAREHOLDER_RETURN_RESOURCE};
+    let mut config = MaskinportenConfig::from_env().expect("MASKINPORTEN_* from the test env file");
+    config.scopes = SCOPES.into();
+    let tokens = TokenProvider::new(config);
+    let events = EventsClient::from_env();
+    let endpoint = "https://api.test.regnmed.no/webhooks/altinn";
+    let created = events
+        .subscribe(&tokens, COMPANY, endpoint, SHAREHOLDER_RETURN_RESOURCE)
+        .await
+        .unwrap();
+    assert_eq!(created.end_point, endpoint);
+    let read = events
+        .subscription(&tokens, COMPANY, created.id)
+        .await
+        .unwrap();
+    eprintln!("subscription {} validated={}", read.id, read.validated);
+    events
+        .unsubscribe(&tokens, COMPANY, created.id)
+        .await
+        .unwrap();
+}
