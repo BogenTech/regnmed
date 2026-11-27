@@ -176,7 +176,7 @@ navngir den**, med kilden i en kommentar:
 | nyemisjon ved konsernintern overføring | `NK` | kodeliste post 9 og 23 |
 
 `A`, `G`, `O`, `NF` og `NK` kom til 2026-11-27, da kodelistearket ble
-lest. De er XSD-validert, men ikke prøvd i testmiljøet ennå. `NF` og `NK`
+lest, og ble godkjent i testmiljøet samme dag (se under). `NF` og `NK`
 er emisjoner og står derfor også i post 9, som `N`.
 
 **En feil vi fant og rettet:** regnmed rapporterte stiftelse som `N`,
@@ -261,7 +261,9 @@ ikke der.
 syntetiske Tenor-selskapet 311032240 med stiftelse (`T`), salg (`K`/`R`)
 og overføring med skattemessig kontinuitet (`OK` på begge sider, med
 motpartens fødselsnummer) ble tatt imot og **godkjent** av Skatteetaten
-etter om lag halvannet minutt
+etter om lag halvannet minutt. 2026-11-27 ble en oppgave med i tillegg
+gave (`G`), arv (`A`) og konsernintern overføring (`O`) på begge sider og
+emisjonene `NF` og `NK` i post 9 og 23 også godkjent
 (`crates/regnmed-gov/tests/shareholder_return_live.rs`, kjøres for hånd
 med `AKSJONAER_LIVE=1`; testen venter på svaret og krever godkjenning).
 
