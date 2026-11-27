@@ -198,6 +198,13 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/employees/{employee_id}/link` | POST DELETE |
 | `/companies/{company_id}/employees/{employee_id}/link/history` | GET |
 | `/companies/{company_id}/payroll` | GET POST |
+| `/companies/{company_id}/payroll/garnishments` | GET POST |
+| `/companies/{company_id}/payroll/garnishments/letters` | POST |
+| `/companies/{company_id}/payroll/garnishments/letters/{letter_id}` | GET |
+| `/companies/{company_id}/payroll/garnishments/{order_id}` | PUT |
+| `/companies/{company_id}/payroll/garnishments/{order_id}/stop` | POST |
+| `/companies/{company_id}/payroll/garnishments/{order_id}/versions/{version}/attest` | POST |
+| `/companies/{company_id}/payroll/garnishment-settings` | PUT |
 | `/companies/{company_id}/payroll/{run_id}/amelding` | GET |
 | `/companies/{company_id}/payroll/{run_id}/amelding/submissions` | GET POST |
 | `/companies/{company_id}/payroll/{run_id}/amelding/submissions/{submission_id}/feedback` | POST |

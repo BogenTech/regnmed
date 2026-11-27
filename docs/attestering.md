@@ -116,6 +116,16 @@ godkjent av den andre, og utleggskrav nektet for innsenderen.
 
 Flertrinns godkjenningskjeder og beløpsmatriser (ett steg, én grense
 holder), delegeringsregler, og attestering av andre måltyper enn
-innboksbilag — betalingslister og utlegg håndheves på sine egne
-handlinger, uten egne attesteringsrader. `target_kind` i sporet er
-allerede en kolonne, så utvidelsen er en migrasjon, ikke en omskriving.
+innboksbilag og trekkpålegg — betalingslister og utlegg håndheves på
+sine egne handlinger, uten egne attesteringsrader.
+
+## Trekkpålegg (migrasjon 0110)
+
+`target_kind = 'garnishment_version'`: en versjon av et trekkpålegg
+registrert for hånd (docs/trekkpalegg.md §6). Med aktiv policy når
+versjonen skrives, trekkes den ikke før en annen person enn den som
+registrerte, har godkjent den; en utpekt attestant gjelder også her.
+Beløpsgrensen gjelder ikke — et pålegg er ikke et bilag med en
+debetsum. Endepunktet er
+`POST /companies/{id}/payroll/garnishments/{pålegg}/versions/{n}/attest`
+og krever både `ATTESTERING_UTFOR` og `LONN_LES`.

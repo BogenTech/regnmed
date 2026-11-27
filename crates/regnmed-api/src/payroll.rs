@@ -1153,6 +1153,7 @@ fn garnishment_json(company_id: Uuid, w: &regnmed_db::payroll::Withheld) -> serd
         "onsket_ore": w.wanted_ore,
         "trukket_ore": w.withheld_ore,
         "brev_url": crate::garnishment::letter_url(company_id, o.letter_id),
+        "brev_filnavn": o.letter_filename,
     })
 }
 

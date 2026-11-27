@@ -687,6 +687,13 @@ listingen.
 | GET | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding` (måned uten kjøring) |
 | GET/POST | `/companies/{id}/payroll/months/{ÅÅÅÅ-MM}/amelding/submissions` |
 | GET | `/companies/{id}/payroll/hours/{employee}?ar=&maned=` |
+| GET/POST | `/companies/{id}/payroll/garnishments` (trekkpålegg, docs/trekkpalegg.md §6) |
+| POST | `/companies/{id}/payroll/garnishments/letters?filename=` (brevet, rå kropp) |
+| GET | `/companies/{id}/payroll/garnishments/letters/{brev}` |
+| PUT | `/companies/{id}/payroll/garnishments/{pålegg}` (ny versjon) |
+| POST | `/companies/{id}/payroll/garnishments/{pålegg}/stop` |
+| POST | `/companies/{id}/payroll/garnishments/{pålegg}/versions/{n}/attest` |
+| PUT | `/companies/{id}/payroll/garnishment-settings` |
 | GET | `/companies/{id}/tax-cards` (bestillinger og svar) |
 | POST | `/companies/{id}/tax-cards?year=` (bestill og hent skattekort) |
 | POST | `/companies/{id}/tax-cards/{order}/answer` (hent et svar som ikke var klart) |
@@ -1098,22 +1105,47 @@ Rekkefølgen er omtrent den de bør tas i.
    den er på plass er dette internt regnskap, ikke rapportering —
    **selskapet må fortsatt levere a-melding på annet vis.** Dette er
    den viktigste mangelen.
-2. **Trekkpålegg** (#334). Et trekkpålegg fra innkrevingsmyndigheten
-   eller namsmannen pålegger arbeidsgiveren å holde tilbake en del av
-   lønnen og betale den til kreditor. Kjøringen kjenner dem ikke: den
-   utbetaler hele netto, og ingen påleggsopplysninger hentes fra
-   Skatteetaten. **Har en ansatt trekkpålegg, må trekket gjøres utenom
-   regnmed.** Portalen sier det samme i forhåndsvisningen av hver
-   kjøring. Skatteetatens API for trekkpålegg går på samme
-   systembrukerskinne som a-meldingen og krever at kunden har
-   rapportert gjennom regnmed minst én gang. Forslaget står i
-   docs/trekkpalegg.md.
+2. **Trekkpålegg hentet fra Skatteetaten** (#334). Pålegg registrert
+   for hånd fra brevet trekkes, bokføres, betales og rapporteres (se
+   «Trekkpålegg» under, #339), men regnmed henter ingen pålegg selv.
+   **Et pålegg som ikke er registrert, trekkes ikke.** Portalen sier
+   det i forhåndsvisningen av hver kjøring. Skatteetatens API går på
+   samme systembrukerskinne som a-meldingen og venter på scopet
+   (SSV-6690); planen står i docs/trekkpalegg.md §2.
 3. **Inntektsmelding til Nav** (#184). Når Nav ber om inntektsmelding
    for en sykmeldt, må selskapet sende den selv, på nav.no eller i et
    annet system. regnmed registrerer ikke fravær. Navs API tar bare
    imot svar på en forespørsel fra Nav. Forslaget står i docs/inntektsmelding.md.
 4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
+
+## Trekkpålegg (migration 0110, #339)
+
+Et pålegg om utleggstrekk som kommer i brev, registreres for hånd under
+Lønn → Trekkpålegg og trekkes i lønnskjøringen. Hele beskrivelsen —
+de tre typene, feltene, attestering, bokføring og hva som er utsatt —
+står i docs/trekkpalegg.md §6. Det lønnen gjør:
+
+- **Trekket kommer etter forskuddstrekket** og regnes per ansatt med
+  `regnmed-core::garnishment`: et beløp trekkes som det står, en
+  prosent tas av grunnlaget for typen (samordnet og skatt holdes
+  adskilt i koden, selv om de er like så lenge lønnen ikke har
+  naturalytelser), og trekket rundes ned til hele kroner. Taket er
+  netto minus trekkfri kjøregodtgjørelse og diett; ber påleggene om
+  mer, trekkes det som rekker, i rekkefølgen samordnet, skatt,
+  øvrige, og kjøringen advarer med begge beløpene.
+- **Bokføringen** er i samme bilag som lønnen: netto på 2930 er
+  redusert med trekket, og trekket står som leverandørpost på kontoen
+  for utleggstrekk (2610 som standard) med KID og forfall i
+  `payable_terms`, så betalingslisten betaler det.
+- **Forhåndsvisningen** returnerer settet av pålegg (`trekkpalegg_sett`)
+  den brukte, og bokføringen må sende det tilbake: er et pålegg
+  registrert, endret, stoppet eller attestert etter
+  forhåndsvisningen, nekter kjøringen.
+- **A-meldingen** får `utleggstrekk` per ansatt (samordnet og skatt,
+  negativt beløp, utbetalingsdatoen) og `sumUtleggstrekk`; øvrige krav
+  rapporteres ikke.
+- **Lønnsslippen** viser hvert trekk med type, KID og versjon.
 
 ## Timelønn fra timeføringen
 
@@ -1296,6 +1328,20 @@ fødselsnummer, juni (allerede kjørt) er deaktivert, og en kjøring
 utført gjennom UI-et ga et bilag som summerer til nøyaktig null.
 
 ## Testet
+
+- Trekkpålegg (`crates/regnmed-db/tests/payroll.rs`, modulen
+  `garnishment`, ekte Postgres): et samordnet pålegg trekkes, bokføres
+  på 2610 med KID og forfall, står i betalingslisten med brevets konto,
+  rapporteres i en a-melding som valideres mot XSD-en og vises på
+  lønnsslippen; en booking uten settet eller med et gammelt sett
+  nektes; versjoner kan verken endres eller slettes i databasen; med
+  attesteringspolicy venter registreringen på en annen person mens en
+  attestert versjon fortsetter; skattetrekk blir én samlet post med
+  selskapets KID og nektes uten innstillingene; øvrige krav får brevets
+  frist og rapporteres ikke; taket og 2611-reserven. Vaktene for settet
+  og attesteringen er sett feile. Regnereglene og valideringen har
+  enhetstester i `regnmed-core::garnishment`, a-meldingsfeltene i
+  `regnmed-core::amelding`.
 
 - Endret feriepengesats (`crates/regnmed-db/tests/payroll.rs`, ekte
   Postgres): at kjøringen advarer når tillegget mangler, at en hevet sats

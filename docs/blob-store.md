@@ -34,7 +34,9 @@ laget for nettopp dette.
 
 ## Flytting av eksisterende dokumenter
 
-`regnmed offload-documents` går gjennom alle seks kolonnene: skriver
+`regnmed offload-documents` går gjennom alle sju kolonnene (den sjuende,
+`garnishment_letter.content`, er brevene trekkpålegg kom i — migrasjon
+0110): skriver
 bytene til lagringen, leser dem tilbake og sammenligner, og tømmer først
 da radens innholdskolonne. Kommandoen kan kjøres på nytt og avbrytes;
 en rad er enten urørt eller beviselig i lagringen.

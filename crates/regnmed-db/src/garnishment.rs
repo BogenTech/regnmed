@@ -665,6 +665,7 @@ pub struct Effective {
     pub payee_account: Option<String>,
     pub due_days: Option<i32>,
     pub letter_id: Uuid,
+    pub letter_filename: String,
 }
 
 /// The orders in force on `paid_date`, in the order the cap is spent on
@@ -713,6 +714,7 @@ pub async fn effective(
                 payee_account: v.payee_account.clone(),
                 due_days: v.due_days,
                 letter_id: v.letter_id,
+                letter_filename: v.letter_filename.clone(),
             });
         }
     }

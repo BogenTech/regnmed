@@ -49,7 +49,15 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/companies/{company_id}/expenses/{expense_id}/suggestion` | — |
 | GET | `/companies/{company_id}/occupations` | `LONN_LES` |
 | GET | `/companies/{company_id}/payroll` | `LONN_LES` |
-| POST | `/companies/{company_id}/payroll` | `LONN_KJOR` |
+| POST | `/companies/{company_id}/payroll` | `LONN_KJOR`, `LONN_LES` |
+| PUT | `/companies/{company_id}/payroll/garnishment-settings` | `LONN_SKRIV` |
+| GET | `/companies/{company_id}/payroll/garnishments` | `LONN_LES` |
+| POST | `/companies/{company_id}/payroll/garnishments` | `LONN_SKRIV` |
+| POST | `/companies/{company_id}/payroll/garnishments/letters` | `LONN_SKRIV` |
+| GET | `/companies/{company_id}/payroll/garnishments/letters/{letter_id}` | `LONN_LES` |
+| PUT | `/companies/{company_id}/payroll/garnishments/{order_id}` | `LONN_SKRIV` |
+| POST | `/companies/{company_id}/payroll/garnishments/{order_id}/stop` | `LONN_SKRIV` |
+| POST | `/companies/{company_id}/payroll/garnishments/{order_id}/versions/{version}/attest` | `LONN_LES`, `ATTESTERING_UTFOR` |
 | GET | `/companies/{company_id}/payroll/hours/{employee_id}` | `LONN_LES` |
 | GET | `/companies/{company_id}/payroll/months/{period}/amelding` | `LONN_KJOR` |
 | GET | `/companies/{company_id}/payroll/months/{period}/amelding/submissions` | — |

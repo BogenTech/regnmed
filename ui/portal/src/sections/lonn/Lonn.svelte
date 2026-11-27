@@ -13,6 +13,7 @@
   import KjorLonn from "./KjorLonn.svelte";
   import Lonnskjoring from "./Lonnskjoring.svelte";
   import Skattekort from "./Skattekort.svelte";
+  import Trekkpalegg from "./Trekkpalegg.svelte";
 
   let { companyId } = $props();
 
@@ -79,4 +80,5 @@
     onDone={reload}
   />
   <Skattekort {companyId} ansatte={data.ansatte} onDone={reload} />
+  <Trekkpalegg {companyId} ansatte={data.ansatte} />
 {/if}
