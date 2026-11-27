@@ -814,7 +814,7 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
 
     let kari = add_shareholder(&state, &token, &base, "Kari Nordmann", "26829398612").await;
     let ola = add_shareholder(&state, &token, &base, "Ola Nordmann", "12855599579").await;
-    add_event(&state, &token, &base, kari, "stiftelse", 100).await;
+    add_event(&state, &token, &base, kari.clone(), "stiftelse", 100).await;
 
     // No rail: says so, stores nothing.
     let (status, body) = call(&state, &token, "POST", &submissions, None).await;
@@ -862,6 +862,16 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
+    // Nothing delivered yet: nothing to correct, and nothing is sent.
+    let correct = format!("{submissions}&korriger=true");
+    let (status, body) = call(&state, &token, "POST", &correct, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("ingen levert"),
+        "{body}"
+    );
+    assert!(calls.lock().unwrap().is_empty());
+
     // Bekreft fails twice. The second attempt resends the SAME keys.
     let (status, body) = call(&state, &token, "POST", &submissions, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -886,7 +896,7 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     assert!(list[0]["siste_feil"].as_str().unwrap().contains("GLD_023"));
 
     // The aksjeeierbok changes: a NEW filing with new keys, now delivered.
-    add_event(&state, &token, &base, ola, "nyemisjon", 50).await;
+    add_event(&state, &token, &base, ola.clone(), "nyemisjon", 50).await;
     let (status, body) = call(&state, &token, "POST", &submissions, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "levert");
@@ -1032,4 +1042,41 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     );
     assert!(!seen.to_string().contains("GLD_023"), "{seen}");
     assert!(!seen.to_string().contains("\"feil\""), "{seen}");
+
+    // A correction is a new complete oppgave, asked for by name. The
+    // delivered one is answered (godkjent above), but the book has not
+    // changed: there is nothing to correct, and nothing is sent.
+    let (status, body) = call(&state, &token, "POST", &correct, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("ingenting å korrigere"),
+        "{body}"
+    );
+    assert_eq!(calls.lock().unwrap().len(), 10);
+
+    // The book is corrected: the new oppgave goes out with new keys.
+    add_event(&state, &token, &base, kari.clone(), "nyemisjon", 10).await;
+    let (status, body) = call(&state, &token, "POST", &correct, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "levert");
+    let corrected: Vec<_> = calls.lock().unwrap()[10..].to_vec();
+    assert_eq!(corrected.len(), 4, "H, two U, bekreft: {corrected:?}");
+    assert!(
+        corrected.iter().all(|c| third.iter().all(|d| d.1 != c.1)),
+        "a correction never reuses a key"
+    );
+
+    // A second correction waits for Skatteetaten's answer to the first:
+    // the oppgave in force is the one they process last.
+    add_event(&state, &token, &base, ola, "nyemisjon", 5).await;
+    let (status, body) = call(&state, &token, "POST", &correct, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("ikke svart"),
+        "{body}"
+    );
+    assert_eq!(calls.lock().unwrap().len(), 14, "nothing more was sent");
 }
