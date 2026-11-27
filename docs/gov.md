@@ -710,7 +710,7 @@ signeringspakkene systemet alt har; dokumentasjonens femte pakke,
 `skattegrunnlag`, kan ikke registreres som `accessPackages` (regel 2)
 og trengs ikke. `update` mot TT02 og ny endringsforespørsel for
 311032240 (id `98812aa0-4510-469e-87fd-0697965ef942`, alle sju
-ressursene, status `New`, venter på godkjenning med TestID).
+ressursene), **godkjent** samme dag med TestID (`Accepted`).
 
 Tre ting å vite til neste gang:
 
