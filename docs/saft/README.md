@@ -144,7 +144,7 @@ kategori Innrapportering, test), sammen med de andre manglende scopene
 kontrollsak på en syntetisk Tenor-organisasjon, og spørsmålene om
 største filstørrelse, hvordan et sluttbrukersystem får `dialogid`, og
 hvilken id `PUT /innsending` skal ha. `ske-kontroll` er lagt til
-systemets `rights` i TT02 2026-11-27 (docs/gov.md); testselskapets
-systembruker får den når endringsforespørselen er godkjent.
+systemets `rights` i TT02 2026-11-27, og testselskapets systembruker
+har fått den (endringsforespørselen godkjent samme dag, docs/gov.md).
 
 Ingen kode skrives før svarene foreligger.

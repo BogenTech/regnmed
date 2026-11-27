@@ -670,9 +670,10 @@ nytt.
 docs/saft/README.md) på samme måte: `rights` + beskrivelse i
 `scripts/altinn-system.py`, `update` mot TT02 (bekreftet med `show`),
 og en endringsforespørsel for 311032240 som ber om alle fem
-ressursene (id `6a10e8d6-a8cd-4e02-aaf7-df2c927a7651`, status `New`,
-venter på godkjenning med TestID). Trekkpålegg-forespørselen over er
-alt godkjent, så denne er den eneste som står åpen. Scopet
+ressursene (id `6a10e8d6-a8cd-4e02-aaf7-df2c927a7651`), **godkjent**
+samme dag av selskapets daglige leder med TestID (`change-status` →
+`Accepted`, alle fem ressursene). TestID ber om den syntetiske
+personens fødselsnummer, ikke selskapets organisasjonsnummer. Scopet
 `skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
 
 Tre ting å vite til neste gang:
