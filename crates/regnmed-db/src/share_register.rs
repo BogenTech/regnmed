@@ -739,14 +739,7 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 counterparty,
             });
             // New issues are reported at company level too (post 9).
-            if matches!(
-                h.type_,
-                TransactionType::Stiftelse
-                    | TransactionType::Nyemisjon
-                    | TransactionType::NyemisjonAnsattaksjer
-                    | TransactionType::NyemisjonKonverteringFordring
-                    | TransactionType::NyemisjonKonserninternOverforing
-            ) {
+            if h.type_.is_new_issue() {
                 new_issues.push(tax_return::NewIssue {
                     date: h.date,
                     type_: h.type_,

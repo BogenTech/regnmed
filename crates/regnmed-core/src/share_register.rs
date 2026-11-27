@@ -223,6 +223,20 @@ impl TransactionType {
         }
     }
 
+    /// New shares the company issued, reported at company level too
+    /// (hovedskjema post 9) on the same date as the shareholder's post 23.
+    pub fn is_new_issue(self) -> bool {
+        use TransactionType::*;
+        matches!(
+            self,
+            Stiftelse
+                | Nyemisjon
+                | NyemisjonAnsattaksjer
+                | NyemisjonKonverteringFordring
+                | NyemisjonKonserninternOverforing
+        )
+    }
+
     /// Whether the movement adds shares to the shareholder.
     pub fn is_acquisition(self) -> bool {
         !matches!(
@@ -563,13 +577,7 @@ mod tests {
         // KodelisteSKD_RF1086_TransTyper_p9 in the hovedskjema XSD: the
         // new issues the db also reports at company level (post 9).
         const POST_9: &[&str] = &["IP", "N", "NF", "NK", "UP", "T", "FS", "M", "NAK", "TN"];
-        for t in [
-            Stiftelse,
-            Nyemisjon,
-            NyemisjonAnsattaksjer,
-            NyemisjonKonverteringFordring,
-            NyemisjonKonserninternOverforing,
-        ] {
+        for t in ALL.iter().filter(|t| t.is_new_issue()) {
             assert!(POST_9.contains(&t.code().unwrap()), "{t:?} not in post 9");
         }
         for t in with_code {
