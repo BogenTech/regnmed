@@ -5,6 +5,7 @@
   // finnes bare mens forhåndsvisningen svarer til det som står i skjemaet.
   import { post } from "../../lib/api.js";
   import { kr, parseKr, today } from "../../lib/format.js";
+  import { download } from "../../lib/download.js";
   import { toast } from "../../lib/toast.svelte.js";
   import Card from "../../components/Card.svelte";
   import { AGA_SONER, MANEDER } from "./konstanter.js";
@@ -97,6 +98,12 @@
   let bokfort = $state(null); // the booked run's answer, warnings kept on screen
 
   const periode = $derived(MANEDER[maned - 1] + " " + year);
+  // Every order in the preview, with the employee's name for the list.
+  let garnishments = $derived(
+    forhand
+      ? forhand.svar.linjer.flatMap((l) => (l.trekkpalegg ?? []).map((t) => ({ ...t, navn: l.navn })))
+      : [],
+  );
 
   async function forhandsvis() {
     let body;
@@ -126,7 +133,12 @@
   async function bokfor() {
     arbeider = true;
     try {
-      const svar = await post("/companies/" + companyId + "/payroll", foresporsel());
+      // The trekkpålegg the preview showed: the server refuses the booking
+      // if an order changed since (docs/trekkpalegg.md §3 point 2).
+      const svar = await post("/companies/" + companyId + "/payroll", {
+        ...foresporsel(),
+        trekkpalegg_sett: forhand.svar.trekkpalegg_sett,
+      });
       bokfort = { periode, svar };
       forhand = null;
       // Straight on to the next month, so the form never sits on one
@@ -325,10 +337,11 @@
                 <th class="text-right">Feriepenger</th>
                 <th class="text-right">Trekk</th>
                 <th class="text-right">Kjøring og diett</th>
+                {#if garnishments.length}<th class="text-right">Trekkpålegg</th>{/if}
                 <th class="text-right">Netto</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="whitespace-nowrap">
               {#each s.linjer as l (l.employee_id)}
                 <tr>
                   <td class="whitespace-nowrap">
@@ -338,6 +351,9 @@
                   <td class="text-right">{kr(l.feriepenger_ore)}</td>
                   <td class="text-right">{kr(l.forskuddstrekk_ore)}</td>
                   <td class="text-right">{kr(l.kjoregodtgjorelse_ore)}</td>
+                  {#if garnishments.length}
+                    <td class="text-right">{kr(l.trekkpalegg.reduce((sum, t) => sum + t.trukket_ore, 0))}</td>
+                  {/if}
                   <td class="text-right font-medium">{kr(l.netto_ore)}</td>
                 </tr>
               {/each}
@@ -356,6 +372,27 @@
           <dt class="opacity-70">Lønnskostnad i alt</dt>
           <dd>{kr(s.kjoring.lonnskostnad_ore)}</dd>
         </dl>
+        {#if garnishments.length}
+          <!-- Each order with amount, KID and its letter, so the person
+               running pay can check them against the letters before booking
+               (docs/trekkpalegg.md §6, Avgjørelser). -->
+          <h4 class="font-semibold text-sm mt-3">Trekkpålegg</h4>
+          <ul class="text-sm grid gap-1 mt-1">
+            {#each garnishments as t (t.registrering)}
+              <li>
+                {t.navn}: {kr(t.trukket_ore)} kr
+                {#if t.trukket_ore < t.onsket_ore}(av {kr(t.onsket_ore)}){/if}
+                — {t.type === "skatt" ? "skatt, selskapets KID" : "KID " + t.kid}, versjon {t.versjon}
+                <button class="link text-xs" onclick={() => download(t.brev_url, t.brev_filnavn)}>
+                  brevet
+                </button>
+              </li>
+            {/each}
+          </ul>
+          {#if s.trekkpalegg_konto}
+            <p class="text-xs opacity-70 mt-1">Føres på konto {s.trekkpalegg_konto} som leverandørpost og betales fra betalingslisten.</p>
+          {/if}
+        {/if}
         {#if s.advarsler?.length}
           <div role="alert" class="alert alert-warning alert-soft mt-3">
             <ul class="list-disc ml-4 text-sm">
@@ -364,8 +401,8 @@
           </div>
         {/if}
         <p class="text-xs opacity-70 mt-3">
-          Trekkpålegg fra Skatteetaten eller namsmannen trekkes ikke ennå, så netto utbetales i sin
-          helhet. Har en ansatt trekkpålegg, må trekket gjøres utenom regnmed.
+          Bare trekkpålegg registrert for hånd under «Trekkpålegg» trekkes; pålegg hentes ikke fra
+          Skatteetaten ennå. Et pålegg som ikke er registrert, trekkes ikke.
         </p>
         <div class="flex flex-wrap gap-2 mt-3">
           <button class="btn btn-primary btn-sm" disabled={arbeider} onclick={bokfor}>

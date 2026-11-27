@@ -609,6 +609,12 @@ pub struct PayrollRun {
     /// (employee_id, navn) for the run's lines — enough for the portal
     /// to offer a payslip per person without asking again.
     pub employees: Vec<(Uuid, String)>,
+    /// The trekkpålegg this run withholds, as (order, version). The
+    /// preview returns it and the booking must send it back unchanged
+    /// (docs/trekkpalegg.md §3 point 2).
+    pub garnishment_set: Vec<(Uuid, i32)>,
+    /// Where the trekk is credited, when anything is withheld.
+    pub garnishment_account: Option<String>,
     /// Things worth saying out loud about the run. Never fatal — a
     /// payroll run that balances is still a valid payroll run.
     pub warnings: Vec<String>,
@@ -638,6 +644,16 @@ pub struct Lonnslinje {
     /// `fixed` or `hourly` (migration 0073) — the a-melding reports them
     /// under different descriptions. None when the run could not tell.
     pub pay_kind: Option<&'static str>,
+    /// Trekkpålegg on this employee, in the order the cap was spent.
+    pub garnishments: Vec<Withheld>,
+}
+
+/// One trekkpålegg in a run: what it asked for and what could be taken.
+#[derive(Debug, Clone)]
+pub struct Withheld {
+    pub order: crate::garnishment::Effective,
+    pub wanted_ore: i64,
+    pub withheld_ore: i64,
 }
 
 /// Feriepenger owed and aga already accrued for one employee, derived
@@ -1076,8 +1092,38 @@ pub async fn run_payroll(
     poster: &[PayrollEntry],
     created_by: &str,
 ) -> Result<PayrollRun> {
+    run_payroll_as_previewed(
+        pool, company_id, year, month, paid_date, zone_slug, poster, created_by, None,
+    )
+    .await
+}
+
+/// [`run_payroll`] with the trekkpålegg set the preview returned. The run
+/// is refused when the set it would use differs — an order came, changed
+/// or was attested after the preview — and when an order applies and no
+/// set is sent (docs/trekkpalegg.md §3 point 2).
+#[allow(clippy::too_many_arguments)]
+pub async fn run_payroll_as_previewed(
+    pool: &PgPool,
+    company_id: Uuid,
+    year: i32,
+    month: u32,
+    paid_date: NaiveDate,
+    zone_slug: &str,
+    poster: &[PayrollEntry],
+    created_by: &str,
+    garnishment_set: Option<&[(Uuid, i32)]>,
+) -> Result<PayrollRun> {
     payroll_run(
-        pool, company_id, year, month, paid_date, zone_slug, poster, created_by, false,
+        pool,
+        company_id,
+        year,
+        month,
+        paid_date,
+        zone_slug,
+        poster,
+        created_by,
+        Some(garnishment_set),
     )
     .await
 }
@@ -1111,7 +1157,7 @@ pub async fn preview_payroll(
         );
     }
     payroll_run(
-        pool, company_id, year, month, paid_date, zone_slug, poster, "", true,
+        pool, company_id, year, month, paid_date, zone_slug, poster, "", None,
     )
     .await
 }
@@ -1126,8 +1172,10 @@ async fn payroll_run(
     zone_slug: &str,
     poster: &[PayrollEntry],
     created_by: &str,
-    preview: bool,
+    // None = preview; Some(set) = book, with the set the caller previewed.
+    previewed: Option<Option<&[(Uuid, i32)]>>,
 ) -> Result<PayrollRun> {
+    let preview = previewed.is_none();
     ensure!((1..=12).contains(&month), "måned må være 1-12");
     ensure!(!poster.is_empty(), "lønnskjøringen har ingen ansatte");
     let zone = Zone::from_slug(zone_slug)
@@ -1177,6 +1225,8 @@ async fn payroll_run(
     let mut contribution_basis_ore = 0i64;
     let mut lines = Vec::new();
     let mut frikort_warnings = Vec::new();
+    let (orders, mut garnishment_warnings) =
+        crate::garnishment::effective(&mut *pool.acquire().await?, company_id, paid_date).await?;
     let mut mileage = Vec::new();
     let mut travel = Vec::new();
 
@@ -1555,6 +1605,49 @@ async fn payroll_run(
             ));
         }
 
+        // Trekkpålegg come after forskuddstrekk and never reach the
+        // trekkfri allowances (docs/trekkpalegg.md §3).
+        let basis = regnmed_core::garnishment::Basis {
+            pay_ore: gross,
+            holiday_pay_ore: post.holiday_pay_ore,
+            taxable_allowance_ore: taxable_allowance,
+            benefits_in_kind_ore: 0,
+        };
+        let mine: Vec<&crate::garnishment::Effective> = orders
+            .iter()
+            .filter(|o| o.employee_id == employee.id)
+            .collect();
+        let wanted: Vec<i64> = mine
+            .iter()
+            .map(|o| regnmed_core::garnishment::wanted_ore(o.size, basis.for_kind(o.kind)))
+            .collect();
+        let taken = regnmed_core::garnishment::withhold(
+            regnmed_core::garnishment::cap_ore(calculation.net_ore, tax_free_allowance),
+            &wanted,
+        );
+        let mut garnishments = Vec::new();
+        for ((order, &wanted_ore), &withheld_ore) in mine.into_iter().zip(&wanted).zip(&taken) {
+            if withheld_ore < wanted_ore {
+                garnishment_warnings.push(format!(
+                    "{}: trekkpålegget ({}) skulle trukket {} kr, men lønnen etter \
+                     forskuddstrekk rakk bare til {} kr. Det som er trukket, bokføres og \
+                     rapporteres; resten føres ikke over til neste måned. Er årsaken ikke synlig \
+                     i a-meldingen (sykdom og permisjon er det), må selskapet kontakte \
+                     innkrevingsmyndigheten.",
+                    employee.name,
+                    order.kind.label(),
+                    kroner(wanted_ore),
+                    kroner(withheld_ore),
+                ));
+            }
+            garnishments.push(Withheld {
+                order: order.clone(),
+                wanted_ore,
+                withheld_ore,
+            });
+        }
+        calculation.net_ore -= taken.iter().sum::<i64>();
+
         // The avgift falls on what is actually paid out, and is computed
         // once on the run's whole basis below.
         contribution_basis_ore += gross + post.holiday_pay_ore + taxable_allowance;
@@ -1589,7 +1682,40 @@ async fn payroll_run(
             holiday_pay_exempt: exempt,
             employer_contribution_holiday_pay_ore: employer_contribution_holiday_pay,
             pay_kind,
+            garnishments,
         });
+    }
+
+    for o in &orders {
+        if !lines.iter().any(|l| l.employee_id == o.employee_id) {
+            let name = employees
+                .iter()
+                .find(|e| e.id == o.employee_id)
+                .map_or("En ansatt", |e| e.name.as_str());
+            garnishment_warnings.push(format!(
+                "{name}: har et trekkpålegg ({}) som gjelder {paid_date}, men er ikke med i \
+                 kjøringen, så ingenting trekkes.",
+                o.kind.label()
+            ));
+        }
+    }
+    let mut garnishment_set: Vec<(Uuid, i32)> = lines
+        .iter()
+        .flat_map(|l| &l.garnishments)
+        .map(|w| (w.order.garnishment_id, w.order.version))
+        .collect();
+    garnishment_set.sort();
+    if let Some(sent) = previewed {
+        let mut sent = sent.map(<[_]>::to_vec);
+        if let Some(s) = sent.as_mut() {
+            s.sort();
+        }
+        ensure!(
+            sent.as_ref() == Some(&garnishment_set)
+                || (garnishment_set.is_empty() && sent.as_ref().is_none_or(Vec::is_empty)),
+            "trekkpåleggene er endret siden forhåndsvisningen — forhåndsvis lønnen på nytt, så det \
+             som bokføres er det som ble vist"
+        );
     }
 
     // One zone and one rate per run, so the claim is one product, rounded
@@ -1756,7 +1882,111 @@ async fn payroll_run(
         });
     }
 
-    let draft = VoucherDraft {
+    // Trekkpålegg (docs/trekkpalegg.md §2 step 5, §6): one supplier post
+    // per samordnet or øvrige order, one for all skatt together, each with
+    // its KID and due date, so the payment list pays them.
+    let mut conn = pool.acquire().await?;
+    let settings = crate::garnishment::settings_on(&mut conn, company_id, paid_date).await?;
+    let withheld: Vec<&Withheld> = lines.iter().flat_map(|l| &l.garnishments).collect();
+    let mut payees = Vec::new();
+    if withheld
+        .iter()
+        .any(|w| w.order.kind == regnmed_core::garnishment::Kind::Tax)
+    {
+        let s = settings.clone().unwrap_or_default();
+        let missing: Vec<&str> = [
+            (s.tax_kid.is_none(), "KID"),
+            (s.tax_account.is_none(), "kontonummer"),
+            (
+                s.tax_payee_orgnumber.is_none(),
+                "mottakerens organisasjonsnummer",
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(m, f)| m.then_some(f))
+        .collect();
+        ensure!(
+            missing.is_empty(),
+            "Utleggstrekk skatt betales med selskapets egen KID for utleggstrekk skatt, og \
+             lønnsinnstillingene mangler {}. Legg dem inn fra Skatteetatens \
+             betalingsinformasjon under Lønn → Trekkpålegg før lønnen kjøres.",
+            missing.join(", ")
+        );
+        let total: i64 = withheld
+            .iter()
+            .filter(|w| w.order.kind == regnmed_core::garnishment::Kind::Tax)
+            .map(|w| w.withheld_ore)
+            .sum();
+        if total > 0 {
+            payees.push((
+                total,
+                s.tax_payee_orgnumber.unwrap_or_default(),
+                s.tax_account.unwrap_or_default(),
+                s.tax_kid.unwrap_or_default(),
+                paid_date,
+            ));
+        }
+    }
+    for w in withheld
+        .iter()
+        .filter(|w| w.order.kind != regnmed_core::garnishment::Kind::Tax && w.withheld_ore > 0)
+    {
+        let o = &w.order;
+        payees.push((
+            w.withheld_ore,
+            o.payee_orgnumber.clone().unwrap_or_default(),
+            o.payee_account.clone().unwrap_or_default(),
+            o.kid.clone().unwrap_or_default(),
+            paid_date + chrono::Days::new(o.due_days.unwrap_or(0) as u64),
+        ));
+    }
+    let garnishment_account = if payees.is_empty() {
+        None
+    } else {
+        let choice =
+            crate::garnishment::resolve_account(&mut conn, company_id, settings.as_ref()).await?;
+        if choice.create {
+            garnishment_warnings.push(format!(
+                "Konto {} Utleggstrekk opprettes som leverandørreskontro og brukes for \
+                 utleggstrekk heretter.",
+                choice.number
+            ));
+        }
+        Some(choice)
+    };
+    let mut payee_lines = Vec::new();
+    for (amount, orgnumber, bank_account, _, _) in &payees {
+        if preview {
+            crate::garnishment::supplier(
+                &mut conn,
+                company_id,
+                orgnumber,
+                bank_account,
+                false,
+                &mut garnishment_warnings,
+            )
+            .await?;
+        }
+        payee_lines.push(entries.len());
+        entries.push(EntryDraft {
+            account_number: garnishment_account
+                .as_ref()
+                .map(|c| c.number.clone())
+                .unwrap_or_default(),
+            amount: Ore(-amount),
+            vat_code: None,
+            // Never the employee's name: anyone reading the ledger sees it
+            // (docs/trekkpalegg.md §3 point 4).
+            description: Some(format!("Utleggstrekk {month:02}/{year}")),
+            party_no: None,
+            department: None,
+            project: None,
+            currency: None,
+        });
+    }
+    drop(conn);
+
+    let mut draft = VoucherDraft {
         journal_code: "GL".into(),
         voucher_date: paid_date,
         description: format!("Lønnskjøring {month:02}/{year}"),
@@ -1797,6 +2027,11 @@ async fn payroll_run(
         .collect();
     wanted.sort_unstable();
     wanted.dedup();
+    wanted.retain(|n| {
+        garnishment_account
+            .as_ref()
+            .is_none_or(|c| !(c.create && c.number == *n))
+    });
     let active: Vec<String> = sqlx::query_scalar(
         "select number from account where company_id = $1 and active and number = any($2)",
     )
@@ -1838,7 +2073,57 @@ async fn payroll_run(
                     == december_earlier,
             "en annen lønnskjøring ble bokført samtidig — kjør denne på nytt"
         );
+        // Registrations take the same company lock, so this is the set
+        // the bilag is built from.
+        ensure!(
+            crate::garnishment::effective(&mut tx, company_id, paid_date)
+                .await?
+                .0
+                == orders,
+            "trekkpåleggene ble endret mens lønnen ble kjørt — forhåndsvis lønnen på nytt"
+        );
+        if let Some(choice) = &garnishment_account {
+            crate::garnishment::establish_account(
+                &mut tx,
+                company_id,
+                choice,
+                settings.as_ref(),
+                paid_date,
+                created_by,
+            )
+            .await?;
+        }
+        for (&line, (_, orgnumber, bank_account, _, _)) in payee_lines.iter().zip(&payees) {
+            draft.entries[line].party_no = Some(
+                crate::garnishment::supplier(
+                    &mut tx,
+                    company_id,
+                    orgnumber,
+                    bank_account,
+                    true,
+                    &mut garnishment_warnings,
+                )
+                .await?,
+            );
+        }
         let posted = post_voucher_in(&mut tx, company_id, &draft, created_by).await?;
+        for (&line, (_, _, _, kid, due)) in payee_lines.iter().zip(&payees) {
+            let entry_id: Uuid =
+                sqlx::query_scalar("select id from entry where voucher_id = $1 and line_no = $2")
+                    .bind(posted.id)
+                    .bind(line as i32 + 1)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            crate::payments::insert_terms(
+                &mut *tx,
+                company_id,
+                entry_id,
+                Some(*due),
+                Some(kid),
+                created_by,
+            )
+            .await?;
+        }
 
         let run_id = Uuid::new_v4();
         sqlx::query(
@@ -1921,6 +2206,27 @@ async fn payroll_run(
             .bind(l.holiday_pay_exempt)
             .execute(&mut *tx)
             .await?;
+        }
+        for l in &lines {
+            for w in &l.garnishments {
+                sqlx::query(
+                    "insert into payroll_garnishment
+                     (id, run_id, employee_id, garnishment_id, version, kind, wanted_ore,
+                      withheld_ore, kid)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                )
+                .bind(Uuid::now_v7())
+                .bind(run_id)
+                .bind(l.employee_id)
+                .bind(w.order.garnishment_id)
+                .bind(w.order.version)
+                .bind(w.order.kind.slug())
+                .bind(w.wanted_ore)
+                .bind(w.withheld_ore)
+                .bind(&w.order.kid)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         for m in &mileage {
             sqlx::query(
@@ -2007,7 +2313,14 @@ async fn payroll_run(
         .chain(cap_warnings)
         .chain(holiday_pay_warnings)
         .chain(december_warnings)
-        .collect();
+        .chain(garnishment_warnings)
+        .fold(Vec::new(), |mut all, w| {
+            // A payee shared by several orders would say the same twice.
+            if !all.contains(&w) {
+                all.push(w);
+            }
+            all
+        });
     Ok(PayrollRun {
         id: run_id,
         year,
@@ -2019,6 +2332,8 @@ async fn payroll_run(
         employees,
         lines,
         warnings,
+        garnishment_set,
+        garnishment_account: garnishment_account.map(|c| c.number),
     })
 }
 
@@ -2095,6 +2410,8 @@ pub async fn list_kjoringer(
             lines: Vec::new(),
             employees: Vec::new(),
             warnings: Vec::new(),
+            garnishment_set: Vec::new(),
+            garnishment_account: None,
         })
         .collect::<Vec<_>>();
 
@@ -2211,6 +2528,24 @@ pub async fn payslip(
             amount_ore: taxable_allowance,
         });
     }
+    // The employee's own orders, named by KID and version so they can be
+    // matched to the letter (docs/trekkpalegg.md §2 step 4).
+    let deductions = run_garnishments(pool, run_id)
+        .await?
+        .into_iter()
+        .filter(|g| g.employee_id == employee_id && g.withheld_ore != 0)
+        .map(|g| PayslipLine {
+            text: match &g.kid {
+                Some(kid) => format!(
+                    "Utleggstrekk, {} (KID {kid}, versjon {})",
+                    g.kind.label(),
+                    g.version
+                ),
+                None => format!("Utleggstrekk skatt (versjon {})", g.version),
+            },
+            amount_ore: -g.withheld_ore,
+        })
+        .collect();
 
     Ok(PayslipInput {
         employer_name: row.get("selskap"),
@@ -2234,6 +2569,7 @@ pub async fn payslip(
         withholding_method: row.get("withholding_method"),
         half_withholding: row.get("halv_trekk"),
         tax_free_allowance_ore: row.get::<i64, _>("allowance_ore") - taxable_allowance,
+        deductions,
         net_ore: row.get("netto_ore"),
         holiday_pay_accrual_ore: row.get("feriepengeavsetning_ore"),
         holiday_pay_bp: row.get::<i32, _>("line_holiday_pay_bp") as i64,
@@ -2583,6 +2919,7 @@ pub async fn amelding_for_run(
     .fetch_all(pool)
     .await?;
 
+    let garnishments = run_garnishments(pool, run_id).await?;
     let mut recipients = Vec::new();
     let mut business_units = std::collections::BTreeSet::new();
     for line in &lines {
@@ -2638,6 +2975,14 @@ pub async fn amelding_for_run(
             employment: employee.employment(),
             income,
             withholding_ore: line.get("forskuddstrekk_ore"),
+            garnishments: garnishments
+                .iter()
+                .filter(|g| g.employee_id == employee_id)
+                .map(|g| regnmed_core::amelding::Garnishment {
+                    kind: g.kind,
+                    amount_ore: g.withheld_ore,
+                })
+                .collect(),
         });
     }
 
@@ -2965,9 +3310,46 @@ async fn add_unpaid_employments(
             employment: e.employment(),
             income: Vec::new(),
             withholding_ore: 0,
+            garnishments: Vec::new(),
         });
     }
     Ok(())
+}
+
+/// What a stored run withheld per employee and order (migration 0110).
+pub struct RunGarnishment {
+    pub employee_id: Uuid,
+    pub garnishment_id: Uuid,
+    pub version: i32,
+    pub kind: regnmed_core::garnishment::Kind,
+    pub wanted_ore: i64,
+    pub withheld_ore: i64,
+    pub kid: Option<String>,
+}
+
+pub async fn run_garnishments(pool: &PgPool, run_id: Uuid) -> Result<Vec<RunGarnishment>> {
+    let rows = sqlx::query(
+        "select employee_id, garnishment_id, version, kind, wanted_ore, withheld_ore, kid
+         from payroll_garnishment where run_id = $1 order by id",
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|r| {
+            let kind: String = r.get("kind");
+            Ok(RunGarnishment {
+                employee_id: r.get("employee_id"),
+                garnishment_id: r.get("garnishment_id"),
+                version: r.get("version"),
+                kind: regnmed_core::garnishment::Kind::from_slug(&kind)
+                    .context("unknown garnishment kind")?,
+                wanted_ore: r.get("wanted_ore"),
+                withheld_ore: r.get("withheld_ore"),
+                kid: r.get("kid"),
+            })
+        })
+        .collect()
 }
 
 /// Trekkpliktig pay (ordinary + feriepenger) this employer has already

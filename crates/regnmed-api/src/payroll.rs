@@ -1033,6 +1033,20 @@ pub struct RunPayrollRequest {
     zone: String,
     #[serde(rename = "linjer")]
     lines: Vec<PayrollLine>,
+    /// The trekkpålegg set the preview returned (`trekkpalegg_sett`),
+    /// sent back unchanged when booking. Required when an order applies.
+    #[serde(rename = "trekkpalegg_sett", default)]
+    garnishment_set: Option<Vec<GarnishmentKey>>,
+}
+
+/// One hand-registered order in the set: (registrering, versjon).
+/// Fetched orders (#334) will add (trekkid, trekkversjon).
+#[derive(Deserialize, serde::Serialize, Clone, Copy)]
+pub struct GarnishmentKey {
+    #[serde(rename = "registrering")]
+    order: Uuid,
+    #[serde(rename = "versjon")]
+    version: i32,
 }
 
 #[derive(Deserialize)]
@@ -1050,7 +1064,10 @@ pub async fn run_payroll(
     Query(q): Query<RunQuery>,
     Json(request): Json<RunPayrollRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    let access = require(&state, person.person_id, company_id, Right::PayrollRun).await?;
+    // Who owes what is for LONN_LES (docs/trekkpalegg.md §3 point 4); the
+    // set itself is opaque ids, needed to book.
+    let sees_garnishments = access.has(Right::PayrollRead);
     let poster: Vec<_> = request
         .lines
         .iter()
@@ -1075,7 +1092,11 @@ pub async fn run_payroll(
         )
         .await
     } else {
-        regnmed_db::payroll::run_payroll(
+        let set: Option<Vec<(Uuid, i32)>> = request
+            .garnishment_set
+            .as_ref()
+            .map(|s| s.iter().map(|k| (k.order, k.version)).collect());
+        regnmed_db::payroll::run_payroll_as_previewed(
             &state.pool,
             company_id,
             request.year,
@@ -1084,6 +1105,7 @@ pub async fn run_payroll(
             &request.zone,
             &poster,
             person.display(),
+            set.as_deref(),
         )
         .await
     }
@@ -1103,10 +1125,36 @@ pub async fn run_payroll(
             "feriepengeavsetning_ore": l.holiday_pay_accrual_ore,
             "aga_feriepenger_ore": l.employer_contribution_holiday_pay_ore,
             "halv_trekk": l.calculation.half_withholding,
+            "trekkpalegg": if sees_garnishments {
+                l.garnishments.iter().map(|w| garnishment_json(company_id, w)).collect()
+            } else {
+                Vec::new()
+            },
         })).collect::<Vec<_>>(),
+        "trekkpalegg_sett": run.garnishment_set.iter().map(|&(order, version)| {
+            GarnishmentKey { order, version }
+        }).collect::<Vec<_>>(),
+        "trekkpalegg_konto": run.garnishment_account,
         "advarsler": run.warnings,
         "forhandsvisning": q.preview,
     })))
+}
+
+fn garnishment_json(company_id: Uuid, w: &regnmed_db::payroll::Withheld) -> serde_json::Value {
+    let o = &w.order;
+    json!({
+        "registrering": o.garnishment_id,
+        "versjon": o.version,
+        "type": o.kind.slug(),
+        "belop_ore": match o.size { regnmed_core::garnishment::Size::AmountOre(a) => Some(a), _ => None },
+        "prosent_bp": match o.size { regnmed_core::garnishment::Size::PercentBp(p) => Some(p), _ => None },
+        "kid": o.kid,
+        "mottaker_orgnr": o.payee_orgnumber,
+        "onsket_ore": w.wanted_ore,
+        "trukket_ore": w.withheld_ore,
+        "brev_url": crate::garnishment::letter_url(company_id, o.letter_id),
+        "brev_filnavn": o.letter_filename,
+    })
 }
 
 /// The payslip for one employee in one run, as PDF.

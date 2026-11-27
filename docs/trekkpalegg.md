@@ -1,8 +1,13 @@
-# Trekkpålegg — forslag
+# Trekkpålegg
 
-**Status: FORSLAG, ikke bygget** (2026-11-25, #334). Til det er bygget,
-trekker lønnskjøringen ingen trekkpålegg, og både docs/lonn.md og
-forhåndsvisningen av kjøringen sier det.
+**Status** (2026-11-27): pålegg **registrert for hånd** (§6, #339) er
+bygget — de trekkes, bokføres, betales fra betalingslisten og
+rapporteres i a-meldingen. **Henting fra Skatteetaten** (§2 steg 1–3,
+#334) er ikke bygget; den venter på scopet (SSV-6690). Det felles
+kjernen §6 og #334 deler — kontoen, trekket med taket, bokføringen,
+a-meldingsfeltene og forhåndsvisningens sett — er bygget slik at
+hentede pålegg kan kobles på som flere rader av samme slag
+(`regnmed-db::garnishment::Effective`).
 
 Et trekkpålegg (utleggstrekk i lønn) pålegger arbeidsgiveren å holde
 tilbake en del av den ansattes lønn og betale den til innkrevings-
@@ -382,7 +387,7 @@ lønnskjøring, bokført, betalt fra betalingslisten og rapportert i en
 a-melding som Skatteetaten tar imot uten avvik. Samme beviskrav som for
 a-meldingen og skattekortet i docs/lonn.md.
 
-## 6. Pålegg registrert for hånd (#339) — forslag
+## 6. Pålegg registrert for hånd (#339) — bygget
 
 API-et dekker ikke to tilfeller (§2, steg 1): **første måned**, før
 selskapet har levert en a-melding gjennom regnmed, og **trekk etter den
@@ -499,6 +504,70 @@ gjelden (§3, punkt 4 under Godkjenning).
   prosentgrunnlag, rapportering og betaling per type som over. Det var
   et åpent spørsmål om de gamle trekkene fulgte samme grunnlag som de
   samordnede; veiledningen sier at de ikke gjør det.
+
+### Bygget slik (2026-11-27)
+
+Det som ikke står over, og som ble avgjort da koden ble skrevet:
+
+- **Brevet lastes opp først** (`POST …/payroll/garnishments/letters`,
+  rå kropp, PDF eller bilde) og registreringen peker på det. En endring
+  uten nytt brev beholder forrige versjons brev. Brevet lagres i
+  `garnishment_letter` med samme offload-regel som de andre
+  dokumentene (docs/blob-store.md).
+- **Ett pålegg = `garnishment` + `garnishment_version`** (migrasjon
+  0110). Ansatt og type ligger fast på pålegget; alt annet per versjon.
+  En stopp er en versjon med `stopped`, og et stoppet pålegg kan ikke
+  endres — et nytt brev er et nytt pålegg. Triggere nekter UPDATE,
+  DELETE og TRUNCATE.
+- **Attestering per versjon** (`target_kind = 'garnishment_version'`).
+  Om versjonen krever attestering, avgjøres når den skrives: aktiv
+  policy da betyr ja. En policy som slås på senere, stopper ikke
+  løpende pålegg. Venter en endring på attestering, trekkes den siste
+  attesterte versjonen, og forhåndsvisningen sier det; uten noen
+  attestert versjon trekkes ingenting. En stopp krever ingen
+  attestering. Den som registrerte, kan ikke attestere selv, og en
+  utpekt attestant i policyen gjelder også her. Attestanten trenger
+  både `ATTESTERING_UTFOR` og `LONN_LES`.
+- **Innstillingene** (`payroll_garnishment_setting`) er én rad med hele
+  settet — kontoen, KID, kontonummer og mottaker for skatt — med
+  `valid_from`; av radene med `valid_from` på eller før
+  utbetalingsdatoen gjelder den som ble lagret sist. Velger kjøringen kontoen selv (§2 steg 5),
+  skriver den en ny rad med kontoen og resten uendret.
+- **Rekkefølgen under taket**: samordnet, skatt, øvrige, og innen hver
+  type eldste registrering først.
+- **En ny mottaker** opprettes som leverandør med navnet
+  «Innkrevingsmyndigheten (org.nr. …)»; regnmed slår ikke opp navnet.
+- **Settet** sammenlignes to ganger: med det klienten sendte, og på nytt
+  inne i kjøringens transaksjon under selskapslåsen. Registrering,
+  endring og stopp tar samme lås, så det som bokføres er det som ble
+  sjekket.
+- **Synlighet i kjøringen**: forhåndsvisningen viser KID, beløp og
+  lenke til brevet bare for den som har `LONN_LES`; settet (id-er og
+  versjoner) går til alle som kan kjøre lønn, siden det trengs for å
+  bokføre. Advarslene navngir den ansatte for alle med `LONN_KJOR`.
+- **Prosentgrunnlaget for skatt** er bruttolønnen med feriepenger og
+  trekkpliktig godtgjørelse, som for samordnet, pluss naturalytelser
+  (null i dag). Om feriepenger skal være med i grunnlaget for den gamle
+  ordningen, sier ikke tabellen; testinnsendingen må bekrefte det.
+- Dokumentasjonens eksempel på `betalingsmottaker` (971648199) består
+  ikke MOD11; registreringen krever gyldig organisasjonsnummer, og
+  testene bruker Skatteetatens eget (974761076).
+
+### Utsatt
+
+- **«Samme KID: det hentede avløser det manuelle»** (avsnittet over)
+  hører til #334 og er ikke bygget: det finnes ingen hentede pålegg å
+  avløse med. Når #334 bygges, skal regelen ligge der settet regnes ut
+  (`regnmed-db::garnishment::effective`).
+- **Varsel til dem med `LONN_KJOR`** (§3) gjelder hentede pålegg, som
+  kommer uten at noen i selskapet har gjort noe. Et pålegg registrert
+  for hånd har en person bak, så det varsles ikke.
+- **Advarselen om gammel henting** (§3 punkt 3) og **avviket for
+  pålegg uten ansatt** (§2 steg 3) gjelder bare hentede pålegg.
+- **Å lese `trekkbeloep`/`trekkprosent` fra JSON-tallets tekst** (§2
+  steg 4) hører til #334. Portalen leser beløp og prosent som tekst og
+  sender heltall (øre og basispunkter), så API-et for registrering tar
+  aldri imot et flyttall.
 
 ### Ferdig når
 

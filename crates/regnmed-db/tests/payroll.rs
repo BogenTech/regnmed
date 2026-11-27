@@ -3766,3 +3766,613 @@ async fn a_preview_books_nothing_and_matches_the_run() {
         .unwrap_err();
     assert!(err.to_string().contains("låst"), "{err}");
 }
+
+// ---- trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339) -----
+
+mod garnishment {
+    use super::*;
+    use regnmed_core::garnishment::{Draft, Kind, Size};
+    use regnmed_db::garnishment::{self as g, Author, VersionDraft};
+
+    /// Skatteetaten's orgnr, and the API documentation's KID and account.
+    const PAYEE: &str = "974761076";
+    const KID: &str = "6487719756";
+    const ACCOUNT: &str = "70213997155";
+
+    async fn person(pool: &PgPool, name: &str) -> Uuid {
+        regnmed_db::tenancy::ensure_person(
+            pool,
+            &format!("sub-{}", Uuid::new_v4()),
+            Some(name),
+            None,
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn letter(pool: &PgPool, company: Uuid) -> Uuid {
+        g::upload_letter(
+            pool,
+            company,
+            "brev.pdf",
+            "application/pdf",
+            b"%PDF-1.4 brev",
+            "Test",
+        )
+        .await
+        .unwrap()
+    }
+
+    fn coordinated(amount_ore: i64) -> Draft {
+        Draft {
+            kind: Kind::Coordinated,
+            size: Size::AmountOre(amount_ore),
+            valid_from: date(2026, 1, 1),
+            valid_to: None,
+            kid: Some(KID.into()),
+            payee_orgnumber: Some(PAYEE.into()),
+            payee_account: Some(ACCOUNT.into()),
+            due_days: None,
+        }
+    }
+
+    fn tax(percent_bp: i64) -> Draft {
+        Draft {
+            kind: Kind::Tax,
+            size: Size::PercentBp(percent_bp),
+            kid: None,
+            payee_orgnumber: None,
+            payee_account: None,
+            ..coordinated(1)
+        }
+    }
+
+    async fn register(
+        pool: &PgPool,
+        company: Uuid,
+        employee: Uuid,
+        draft: Draft,
+        by: Uuid,
+    ) -> Uuid {
+        let letter_id = letter(pool, company).await;
+        g::register(
+            pool,
+            company,
+            employee,
+            VersionDraft {
+                draft,
+                letter_id: Some(letter_id),
+                note: None,
+            },
+            &Author {
+                person_id: by,
+                name: "Registrerer",
+            },
+        )
+        .await
+        .unwrap()
+        .0
+    }
+
+    fn entry(employee_id: Uuid) -> PayrollEntry {
+        PayrollEntry {
+            employee_id,
+            gross_ore: None,
+            holiday_pay_ore: 0,
+            holiday_pay_supplement_ore: None,
+            from_timesheet: false,
+            holiday_pay_exempt: false,
+        }
+    }
+
+    async fn preview(
+        pool: &PgPool,
+        company: Uuid,
+        poster: &[PayrollEntry],
+    ) -> anyhow::Result<payroll::PayrollRun> {
+        payroll::preview_payroll(pool, company, 2026, 3, date(2026, 3, 25), "I", poster).await
+    }
+
+    async fn book(
+        pool: &PgPool,
+        company: Uuid,
+        poster: &[PayrollEntry],
+        set: Option<&[(Uuid, i32)]>,
+    ) -> anyhow::Result<payroll::PayrollRun> {
+        payroll::run_payroll_as_previewed(
+            pool,
+            company,
+            2026,
+            3,
+            date(2026, 3, 25),
+            "I",
+            poster,
+            "Test",
+            set,
+        )
+        .await
+    }
+
+    fn xsd_valid(xml: &str) {
+        let xsd = format!(
+            "{}/../../docs/amelding/a-meldingen_v2_3.xsd",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let file = std::env::temp_dir().join(format!("regnmed-trekk-{}.xml", Uuid::new_v4()));
+        std::fs::write(&file, xml).unwrap();
+        let Ok(out) = std::process::Command::new("xmllint")
+            .args(["--noout", "--schema", &xsd])
+            .arg(&file)
+            .output()
+        else {
+            eprintln!("xmllint not installed -- skipping schema validation");
+            return;
+        };
+        assert!(
+            out.status.success(),
+            "{}\n{xml}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// The whole §6 path short of Skatteetaten: registered from a letter,
+    /// withheld in the run, booked as a supplier post with KID and due
+    /// date, listed by the payment list, reported in an XSD-valid
+    /// a-melding and shown on the payslip.
+    #[tokio::test]
+    async fn a_hand_registered_order_is_withheld_booked_paid_and_reported() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+        payroll::update_employment_details(&pool, company, kari, &complete_details("974760673"))
+            .await
+            .unwrap();
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let order = register(&pool, company, kari, coordinated(400_000), by).await;
+
+        let poster = [entry(kari)];
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+        assert_eq!(shown.garnishment_account.as_deref(), Some("2610"));
+        let line = &shown.lines[0];
+        assert_eq!(line.garnishments[0].withheld_ore, 400_000);
+        // 50 000 - 35 % trekk - 4 000 trekkpålegg.
+        assert_eq!(line.calculation.net_ore, 5_000_000 - 1_750_000 - 400_000);
+        assert!(
+            shown
+                .warnings
+                .iter()
+                .any(|w| w.contains("opprettes som leverandør")),
+            "{:?}",
+            shown.warnings
+        );
+
+        // A booking without the set is refused like one with a wrong set.
+        let err = book(&pool, company, &poster, None).await.unwrap_err();
+        assert!(err.to_string().contains("forhåndsvis"), "{err}");
+        let err = book(&pool, company, &poster, Some(&[])).await.unwrap_err();
+        assert!(err.to_string().contains("forhåndsvis"), "{err}");
+
+        let run = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap();
+        assert_eq!(voucher_sum(&pool, run.voucher_id).await, 0);
+        assert_eq!(
+            account_amount(&pool, run.voucher_id, "2610").await,
+            -400_000
+        );
+        assert_eq!(
+            account_amount(&pool, run.voucher_id, "2930").await,
+            -(5_000_000 - 1_750_000 - 400_000)
+        );
+        let (kind, text): (Option<String>, Option<String>) = sqlx::query_as(
+            "select a.reskontro_kind, e.description from entry e
+             join account a on a.id = e.account_id
+             where e.voucher_id = $1 and a.number = '2610'",
+        )
+        .bind(run.voucher_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(kind.as_deref(), Some("leverandor"));
+        // Never the employee's name: the ledger is readable by `les`.
+        assert_eq!(text.as_deref(), Some("Utleggstrekk 03/2026"));
+
+        // The payment list pays it to the letter's account with its KID,
+        // due on the pay date.
+        let items = regnmed_db::payments::payable_items(&pool, company)
+            .await
+            .unwrap();
+        let item = items
+            .iter()
+            .find(|i| i.kid.as_deref() == Some(KID))
+            .unwrap();
+        assert_eq!(item.amount_ore, 400_000);
+        assert_eq!(item.bank_account.as_deref(), Some(ACCOUNT));
+        assert_eq!(item.due_date, Some(date(2026, 3, 25)));
+
+        // The account is remembered as the company's choice.
+        let settings = g::settings_history(&pool, company).await.unwrap();
+        assert_eq!(settings[0].account_number.as_deref(), Some("2610"));
+        // Settings saved after the run, dated before its pay date, still
+        // govern later months: the remembered row does not shadow them.
+        g::set_settings(
+            &pool,
+            company,
+            &g::Settings {
+                valid_from: Some(date(2026, 3, 1)),
+                account_number: Some("2610".into()),
+                tax_kid: Some("12345678903".into()),
+                set_by: "Test".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let april = g::settings_on(
+            &mut *pool.acquire().await.unwrap(),
+            company,
+            date(2026, 4, 25),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(april.tax_kid.as_deref(), Some("12345678903"));
+
+        let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+            .await
+            .unwrap();
+        assert!(draft.hindrances.is_empty(), "{:?}", draft.hindrances);
+        let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+        xsd_valid(&xml);
+        let flat: String = xml.lines().map(str::trim).collect();
+        assert!(
+            flat.contains("<sumUtleggstrekk>4000</sumUtleggstrekk>"),
+            "{flat}"
+        );
+        assert!(
+            flat.contains(
+                "<utleggstrekk><beskrivelse>utleggstrekkSamordnet</beskrivelse>\
+                 <beloep>-4000</beloep><datoForUtleggstrekk>2026-03-25</datoForUtleggstrekk>"
+            ),
+            "{flat}"
+        );
+
+        let slip = payroll::payslip(&pool, company, run.id, kari)
+            .await
+            .unwrap();
+        assert_eq!(slip.deductions.len(), 1);
+        assert_eq!(slip.deductions[0].amount_ore, -400_000);
+        assert!(slip.deductions[0].text.contains(KID));
+        assert_eq!(slip.net_ore, 5_000_000 - 1_750_000 - 400_000);
+    }
+
+    /// §3 point 2: what was shown is what is booked.
+    #[tokio::test]
+    async fn a_change_after_the_preview_stops_the_run() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let order = register(&pool, company, kari, coordinated(400_000), by).await;
+        let poster = [entry(kari)];
+        let shown = preview(&pool, company, &poster).await.unwrap();
+
+        let v2 = g::change(
+            &pool,
+            company,
+            order,
+            VersionDraft {
+                draft: coordinated(450_000),
+                letter_id: None,
+                note: Some("Nytt brev".into()),
+            },
+            &Author {
+                person_id: by,
+                name: "Registrerer",
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(v2, 2);
+        let err = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("forhåndsvis"), "{err}");
+
+        let again = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(again.garnishment_set, vec![(order, 2)]);
+        let run = book(&pool, company, &poster, Some(&again.garnishment_set))
+            .await
+            .unwrap();
+        assert_eq!(
+            account_amount(&pool, run.voucher_id, "2610").await,
+            -450_000
+        );
+
+        // A stop is a version too, and the next month withholds nothing.
+        assert_eq!(
+            g::stop(
+                &pool,
+                company,
+                order,
+                None,
+                &Author {
+                    person_id: by,
+                    name: "R"
+                }
+            )
+            .await
+            .unwrap(),
+            3
+        );
+        let april =
+            payroll::preview_payroll(&pool, company, 2026, 4, date(2026, 4, 25), "I", &poster)
+                .await
+                .unwrap();
+        assert!(april.garnishment_set.is_empty());
+        assert!(april.lines[0].garnishments.is_empty());
+    }
+
+    /// Insert-only in the database itself, whatever the application does.
+    #[tokio::test]
+    async fn registrations_cannot_be_edited_or_deleted() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let order = register(&pool, company, kari, coordinated(400_000), by).await;
+        for sql in [
+            "update garnishment_version set amount_ore = 4000000 where garnishment_id = $1",
+            "delete from garnishment_version where garnishment_id = $1",
+            "update garnishment set kind = 'skatt' where id = $1",
+            "delete from garnishment where id = $1",
+        ] {
+            let err = sqlx::query(sql).bind(order).execute(&pool).await;
+            assert!(err.is_err(), "{sql} must be refused");
+        }
+        let letter: Uuid = sqlx::query_scalar(
+            "select letter_id from garnishment_version where garnishment_id = $1",
+        )
+        .bind(order)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            sqlx::query("update garnishment_letter set filename = 'x' where id = $1")
+                .bind(letter)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        // The letter comes back hash-checked.
+        let (_, _, bytes) = g::letter(&pool, company, letter).await.unwrap();
+        assert_eq!(bytes, b"%PDF-1.4 brev");
+    }
+
+    /// With an attestation policy, another person must approve before
+    /// anything is withheld; without one, nobody has to.
+    #[tokio::test]
+    async fn with_a_policy_a_registration_waits_for_another_person() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+        let registrar = person(&pool, "Lønnsansvarlig").await;
+        let attestant = person(&pool, "Daglig leder").await;
+        regnmed_db::approval::set_policy(&pool, company, true, None, None, None, "Test")
+            .await
+            .unwrap();
+        let order = register(&pool, company, kari, coordinated(400_000), registrar).await;
+        let poster = [entry(kari)];
+
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert!(shown.garnishment_set.is_empty());
+        assert_eq!(shown.lines[0].calculation.net_ore, 5_000_000 - 1_750_000);
+        assert!(
+            shown
+                .warnings
+                .iter()
+                .any(|w| w.contains("venter på attestering")),
+            "{:?}",
+            shown.warnings
+        );
+
+        let own = g::attest(
+            &pool,
+            company,
+            order,
+            1,
+            true,
+            None,
+            &Author {
+                person_id: registrar,
+                name: "Lønnsansvarlig",
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(own.to_string().contains("selv"), "{own}");
+        g::attest(
+            &pool,
+            company,
+            order,
+            1,
+            true,
+            None,
+            &Author {
+                person_id: attestant,
+                name: "Daglig leder",
+            },
+        )
+        .await
+        .unwrap();
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+
+        // A change waits again, while the attested version keeps running.
+        g::change(
+            &pool,
+            company,
+            order,
+            VersionDraft {
+                draft: coordinated(900_000),
+                letter_id: None,
+                note: None,
+            },
+            &Author {
+                person_id: registrar,
+                name: "Lønnsansvarlig",
+            },
+        )
+        .await
+        .unwrap();
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        assert_eq!(shown.garnishment_set, vec![(order, 1)]);
+        assert_eq!(shown.lines[0].garnishments[0].withheld_ore, 400_000);
+        let listed = g::list(&pool, company).await.unwrap();
+        assert_eq!(listed[0].status(), "aktiv, endringen venter på attestering");
+        assert!(
+            shown
+                .warnings
+                .iter()
+                .any(|w| w.contains("versjon 1 trekkes i stedet"))
+        );
+    }
+
+    /// Utleggstrekk skatt: one combined supplier post with the company's
+    /// own KID, refused until the settings say where to pay; each
+    /// employee's share reported as utleggstrekkSkatt. Øvrige are booked
+    /// with the letter's deadline and never reported.
+    #[tokio::test]
+    async fn tax_orders_are_paid_as_one_post_and_other_claims_are_not_reported() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 5_000_000).await;
+        let ola = employee(&pool, company, "15076500565", "Ola Tester", 4_000_000).await;
+        for e in [kari, ola] {
+            payroll::update_employment_details(&pool, company, e, &complete_details("974760673"))
+                .await
+                .unwrap();
+        }
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let tax_kari = register(&pool, company, kari, tax(1000), by).await;
+        let tax_ola = register(&pool, company, ola, tax(1250), by).await;
+        let other = register(
+            &pool,
+            company,
+            ola,
+            Draft {
+                kind: Kind::Other,
+                due_days: Some(10),
+                ..coordinated(100_000)
+            },
+            by,
+        )
+        .await;
+        let poster = [entry(kari), entry(ola)];
+
+        let err = preview(&pool, company, &poster).await.unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("KID")
+                && message.contains("kontonummer")
+                && message.contains("organisasjonsnummer"),
+            "{message}"
+        );
+        g::set_settings(
+            &pool,
+            company,
+            &g::Settings {
+                valid_from: Some(date(2026, 1, 1)),
+                tax_kid: Some("12345678903".into()),
+                tax_account: Some("6345.06.10110".into()),
+                tax_payee_orgnumber: Some(PAYEE.into()),
+                set_by: "Test".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        let mut expected = vec![(tax_kari, 1), (tax_ola, 1), (other, 1)];
+        expected.sort();
+        assert_eq!(shown.garnishment_set, expected);
+        let run = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap();
+        // 10 % of 50 000 + 12,5 % of 40 000 = 10 000, one post.
+        let posts: Vec<(i64, Option<String>, Option<NaiveDate>)> = sqlx::query_as(
+            "select e.amount_ore, t.kid, t.due_date from entry e
+             join account a on a.id = e.account_id
+             join payable_terms t on t.entry_id = e.id
+             where e.voucher_id = $1 and a.number = '2610' order by e.line_no",
+        )
+        .bind(run.voucher_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            posts,
+            vec![
+                (
+                    -1_000_000,
+                    Some("12345678903".into()),
+                    Some(date(2026, 3, 25))
+                ),
+                (-100_000, Some(KID.into()), Some(date(2026, 4, 4))),
+            ]
+        );
+
+        let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
+            .await
+            .unwrap();
+        let xml = regnmed_core::amelding::render(&draft.melding).unwrap();
+        xsd_valid(&xml);
+        let flat: String = xml.lines().map(str::trim).collect();
+        assert!(
+            flat.contains("<sumUtleggstrekk>10000</sumUtleggstrekk>"),
+            "{flat}"
+        );
+        assert_eq!(flat.matches("utleggstrekkSkatt").count(), 2);
+        assert!(
+            !flat.contains("<beloep>-1000</beloep>"),
+            "øvrige are not reported"
+        );
+    }
+
+    /// §3: as much as possible, never more, and never from the trekkfri
+    /// allowances; an existing 2610 that is not a supplier subledger is
+    /// left alone.
+    #[tokio::test]
+    async fn the_cap_and_the_account_fallback() {
+        let Some(pool) = pool().await else { return };
+        let company = company(&pool).await;
+        regnmed_db::ensure_account(&pool, company, "2610", "Noe annet")
+            .await
+            .unwrap();
+        let kari = employee(&pool, company, "26829398612", "Kari Utvikler", 1_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        register(&pool, company, kari, coordinated(900_000), by).await;
+        let poster = [entry(kari)];
+        let shown = preview(&pool, company, &poster).await.unwrap();
+        // 10 000 - 35 % = 6 500 left to take.
+        assert_eq!(shown.lines[0].garnishments[0].withheld_ore, 650_000);
+        assert_eq!(shown.lines[0].calculation.net_ore, 0);
+        assert!(
+            shown
+                .warnings
+                .iter()
+                .any(|w| w.contains("innkrevingsmyndigheten"))
+        );
+        assert_eq!(shown.garnishment_account.as_deref(), Some("2611"));
+        let run = book(&pool, company, &poster, Some(&shown.garnishment_set))
+            .await
+            .unwrap();
+        assert_eq!(
+            account_amount(&pool, run.voucher_id, "2611").await,
+            -650_000
+        );
+        assert_eq!(account_amount(&pool, run.voucher_id, "2610").await, 0);
+    }
+}

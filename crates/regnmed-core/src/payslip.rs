@@ -77,6 +77,10 @@ pub struct PayslipInput {
     /// not pay, so it sits between the trekk and the total. The taxable
     /// excess is an ordinary line in `lines`.
     pub tax_free_allowance_ore: i64,
+    /// Trekkpålegg withheld, one line per order with its text (negative
+    /// amounts). Arbeidsmiljøloven § 14-15 (4): the employee gets a
+    /// written statement of every deduction.
+    pub deductions: Vec<PayslipLine>,
     pub net_ore: i64,
     /// Feriepenger earned this month — money the employee has coming,
     /// not money paid now, so it is stated apart from the total.
@@ -253,6 +257,12 @@ pub fn render_payslip(input: &PayslipInput) -> Vec<u8> {
         ly += 14.0;
     }
 
+    for d in &input.deductions {
+        pdf.text(MARGIN, ly, 10.0, Font::Regular, &d.text);
+        pdf.text_right(RIGHT, ly, 10.0, Font::Regular, &kr(d.amount_ore));
+        ly += 14.0;
+    }
+
     ly += 6.0;
     pdf.rule(MARGIN, RIGHT, ly, 1.2);
     ly += 18.0;
@@ -346,6 +356,7 @@ mod tests {
             withholding_method: Some("35,00 %".into()),
             half_withholding: false,
             tax_free_allowance_ore: 0,
+            deductions: Vec::new(),
             net_ore: 3_250_000,
             holiday_pay_accrual_ore: 510_000,
             holiday_pay_bp: 1020,
@@ -364,6 +375,20 @@ mod tests {
         assert!(bytes.windows(9).any(|w| w == b"startxref"), "xref table");
         // Small enough to mail without thinking about it.
         assert!(bytes.len() < 8_000, "{} bytes", bytes.len());
+    }
+
+    /// The employee sees their own trekkpålegg (docs/trekkpalegg.md §2 step 4).
+    #[test]
+    fn the_slip_lists_each_garnishment() {
+        let mut slip = input();
+        slip.deductions.push(PayslipLine {
+            text: "Utleggstrekk, samordnet trekk (KID 6487719756, versjon 2)".into(),
+            amount_ore: -400_000,
+        });
+        slip.net_ore = 2_850_000;
+        let text = String::from_utf8_lossy(&render_payslip(&slip)).to_string();
+        assert!(text.contains("KID 6487719756, versjon 2"), "{text}");
+        assert!(text.contains("-4 000,00"), "{text}");
     }
 
     #[test]

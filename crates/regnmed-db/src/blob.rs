@@ -424,13 +424,14 @@ fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
 }
 
 /// The document columns, with the column holding each one's hash.
-const DOCUMENT_COLUMNS: [(&str, &str, &str); 6] = [
+const DOCUMENT_COLUMNS: [(&str, &str, &str); 7] = [
     ("attachment", "content", "sha256"),
     ("inbox_document", "content", "sha256"),
     ("inbox_mail_attachment", "content", "sha256"),
     ("inbox_mail", "raw", "raw_sha256"),
     ("expense", "receipt_content", "receipt_sha256"),
     ("balanse_dokumentasjon", "vedlegg", "vedlegg_sha256"),
+    ("garnishment_letter", "content", "sha256"),
 ];
 
 /// Moves every document still held in a row to the object store: write,
