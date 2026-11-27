@@ -46,6 +46,13 @@ den ligger på veien til å kunne sende inn skattemelding herfra — og
 etter mva-svaret gjelder det samme #8. Den rekkefølgen bør avgjøres
 bevisst, ikke oppdages når renderen er ferdig.
 
+**Oppdatert 2026-11-27:** mva-meldingen sendes nå inn etter at en
+person godkjenner med ID-porten rett fra regnmed (docs/mva.md, «Godkjenn
+og send») — uten #26. Den samme godkjenningsflyten er veien for
+skattemeldingen, og `skatteetaten:formueinntekt/skattemelding` er
+bestilt i test (SSV-6691, docs/gov.md). Avsnittene over beskriver
+hvorfor en person må godkjenne; det står fortsatt.
+
 Dokumentet kan altså bygges lenge før det kan leveres — akkurat som
 RF-1086 (docs/aksjonaer.md). Forskjellen er at RF-1086 venter på et
 scope som kan bestilles, mens dette venter på en annen
@@ -145,7 +152,8 @@ Samme mønster som RF-1086, som allerede har vist seg:
 3. Forhåndsvisning som endepunkt + portal, med `leverbar: false` og en
    liste over hindringene — så dokumentet kan kontrolleres av et
    menneske lenge før det kan sendes.
-4. Innsending sist, og først når ID-porten-veien er avklart (#26).
+4. Innsending sist, med samme ID-porten-godkjenning som mva-meldingen
+   (docs/mva.md).
 
 De spesialiserte delene (kraftverk, rederibeskatning, internprising,
 finansforetak) er ikke i målgruppen og skal nektes høylytt, ikke fylles
