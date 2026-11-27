@@ -138,7 +138,12 @@ async fn an_events_subscription_can_be_made_and_removed() {
     let endpoint = "https://api.test.regnmed.no/webhooks/altinn";
 
     let created = events
-        .subscribe_amelding(&tokens, COMPANY, endpoint)
+        .subscribe(
+            &tokens,
+            COMPANY,
+            endpoint,
+            regnmed_gov::altinn_events::AMELDING_RESOURCE,
+        )
         .await
         .unwrap();
     assert_eq!(created.end_point, endpoint);

@@ -629,6 +629,26 @@ async fn job_closed(s: &Setup, id: &str) {
     panic!("the job never finished");
 }
 
+/// The revisjon report's account of the filings.
+async fn audit_check(s: &Setup) -> Value {
+    let (status, report) = call(
+        &s.state,
+        &s.token,
+        "GET",
+        &format!("/companies/{}/reports/revisjon", s.company),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    report["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Mva-meldinger")
+        .cloned()
+        .expect("the Mva-meldinger check")
+}
+
 async fn grants(s: &Setup, id: &str) -> i64 {
     sqlx::query_scalar("select count(*) from vat_filing_grant where filing_id = $1")
         .bind(id.parse::<Uuid>().unwrap())
@@ -671,6 +691,20 @@ async fn an_approved_melding_is_filed_and_the_answer_arrives_without_anyone() {
     let done = read(&s, &id).await;
     assert_eq!(done["status"], "kvittert", "{done}");
     assert_eq!(grants(&s, &id).await, 0, "the token is gone with the work");
+
+    // The revisor sees the filing and can compare the receipt byte for byte.
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], true, "{check}");
+    let detail = check["detalj"].as_str().unwrap();
+    let receipt = hex::encode(Sha256::digest(b"%PDF-receipt"));
+    assert!(
+        detail.contains("2026 termin 1 kvittert, godkjent av Kari Nordmann"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(&format!("kvittering sha256 {receipt}")),
+        "{detail}"
+    );
     let (status, _) = call(
         &s.state,
         &s.token,
@@ -682,7 +716,80 @@ async fn an_approved_melding_is_filed_and_the_answer_arrives_without_anyone() {
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
-        "a filed period stays filed"
+        "the same figures again correct nothing"
+    );
+}
+
+/// A correction is a new complete melding for the term; the last one
+/// filed counts (Skatteetaten's FAQ, docs/mva.md).
+#[tokio::test]
+async fn a_delivered_term_is_corrected_with_a_new_complete_melding() {
+    let Some(s) = setup().await else { return };
+    let (first, _) = approved_and_settled(&s).await;
+    let uri = format!("/companies/{}/vat-filings", s.company);
+    let (status, body) = call(
+        &s.state,
+        &s.token,
+        "POST",
+        &uri,
+        json!({ "year": 2026, "period": 1 }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "no correction before the answer: {body}"
+    );
+    assert!(body.to_string().contains("venter på svar"), "{body}");
+    s.mock.lock().unwrap().feedback = true;
+    regnmed_db::vat_filing::reconcile(&s.state.pool, &s.worker)
+        .await
+        .unwrap();
+    assert_eq!(read(&s, &first).await["status"], "kvittert");
+
+    let (status, body) = call(
+        &s.state,
+        &s.token,
+        "POST",
+        &uri,
+        json!({ "year": 2026, "period": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("ingenting å korrigere"), "{body}");
+
+    regnmed_db::post_voucher(&s.state.pool, s.company, &sale(4_000_00), "test")
+        .await
+        .unwrap();
+    s.mock.lock().unwrap().feedback = false;
+    let (second, login) = start(&s).await;
+    assert_ne!(second, first);
+    assert_eq!(read(&s, &second).await["korrigerer"], first);
+    let (status, body) = approve(&s, &s.token, &second, &login).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(settled(&s, &second).await["status"], "sendt");
+    s.mock.lock().unwrap().feedback = true;
+    regnmed_db::vat_filing::reconcile(&s.state.pool, &s.worker)
+        .await
+        .unwrap();
+    let corrected = read(&s, &second).await;
+    assert_eq!(corrected["status"], "kvittert", "{corrected}");
+    assert_eq!(
+        s.mock.lock().unwrap().creates,
+        2,
+        "a new instance, not the old one"
+    );
+    assert_eq!(
+        read(&s, &first).await["status"],
+        "kvittert",
+        "the history stays"
+    );
+
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(detail.contains("2026 termin 1 kvittert"), "{detail}");
+    assert!(
+        detail.contains("2026 termin 1 (korrigert melding) kvittert"),
+        "{detail}"
     );
 }
 
@@ -783,6 +890,11 @@ async fn a_changed_ledger_stops_an_unsent_instance_but_not_a_sent_one() {
     let (id, filing) = approved_and_settled(&s).await;
     assert_eq!(filing["status"], "feilet", "{filing}");
     assert!(!filing["kan_avbrytes"].as_bool().unwrap());
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(
+        detail.contains("påbegynt, ikke bekreftet innsending"),
+        "{detail}"
+    );
     regnmed_db::post_voucher(&s.state.pool, s.company, &sale(4_000_00), "test")
         .await
         .unwrap();
@@ -790,6 +902,8 @@ async fn a_changed_ledger_stops_an_unsent_instance_but_not_a_sent_one() {
     let stopped = again(&s, &id).await;
     assert_eq!(stopped["status"], "avbrutt", "{stopped}");
     assert_eq!(s.mock.lock().unwrap().task, 1, "still not confirmed");
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(detail.contains("1 forsøk som ikke ble sendt"), "{detail}");
 
     let (next, _) = start(&s).await;
     assert_ne!(next, id);
@@ -1440,6 +1554,8 @@ async fn a_person_closes_an_unresolved_filing_with_a_note() {
     s.mock.lock().unwrap().create_fails = Some(502);
     let (id, filing) = approved_and_settled(&s).await;
     assert_eq!(filing["status"], "uavklart");
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], false, "an unknown fate is an avvik: {check}");
     let uri = format!("/companies/{}/vat-filings/{id}/close-unresolved", s.company);
 
     for body in [
@@ -1463,6 +1579,7 @@ async fn a_person_closes_an_unresolved_filing_with_a_note() {
     let (status, closed) = call(&s.state, &s.token, "POST", &uri, body.clone()).await;
     assert_eq!(status, StatusCode::OK, "{closed}");
     assert_eq!(closed["status"], "lukket_etter_kontroll");
+    assert_eq!(audit_check(&s).await["ok"], true, "closed with a finding");
     let events = regnmed_db::vat_filing::events(&s.state.pool, id.parse().unwrap())
         .await
         .unwrap();
@@ -1605,6 +1722,15 @@ async fn a_term_found_delivered_stays_closed() {
     assert_eq!(closed["lukking"]["notat"], "Kvittering i Altinn");
     assert_eq!(closed["kan_godkjennes"], false);
     assert_eq!(closed["dokumenter"], json!([]), "regnmed holds no receipt");
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], true, "{check}");
+    assert!(
+        check["detalj"]
+            .as_str()
+            .unwrap()
+            .contains("2026 termin 1 levert ifølge personens kontroll i Altinn"),
+        "{check}"
+    );
     let kinds = event_kinds(&s, &id).await;
     assert!(!kinds.contains(&"sendt".to_string()));
     assert!(!kinds.contains(&"kvittert".to_string()));
@@ -1620,8 +1746,8 @@ async fn a_term_found_delivered_stays_closed() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
-        body.to_string().contains("levert ifølge kontrollen"),
-        "{body}"
+        body.to_string().contains("ingenting å korrigere"),
+        "a delivered term only takes a correction: {body}"
     );
     assert_eq!(s.mock.lock().unwrap().creates, 1);
 }

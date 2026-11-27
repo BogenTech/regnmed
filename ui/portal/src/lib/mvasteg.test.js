@@ -31,7 +31,14 @@ test("nothing is offered where the server says no", () => {
   const steg = nesteSteg(filing("uavklart", { kan_godkjennes: false }));
   assert.equal(steg.handling, null);
   assert.equal(steg.poll, null);
-  assert.equal(nesteSteg(filing("kvittert", { kan_godkjennes: false })).handling, null);
+});
+
+test("a delivered term is offered only as a correction", () => {
+  assert.deepEqual(nesteSteg(filing("kvittert", { kan_godkjennes: false })), {
+    handling: "korriger",
+    poll: null,
+    stoppet: false,
+  });
 });
 
 test("a closed attempt or no filing starts fresh", () => {
@@ -54,10 +61,10 @@ test("a stopped run with an instance never suggests nothing was sent", () => {
   assert.match(stoppTekst(filing("godkjent", { kan_vaere_sendt: false })), /fortsetter vi/);
 });
 
-test("a term a person found delivered is never offered again", () => {
+test("a term a person found delivered is never offered as a fresh filing", () => {
   const lukking = { funn: "levert" };
   const steg = nesteSteg(filing("lukket_etter_kontroll", { kan_godkjennes: false, lukking }));
-  assert.deepEqual(steg, { handling: null, poll: null, stoppet: false });
+  assert.deepEqual(steg, { handling: "korriger", poll: null, stoppet: false });
   assert.match(lukkeTekst(lukking), /ifølge kontroll i Altinn/);
   assert.match(lukkeTekst(lukking), /ikke hentet kvittering/);
   assert.match(lukkeTekst({ funn: "ikke_levert" }), /Ikke levert/);

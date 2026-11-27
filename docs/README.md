@@ -47,6 +47,7 @@ CLAUDE.md).
 | [revisjon.md](revisjon.md) | Revisorrollen: read-only access and the one-click verification report |
 | [migration.md](migration.md) | SAF-T import: the universal migration path |
 | [ehf.md](ehf.md) | EHF/PEPPOL ut og inn: dokumentet vi sender og leser, transporten som egen tier |
+| [inntektsmelding.md](inntektsmelding.md) | Inntektsmelding til Nav (#184) — forslag, ikke bygget: Navs API-er slik de er dokumentert, hva lønnen mangler, flyten og avgjørelsene som gjenstår |
 | [trekkpalegg.md](trekkpalegg.md) | Trekkpålegg (#334) — forslag, ikke bygget: Skatteetatens API slik det er dokumentert, flyten fra henting til a-melding, avgjørelsene som er tatt før koden skrives, og pålegg registrert for hånd (#339) |
 | [efaktura.md](efaktura.md) | E-faktura ut fra 1.1.2027 — forslag, ikke bygget: lovkravet (ELMA-regelen), leverandør framfor eget aksesspunkt, én utsendelseslogg, faser og operatørens avgjørelser |
 | [bank.md](bank.md) | Bank reconciliation: camt.053 import, matching, connectivity tiers |

@@ -626,11 +626,18 @@ async fn events_cannot_be_changed_or_deleted() {
 
 /// Skatteetatens RF-1086 API in a box: records (path, idempotencyKey) per
 /// call and refuses the first `fail_confirms` bekreft calls.
+/// Skatteetaten's filing API, Dialogporten and Altinn Events. `calls` holds
+/// the filing calls with their keys; `altinn` the subscriptions made
+/// (`subscribe <resourceFilter>`) and dialogs read (`dialog <id>`). The
+/// dialog id is fresh per mock: the dev database is shared between runs,
+/// and an event names every waiting filing in its dialog.
 async fn mock_skatteetaten(
     fail_confirms: usize,
 ) -> (
     String,
     std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    String,
 ) {
     use axum::extract::{Path, State};
     use axum::http::HeaderMap;
@@ -644,6 +651,10 @@ async fn mock_skatteetaten(
         c.iter().filter(|(p, _)| p.ends_with("bekreft")).count()
     }
     let calls: Calls = Arc::default();
+    let altinn: Arc<Mutex<Vec<String>>> = Arc::default();
+    let (subscribed, read) = (altinn.clone(), altinn.clone());
+    let dialog = format!("d-{}", Uuid::new_v4());
+    let dialog_in_receipt = dialog.clone();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let app = axum::Router::new()
@@ -675,7 +686,9 @@ async fn mock_skatteetaten(
             post(
                 move |State(c): State<Calls>,
                       Path((year, main)): Path<(String, String)>,
-                      h: HeaderMap| async move {
+                      h: HeaderMap| {
+                    let dialog = dialog_in_receipt.clone();
+                    async move {
                     if record(&c, format!("{year}/{main}/bekreft"), &h) <= fail_confirms {
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -686,16 +699,35 @@ async fn mock_skatteetaten(
                         StatusCode::OK,
                         axum::Json(json!({
                             "oppgavegiversLeveranseReferanse": "h-1",
-                            "dialogId": "d-1",
+                            "dialogId": dialog,
                             "forsendelseId": "f-1"
                         })),
                     )
+                    }
                 },
             ),
         )
         .route(
+            "/authentication/api/v1/exchange/maskinporten",
+            axum::routing::get(|| async { "\"altinn-token\"" }),
+        )
+        .route(
+            "/events/api/v1/subscriptions",
+            post(move |axum::Json(body): axum::Json<serde_json::Value>| async move {
+                subscribed.lock().unwrap().push(format!(
+                    "subscribe {}",
+                    body["resourceFilter"].as_str().unwrap()
+                ));
+                (
+                    StatusCode::CREATED,
+                    axum::Json(json!({"id": 7, "endPoint": body["endPoint"]})),
+                )
+            }),
+        )
+        .route(
             "/dp/enduser/dialogs/{id}",
-            axum::routing::get(|| async {
+            axum::routing::get(move |Path(id): Path<String>| async move {
+                read.lock().unwrap().push(format!("dialog {id}"));
                 axum::Json(json!({"transmissions": [
                     {"id": "f-1", "type": "Submission"},
                     {"id": "a-1", "type": "Acceptance", "relatedTransmissionId": "f-1",
@@ -708,7 +740,7 @@ async fn mock_skatteetaten(
         )
         .with_state(calls.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (base, calls)
+    (base, calls, altinn, dialog)
 }
 
 async fn add_shareholder(
@@ -792,7 +824,7 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
         "{body}"
     );
 
-    let (mock, calls) = mock_skatteetaten(2).await;
+    let (mock, calls, altinn, dialog) = mock_skatteetaten(2).await;
     state.shareholder_return = Some(std::sync::Arc::new(regnmed_api::ShareholderReturnRail {
         tokens: regnmed_gov::maskinporten::TokenProvider::new(
             regnmed_gov::maskinporten::MaskinportenConfig {
@@ -808,6 +840,8 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
             format!("{mock}/v1"),
             format!("{mock}/dp"),
         ),
+        events: regnmed_gov::altinn_events::EventsClient::new(mock.clone()),
+        events_endpoint: Some("https://regnmed.test/webhooks/altinn".into()),
     }));
 
     // Not before the company has accepted the terms — and nothing is sent.
@@ -868,12 +902,48 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     assert_eq!(body["innsendinger"].as_array().unwrap().len(), 2);
     assert_eq!(body["innsendinger"][0]["status"], "levert");
 
-    // Skatteetaten's answer comes from Dialogporten, and is stored.
+    // The delivery subscribed the company to its RF-1086 dialogs (the
+    // failed attempts did not: nothing reached Skatteetaten).
+    assert_eq!(
+        *altinn.lock().unwrap(),
+        ["subscribe urn:altinn:resource:ske-innrapportering-aksjonaerregisteroppgave"]
+    );
+
+    // Skatteetaten's answer arrives as an Altinn event. The event is only
+    // a hint: one naming another dialog or another resource reads nothing.
+    let event = |resource: &str, dialog: &str| {
+        json!({"type": "dialogporten.dialog.transmission.created.v1",
+               "resource": format!("urn:altinn:resource:{resource}"),
+               "resourceinstance": dialog})
+    };
+    for other in [
+        event("ske-innrapportering-aksjonaerregisteroppgave", "d-other"),
+        event("something-else", &dialog),
+    ] {
+        let (status, _) = call(&state, "", "POST", "/webhooks/altinn", Some(other)).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    assert_eq!(altinn.lock().unwrap().len(), 1, "no dialog was read");
+    let ours = event("ske-innrapportering-aksjonaerregisteroppgave", &dialog);
+    let (status, _) = call(&state, "", "POST", "/webhooks/altinn", Some(ours.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = call(&state, &token, "GET", &submissions, None).await;
+    assert_eq!(body["innsendinger"][0]["status"], "godkjent", "{body}");
+    // Answered: the same event again reads nothing.
+    call(&state, "", "POST", "/webhooks/altinn", Some(ours)).await;
+    assert_eq!(
+        altinn.lock().unwrap()[1..],
+        [format!("dialog {dialog}")],
+        "read once, by the event"
+    );
+
+    // The button still answers, from what is stored.
     let delivered = body["innsendinger"][0]["id"].as_str().unwrap().to_string();
     let outcome = format!("{base}/reports/aksjonaeroppgave/submissions/{delivered}/outcome");
     let (status, body) = call(&state, &token, "POST", &outcome, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "godkjent");
+    assert_eq!(altinn.lock().unwrap().len(), 2, "nothing fetched twice");
     assert!(
         body["svar"]["tittel"]
             .as_str()
@@ -902,8 +972,19 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let register = body.as_array().unwrap();
+    // The Altinn subscription is an authority call too, and listed.
+    let (register, subscriptions): (Vec<_>, Vec<_>) = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .partition(|c| c["skjema"] == "aksjonaerregisteroppgave");
     assert_eq!(register.len(), 2, "{body}");
+    assert_eq!(subscriptions.len(), 1, "{body}");
+    assert_eq!(subscriptions[0]["skjema"], "altinn-hendelser");
+    assert_eq!(
+        subscriptions[0]["gjelder"],
+        "urn:altinn:resource:ske-innrapportering-aksjonaerregisteroppgave"
+    );
     assert!(
         register
             .iter()
@@ -944,7 +1025,11 @@ async fn the_return_is_filed_once_and_retried_with_the_same_keys() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{seen}");
-    assert_eq!(seen.as_array().unwrap().len(), 2);
+    assert_eq!(
+        seen.as_array().unwrap().len(),
+        3,
+        "two filings, one subscription"
+    );
     assert!(!seen.to_string().contains("GLD_023"), "{seen}");
     assert!(!seen.to_string().contains("\"feil\""), "{seen}");
 }

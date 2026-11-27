@@ -88,6 +88,7 @@ async fn view(state: &AppState, filing: &Filing, events: &[Event]) -> Result<Val
         "kan_avbrytes": vat_filing::can_abandon(events, open_job),
         "kan_lukkes": vat_filing::can_close_unresolved(events, open_job),
         "kan_vaere_sendt": vat_filing::may_have_reached_altinn(events),
+        "korrigerer": vat_filing::corrects(events),
         "lukking": vat_filing::closing(events).map(|e| json!({
             "funn": e.detail["funn"],
             "notat": e.detail["notat"],

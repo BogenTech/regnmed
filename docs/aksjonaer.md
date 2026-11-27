@@ -131,11 +131,11 @@ Aksjonærnavn er begrenset til 35 tegn i skjemaet. Et langt selskapsnavn
 **kortes ned** framfor å stoppe en ellers riktig levering — identiteten
 ligger i organisasjonsnummeret, ikke i navnet.
 
-### Transaksjonskodene (verifisert 2026-11-11)
+### Transaksjonskodene (verifisert 2026-11-11, utvidet 2026-11-27)
 
 Hver bevegelse rapporteres med en **transaksjonstypekode**
 (`AksjeErvervType` i post 23, `AksjerArvMvOmsattType` i post 25,
-`AksjerNyutstedteStiftelseMvType` i post 9). Tre kilder, alle
+`AksjerNyutstedteStiftelseMvType` i post 9). Fire kilder, alle
 Skatteetatens egne:
 
 1. **XSD-ene** (vendret i `docs/aksjonaer/`, hentet fra
@@ -148,7 +148,11 @@ Skatteetatens egne:
    aksjonarregisteroppgaven-sbs/) parer kodene med navn i
    valideringsreglene, f.eks. «Ved 'Arv/gave m/skattem. kontinuitet' (GK)
    må avgivers fødselsnummer …».
-3. **Eksempelfilene** på samme side (`stiftelseavselskap_*`,
+3. **«Spesifikasjon til OR»** for RF-1086 og RF-1086-U (2024, samme
+   side, `rf-1086u_spesifikasjon_til_or_2024.xls` og
+   `rf-1086_spesifikasjon_til_or_2024.xls`): arket «Kodelister» er hele
+   kodelisten med navn, post for post.
+4. **Eksempelfilene** på samme side (`stiftelseavselskap_*`,
    `kjopogsalg_*`, `skattemessig_kontinuitet_*`, …).
 
 En kode legges inn i `TransactionType::code()` **bare når en av disse
@@ -165,6 +169,15 @@ navngir den**, med kilden i en kommentar:
 | avgiftspliktig arv/gave med kontinuitet (begge sider) | `AK` | design VAL_56, VAL_57 |
 | overføring med skattemessig kontinuitet (begge sider) | `OK` | eksempel `skattemessig_kontinuitet_*` |
 | fordeling mellom ektefeller ved skilsmisse (begge sider) | `ES` | design VAL_56, VAL_57 |
+| arv uten skattemessig kontinuitet (begge sider) | `A` | kodeliste post 23 og 25 |
+| gave uten skattemessig kontinuitet (begge sider) | `G` | kodeliste post 23 og 25 |
+| konsernintern overføring (begge sider) | `O` | kodeliste post 23 og 25 |
+| nyemisjon ved konvertering av fordring | `NF` | kodeliste post 9 og 23 |
+| nyemisjon ved konsernintern overføring | `NK` | kodeliste post 9 og 23 |
+
+`A`, `G`, `O`, `NF` og `NK` kom til 2026-11-27, da kodelistearket ble
+lest, og ble godkjent i testmiljøet samme dag (se under). `NF` og `NK`
+er emisjoner og står derfor også i post 9, som `N`.
 
 **En feil vi fant og rettet:** regnmed rapporterte stiftelse som `N`,
 etter eksempelet i API-dokumentasjonen. Både etatens egne eksempelfiler
@@ -180,18 +193,25 @@ egne **avgangstyper** for de fire (`…_avgang`, samme navn og kode), og
 typelisten forteller portalen hvilken type motparten får
 (`motpart_type`). Mangler motpartens nummer, nekter rendringen.
 
+`A`, `G` og `O` er også overdragelser mellom to aksjonærer og har fått
+avgangstyper på samme måte. Aksjeeierboken krever motpart, slik at
+aksjene ikke oppstår fra ingenting, men oppgaven oppgir den ikke: designet
+krever motpartens nummer bare ved `GK`, `AK`, `OK`, `ES` og `GS`.
+
 **Fortsatt uten kode, med vilje:**
 
-- **Ingen kilde navngir koden:** arv og gave *uten* kontinuitet (koden er
-  etter alt å dømme `A`/`G`, men ingen kilde sier det), konsernintern
-  overføring, nyemisjon ved konvertering av fordring og ved konsernintern
-  overføring, stiftelse/nyemisjon med inntektsfradrag (`TH` heter
-  «Fradrag for investering i oppstartsselskap» — trolig det samme, men
-  ikke med det navnet).
+- **Koden er navngitt, men post 9 krever mer enn vi har:**
+  stiftelse/nyemisjon med inntektsfradrag (`TN`). Designet kontrollerer
+  antall × (pålydende + overkurs) mot beløpsgrenser, og hovedskjemaet
+  oppgir overkurs som 0. `TH` («Fradrag for investering i
+  oppstartsselskap») er en egen kode.
+- **Ingen kilde navngir koden:** `KI` og `NE` står i XSD-ens liste for
+  post 23, men ikke i kodelisten.
 - **Koden er navngitt, men hovedskjemaets side er ikke bygget:** fusjon
   og fisjon (`UP`/`IP`, `U`/`I`), omdanning (`M`), flytting (`FS`),
-  likvidasjon (`L`, `PLS`), sletting av egne aksjer (`W`), spleis (`V`)
-  og hele post 24 (fondsemisjon `E`, splitt `S`, sammenslåing `SD`).
+  likvidasjon (`L`, `PLS`), sletting av egne aksjer (`W`), spleis (`V`,
+  post 26) og hele post 24 (fondsemisjon `E`, splitt `S`, sammenslåing
+  `SD`).
   Disse hendelsene skal også stå på selskapsnivå, og en oppgave der
   underskjemaet sier én ting og hovedskjemaet ingenting, er feil selv om
   koden er riktig.
@@ -205,6 +225,14 @@ fortsatt tallene og lister hindringene under `leverbar: false`; bare
 
 Testen `only_verified_codes_exist` teller kodene og krever at hver
 av dem står i XSD-ens liste for posten den rapporteres i.
+
+To uoverensstemmelser i Skatteetatens egne kilder, notert så ingen
+retter dem i blinde: kodelisten kaller `AE` «Bytte av aksjer i selskap
+utenfor EØS», mens rettledningen (RF-1087B) og designet sier «til/fra
+selskap utenfor Norge». Vi bruker rettledningens navn. Og RF-1086-U-arket
+nummererer aksjeklassene annerledes enn RF-1086-arket (`03` = ordinære),
+men alle eksempelfilene bruker `01` for ordinære aksjer i begge
+skjemaene, og testmiljøet godkjente det.
 
 ## Innsending (#182)
 
@@ -222,7 +250,8 @@ tre steg, hvert med sin egen `idempotencyKey`:
 
 Hvert kall bærer **systembrukertokenet for selskapet**
 (`TokenProvider::token_for_systemuser`, scope
-`skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten`).
+`skatteetaten:innrapporteringaksjonaerregisteroppgave digdir:dialogporten
+altinn:events.subscribe` — det siste for svarabonnementet).
 Klienten er
 `regnmed-gov::shareholder_return`; base-URL-en er testmiljøet
 (`https://api-test.sits.no/api/aksjonaerregister/v1`) med mindre
@@ -233,7 +262,9 @@ ikke der.
 syntetiske Tenor-selskapet 311032240 med stiftelse (`T`), salg (`K`/`R`)
 og overføring med skattemessig kontinuitet (`OK` på begge sider, med
 motpartens fødselsnummer) ble tatt imot og **godkjent** av Skatteetaten
-etter om lag halvannet minutt
+etter om lag halvannet minutt. 2026-11-27 ble en oppgave med i tillegg
+gave (`G`), arv (`A`) og konsernintern overføring (`O`) på begge sider og
+emisjonene `NF` og `NK` i post 9 og 23 også godkjent
 (`crates/regnmed-gov/tests/shareholder_return_live.rs`, kjøres for hånd
 med `AKSJONAER_LIVE=1`; testen venter på svaret og krever godkjenning).
 
@@ -249,6 +280,18 @@ XML. `POST …/submissions/{id}/outcome` henter og lagrer det
 (hendelse `outcome`, én per innsending); statusen blir `godkjent`,
 `avvist` eller `behandlet`. Portalen har en knapp for det, og lenker til
 tilbakemeldingsdokumentene (de åpnes med innlogging hos Skatteetaten).
+
+**Svaret kommer av seg selv** når `ALTINN_EVENTS_ENDPOINT` er satt, på
+samme skinne som a-meldingen (docs/lonn.md, «Tilbakemelding som
+hendelse»). Første leverte oppgave abonnerer selskapet på nye overføringer
+i dialogene for ressursen
+`urn:altinn:resource:ske-innrapportering-aksjonaerregisteroppgave` (lest
+av en ekte RF-1086-dialog i TT02). Altinn poster hendelsen til
+`/webhooks/altinn`, og regnmed henter svaret med sin egen klient, bare
+for innsendinger levert i den dialogen som ennå venter. Hendelsen er
+usignert og brukes bare som et hint om hvilken dialog vi skal se i.
+Knappen består som reserve. Abonnementet står i registeret over
+myndighetskall som de andre (docs/vilkar-teknisk.md).
 
 Alle innsendinger for samme selskap og år havner i **samme dialog**, hver
 med sin egen `forsendelseId`; en ny oppgave for et år som alt er levert
@@ -283,8 +326,6 @@ levering og står på innsendingen for alltid.
   godtatt dem (docs/vilkar-teknisk.md, «Aksept»), men teksten er fortsatt et
   utkast som venter på advokat.
 - **Korrigering** av en levert oppgave.
-- **Svaret automatisk** (Altinn Events, slik a-meldingen har det) — i dag
-  hentes det med knappen.
 
 ## Endepunkter
 

@@ -57,12 +57,14 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, henter skattekort og trekkpålegg og leverer aksjonærregisteroppgaven.",
+        "Leverer a-melding, aksjonærregisteroppgaven, skattemeldingen og SAF-T ved kontroll, "
+        "og henter skattekort og trekkpålegg.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, hentar skattekort og trekkpålegg og leverer aksjonærregisteroppgåva.",
+        "Leverer a-melding, aksjonærregisteroppgåva, skattemeldinga og SAF-T ved kontroll, "
+        "og hentar skattekort og trekkpålegg.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
         "Files the a-melding, fetches tax cards and garnishment orders, and files the "
-        "shareholder register return.",
+        "shareholder register return, the tax return and SAF-T for tax audits.",
     },
     # Egen virksomhet: Skatteetatens ressurser (API-dokumentasjonen, ikke gjettet).
     "rights": [
@@ -73,6 +75,11 @@ SYSTEM = {
             "ske-innrapportering-aksjonaerregisteroppgave",
             # Garnishment orders (#334, docs/trekkpalegg.md); scope ordered in SSV-6690.
             "ske-informasjon-om-trekkpaalegg",
+            # SAF-T delivered in a control (#183, docs/saft/README.md); scope ordered in SSV-6691.
+            "ske-kontroll",
+            # Skattemelding with næringsspesifikasjon (#11): Skatteetaten's Altinn 3 app,
+            # needed for both their API and Altinn's (onboarding guide, docs/gov.md); scope in SSV-6691.
+            "app_skd_formueinntekt-skattemelding-v2",
         )
     ],
     # Regnskapsfører: de tre pakkene ER-rollen gir, alle fra REGN (regel 2).
@@ -158,7 +165,7 @@ if __name__ == "__main__":
     elif cmd == "update":
         call("PUT", f"{PLATFORM}/{SYSTEM_ID}", SYSTEM)
     elif cmd == "request" and len(sys.argv) == 3:
-        # Egen virksomhet: alle tre ressursene. Svaret har confirmUrl, som
+        # Egen virksomhet: alle ressursene i `rights`. Svaret har confirmUrl, som
         # daglig leder (eller en med tilgangsstyring) åpner og godkjenner.
         call("POST", REQUESTS, {
             "systemId": SYSTEM_ID,

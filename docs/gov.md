@@ -79,7 +79,41 @@ Gjenstår:
    visning i sluttbrukersystem», og tilgang krever et lovregulert
    behandlingsgrunnlag. Mva-registreringen forblir et manuelt flagg i
    firmaopplysningene (docs/faktura.md).
-3. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
+   `Krav og betalinger` (`skatteetaten:kravogbetalinger`, rettighetspakken
+   «regnskapssystem» med systembruker) ble ikke krysset av i skjemaet,
+   men er **bedt om som kommentar på SSV-6690 2026-11-27**, ikke som ny
+   sak: likviditetsoversikten (#36) kan vise kundens egne krav og
+   innbetalinger. Tjenesten er i pilot; kommentaren spør om vi heller
+   skal gå via fremtidensinnkreving@skatteetaten.no. Vilkår fra
+   API-dokumentasjonen (lest 2026-11-27): leverandøren må være integrert
+   mot minst ett innrapporterings-API, og kunden må ha rapportert gjennom
+   oss minst én gang. Tilgangspakkene er `ansvarlig-revisor`,
+   `krav-og-utlegg`, `regnskapsforer-med-signeringsrettighet`,
+   `-uten-signeringsrettighet` og `revisormedarbeider`: regnskapsfører-
+   ruten virker med pakkene systemet alt har, mens egen-virksomhet-ruten
+   trenger en ressurs-id i systemets `rights` som dokumentasjonen ikke
+   oppgir — spør om den når scopet tildeles.
+3. **Innrapportering, bestilt 2026-11-27, sak SSV-6691** (test): `skatteetaten:innleveringkontroll` (#183),
+   `skatteetaten:formueinntekt/skattemelding` (#11),
+   `skatteetaten:skattdialogdokument` og
+   `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende`
+   (RF-1321), pluss en kontrollsak på en syntetisk Tenor-organisasjon.
+   `skattdialogdokument` har ingen egen tjeneste i skjemaet og ble bedt
+   om i beskrivelsen — sjekk at tildelingen faktisk tar den med.
+   Tjenesteområdene i skjemaet er Kontrollopplysninger, Skattemeldingen
+   og Tredjepartsopplysninger. Kontrollopplysninger og RF-1321 burde
+   vært med i SSV-5760: juli-kartleggingen leste bare `docs/api/` i Skatteetatens
+   dokumentasjon, og kontrollopplysninger står under
+   `docs/anvendelsesomraader/`. Skattemelding-scopet var derimot
+   bevisst utsatt til innsendingsveien fantes (se under). RF-1321 ble feilplassert som
+   bank/forsikring — plikten gjelder **alle næringsdrivende som kjøper
+   tjenester fra selvstendig næringsdrivende uten fast forretningssted**
+   (skatteetaten.no, lest 2026-11-27). **Regelen: én sak per KATEGORI
+   (Innrapportering, Hente data, Deling), ikke per tilgang** — hvert
+   skjema har sin egen tjenesteliste, og én sak kan ta mange
+   tjenesteområder. Kartlegg alle 114 sidene (begge mappene) før neste
+   bestilling.
+4. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
    2026-08-11**: `altinn:instances.read`/`write` bestilles i Digdirs
    registreringsskjema for sluttbrukersystem, ikke hos Skatteetaten.
    Den opprinnelige noten sto slik, og var riktig om skjemaet vi da
@@ -87,7 +121,7 @@ Gjenstår:
    (`altinn:instances.read`/`write` mot mva-melding-appen) hadde ikke
    noe felt i skjemaet — still spørsmålet som oppfølging på SSV-5760
    når saken får en behandler.
-4. Produksjon bestilles i samme skjema når testintegrasjonen er
+5. Produksjon bestilles i samme skjema når testintegrasjonen er
    verifisert.
 
 The **test client exists** with an RS256 keypair registered on it; its
@@ -163,6 +197,19 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
 | `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning. Bestilt i test, SSV-6690 |
 | `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | bestilt i test, SSV-6690 |
+| `skatteetaten:kravogbetalinger` | kundens egne krav og innbetalinger i likviditetsoversikten (#36) | bedt om som kommentar på SSV-6690 2026-11-27; tjenesten er i pilot |
+| `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
+| `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
+| `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bedt om i beskrivelsen av SSV-6691 (ingen egen tjeneste i skjemaet) |
+| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test, SSV-6691 |
+
+De fire nederste radene er bestilt før koden finnes, og det er et
+bevisst unntak fra overskriften: én sak per kategori og ukers ledetid
+gjør det dyrere å bestille hver for seg (punkt 3 under «Gjenstår»).
+Tre av dem er innrapportering — vi sender, vi henter ingenting.
+`skattdialogdokument` henter bare dokumenter i dialogene til kunden
+som har gitt oss systembruker, altså kundens egne opplysninger, ikke
+andres; dataminimeringsregelen under gjelder opplysninger om andre.
 
 `skatteetaten:mvaregisteravgiftssubjekt` sto her til 2026-11-26, men
 tilbys ikke sluttbrukersystemer (punkt 2 under «Gjenstår»).
@@ -174,7 +221,6 @@ Skatteetaten spør om:
 | Scope | Til |
 | --- | --- |
 | `skatteetaten:skattemeldingupersonlig`, `skatteetaten:naeringsspesifikasjon` | skattemelding m/ næringsspesifikasjon (#11, «later») |
-| `skatteetaten:formueinntekt/skattemelding` | innsending av skattemelding (#11) |
 
 ⚠️ **Men innsending av skattemelding går ikke på denne skinnen i det
 hele tatt.** Skatteetaten skriver selv, om overgangen til Altinn 3:
@@ -182,12 +228,33 @@ hele tatt.** Skatteetaten skriver selv, om overgangen til Altinn 3:
 inntektsår 2025 gir Maskinporten bare **lesetilgang** — hente gjeldende
 skattemelding og PDF av den fastsatte. Å bestille scopene over gir
 altså ikke en innsendingsvei; den krever en innlogget person.
-Konsekvensene for #11 står i docs/skattemelding.md.
+Konsekvensene for #11 står i docs/skattemelding.md. Siden
+mva-meldingen nå sendes inn etter at en person godkjenner med
+ID-porten (#8, docs/mva.md), finnes veien, og
+`skatteetaten:formueinntekt/skattemelding` ble derfor bestilt
+2026-11-27 (SSV-6691, tabellen over).
 
 **Ikke aktuelt for regnmed:** primærnæringsscopene (med mindre et
 kundesegment krever det), oppdragsregisteret (bygg/anlegg),
 innkrevings- og utleggsscopene (inkasso overlates bevillingshavere,
-docs/purring.md), og tredjepartsrapporteringen for bank/forsikring.
+docs/purring.md), og tredjepartsrapporteringen for bank/forsikring —
+men **ikke** betalinger til selvstendig næringsdrivende (RF-1321), som
+gjelder alle næringsdrivende oppdragsgivere (tabellen over).
+Oppdrag utenlandske oppdragstakere gjelder bare bygge- og
+monteringsplasser og er ikke bestilt.
+
+### Nav: inntektsmelding
+
+Navs scope er åpne for alle (`accessibleForAll`) og hukes av på klienten
+i Samarbeidsportalen uten søknad. Tilgangen ligger i Altinn-ressursen på
+systembrukeren. Sykepenge-API-et godtar bare tokens med nøyaktig sitt
+eget scope, så det får sin egen token-leverandør (docs/inntektsmelding.md).
+
+| Scope | Altinn-ressurs | Til | Status |
+| --- | --- | --- | --- |
+| `nav:helseytelser/sykepenger` | `nav_sykepenger_inntektsmelding` | inntektsmelding for sykepenger (#184) | ikke lagt på klienten |
+| `nav:inntektsmelding/foreldrepenger` | `nav_foreldrepenger_inntektsmelding` | foreldre- og svangerskapspenger | ikke avklart om åpent for leverandører |
+| `nav:inntektsmelding/sif` | `nav_sykdom-i-familien_inntektsmelding` | omsorgs-, pleie- og opplæringspenger | ikke avklart om åpent for leverandører |
 
 ### Det som IKKE er Skatteetaten-scope
 
@@ -220,8 +287,11 @@ en inn her før den er prøvd. Det praktiske første forsøket er å spørre i
 samme henvendelse til Skatteetatens brukerstøtte: innsendingsflyten er
 deres, så de vet hvilken delegering den krever.
 
-4. Point the env variables above at the test environment and run
-   `regnmed mva-melding … --validate`.
+4. ~~Point the env variables above at the test environment and run
+   `regnmed mva-melding … --validate`.~~ Valideringen vil ha et
+   ID-porten-token (se under), så flagget er fjernet fra CLI-en.
+   Validering og innsending skjer i portalen («Godkjenn og send»,
+   docs/mva.md).
 
 For a regnskapsfører acting on behalf of clients, the client company
 **delegates** the scope to the accounting firm in Altinn (Altinn
@@ -261,19 +331,18 @@ tilbakemeldingen som Altinn-hendelse (`regnmed-gov::altinn_events`,
 webhook `/webhooks/altinn`) i «Tilbakemelding som hendelse». Merk:
 Events-API-et krever et VEKSLET Altinn-token, ikke Maskinporten-tokenet.
 
-## Mva-melding APIs (crates/regnmed-gov/src/mvamelding.rs)
+## Mva-melding APIs (crates/regnmed-gov/src/vat_return.rs)
 
-- **Validation** (implemented): POST the melding XML to Skatteetaten's
-  validation endpoint (test:
+- **Validering** (bygget): meldingen postes til Skatteetatens
+  valideringstjeneste (test:
   `https://idporten-api-test.sits.no/api/mva/grensesnittstoette/mva-melding/valider`,
-  override with `MVA_VALIDATION_URL`). The returned
-  `valideringsresultat` is kept verbatim — it is documentation of a
-  control — and any avvik fail the CLI run.
-- **Submission** (pending): the Altinn3 instance flow (create instance →
-  upload melding + konvolutt → confirm → poll feedback). Deliberately
-  not implemented until we hold real test credentials, so it can be
-  developed against the actual test environment instead of guessed.
-  Tracked in issue #8.
+  overstyres med `MVA_VALIDATION_URL`) med personens ID-porten-token.
+  `valideringsresultat` lagres ordrett — det er dokumentasjon av en
+  kontroll — og avvik stopper innsendingen.
+- **Innsending** (bygget, #311/#312): Altinn 3-instansflyten (opprett
+  instans → last opp konvolutt og melding → bekreft → hent
+  tilbakemelding), kjørt av arbeideren etter at en person har godkjent
+  meldingen med ID-porten. Hele flyten står i docs/mva.md.
 
 ## Aksjonærregisteroppgaven (crates/regnmed-core::shareholder_return)
 
@@ -442,9 +511,10 @@ gjennom Altinn. Det er en egen godkjenning, ikke innlogging i regnmed, så
 godkjenning krever ny innlogging (`prompt=login`), og en regnmed-bruker er
 bundet til én ID-porten-identitet per klient. Det som kan ha nådd Altinn
 forblir `uavklart` til det er lest der eller en person har sjekket Altinn og
-lukket det med notat. Flyten er testet mot mock og
-er **ikke kjørt mot TT02 ennå**: den krever en ID-porten-klient i
-Samarbeidsportalen. Hva som må bekreftes der, står i docs/mva.md.
+lukket det med notat. Flyten er **kjørt mot TT02** 2026-11-22 og
+2026-11-23 med TestID: to testselskaper fikk kvittering uten avvik
+(M-2026-3456 og M-2026-3463). Hva det beviste, og hva som ikke er
+bekreftet ennå, står i docs/mva.md. Produksjon er ikke satt opp.
 
 **Altså: ÉN ting låser opp tre av fire — Altinn systembruker.** Det er
 Digdirs nyere mekanisme, den samme docs/aksjonaer.md alt hadde notert
@@ -529,8 +599,10 @@ per kundeform vi allerede har i produktet (#77s to ruter):
 
 Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
-`ske-innrapportering-aksjonaerregisteroppgave`. Den ruten berøres ikke
-av regel 1 i det hele tatt.
+`ske-innrapportering-aksjonaerregisteroppgave`, og senere
+`ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll` og
+`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten
+berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -570,7 +642,8 @@ begge er Altinns egne regler, ikke vår slutning:
    én.
 
 Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
-med begge kundeformene: `rights` med de tre Skatteetaten-ressursene
+med begge kundeformene: `rights` med Skatteetatens ressurser (tre ved
+registreringen, seks fra 2026-11-27)
 (egen virksomhet) og `accessPackages` med de tre REGN-pakkene
 (regnskapsfører). Hver forespørsel ber om sin del: en standard
 systembruker om rettighetene, en klient-systembruker om ÉN pakke.
@@ -621,6 +694,27 @@ innloggingen er ikke godkjenningen: siden venter på «Godkjenn
 oppdatert systemtilgang». Klient-systembrukere (regnskapsfører)
 kan ikke endres slik — Altinn krever at de slettes og opprettes på
 nytt.
+
+**`ske-kontroll` lagt til 2026-11-27** (kontrollopplysninger, #183,
+docs/saft/README.md) på samme måte: `rights` + beskrivelse i
+`scripts/altinn-system.py`, `update` mot TT02 (bekreftet med `show`),
+og en endringsforespørsel for 311032240 som ber om alle fem
+ressursene (id `6a10e8d6-a8cd-4e02-aaf7-df2c927a7651`), **godkjent**
+samme dag av selskapets daglige leder med TestID (`change-status` →
+`Accepted`, alle fem ressursene). TestID ber om den syntetiske
+personens fødselsnummer, ikke selskapets organisasjonsnummer. Scopet
+`skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
+
+**`app_skd_formueinntekt-skattemelding-v2` lagt til 2026-11-27**
+(skattemelding, #11): Skatteetatens Altinn 3-app for skattemeldingen,
+som ifølge onboardingsguiden kreves både for Skatteetatens API og for
+Altinns, og som en standard systembruker kan få direkte uten
+tilgangspakker. For regnskapsførerruten gir
+`regnskapsforer-med-signeringsrettighet` og `-uten-signeringsrettighet`
+tilgang (ikke `regnskapsforer-lonn`), men bare den med
+signeringsrettighet kan bekrefte i signeringssteget. `update` mot TT02 og ny endringsforespørsel for
+311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
+ressursene), **godkjent** samme dag med TestID (`Accepted`).
 
 Tre ting å vite til neste gang:
 

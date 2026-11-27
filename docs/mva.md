@@ -186,10 +186,11 @@ en kode der ville telt det samme grunnlaget to ganger.
 **Gjenstår, uavklart mot Skatteetaten:** om en tosidig kode skal sendes
 som ÉN linje (beregnet avgift i `merverdiavgift`, fradraget bare i
 totalen — slik vi gjør nå) eller som to linjer. XSD-en tillater begge,
-og `fastsattMerverdiavgift` er uansett riktig. Spørsmålet avklares mot
-valideringstjenesten før første innsending (`regnmed mva-melding
---validate`, docs/gov.md). Selve avgiftsbeløpet er ikke lenger avhengig
-av svaret — bare linjeformen.
+og `fastsattMerverdiavgift` er uansett riktig. Testinnsendingene i TT02
+hadde ingen tosidige koder, så spørsmålet er fortsatt åpent. Det avklares
+med en testinnsending som har en slik kode, før første innsending i
+produksjon. Selve avgiftsbeløpet er ikke lenger avhengig av svaret — bare
+linjeformen.
 
 Validation and submission against Skatteetaten's APIs: see
 [gov.md](gov.md).
@@ -298,10 +299,11 @@ Status beregnes fra de innsettings-bare hendelsene:
 | `feilet` | Altinn avviste steget, oftest manglende rett | logg inn og fortsett |
 | `ma_godkjennes` | tokenet kunne ikke brukes | logg inn og fortsett |
 | `uavklart` | vi vet ikke hvor langt den kom | sjekk Altinn. Med instans: logg inn, så leses den. Ellers, eller hvis den er avklart i Altinn: lukk med notat |
-| `lukket_etter_kontroll` med funn `levert` | levert ifølge personens kontroll i Altinn. regnmed har ikke sett kvitteringen selv | ingen, terminen er lukket |
+| `lukket_etter_kontroll` med funn `levert` | levert ifølge personens kontroll i Altinn. regnmed har ikke sett kvitteringen selv | korrigert melding, hvis regnskapet er endret |
 | `lukket_etter_kontroll` med funn `ikke_levert` | ikke levert ifølge personens kontroll | ny innsending |
 | `sendt` | innsendt, venter på svar | hentes automatisk |
-| `kvittert` / `avvist` | Skatteetatens svar. `avvist` krever et valideringsresultat med feil, ellers ventes det på kvitteringen | endelig |
+| `kvittert` | Skatteetatens kvittering | korrigert melding, hvis regnskapet er endret |
+| `avvist` | Skatteetaten avviste meldingen. Krever et valideringsresultat med feil, ellers ventes det på kvitteringen | ny innsending |
 | `avbrutt` | ikke sendt | ny innsending |
 
 **Lukking etter kontroll** (`POST …/{fid}/close-unresolved`) krever
@@ -309,8 +311,9 @@ Status beregnes fra de innsettings-bare hendelsene:
 uttrykkelig funn (`funn`: `levert` eller `ikke_levert`) og et notat. Hvem, når,
 funnet og notatet lagres som en egen hendelse og vises i `lukking`. Lukkingen
 endrer ingenting i Altinn. Bare `ikke_levert` åpner for en ny innsending. Med
-`levert` forblir terminen lukket, og den vises som levert *ifølge personens
-kontroll*, tydelig adskilt fra en kvittering regnmed har hentet selv.
+`levert` regnes terminen som levert, og den vises som levert *ifølge personens
+kontroll*, tydelig adskilt fra en kvittering regnmed har hentet selv. Den kan
+da bare korrigeres.
 
 **Hvem som står bak en innsendt melding** er personen på hendelsen `bekrefter`,
 altså den som faktisk sendte det bekreftende steget. En senere innlogging som
@@ -329,8 +332,44 @@ nye tallene. Det samme gjelder hvis en annen person godkjenner mens
 instansen står i bekreftelse, for konvolutten der navngir den første. Den
 nye personen bekrefter aldri den andres konvolutt, men starter en ny
 innsending. Utkastet forsøkes slettet i Altinn, og en mislykket sletting
-stopper ingenting. En termin som er sendt kan ikke sendes på nytt herfra.
-Korrigert melding er ikke bygget.
+stopper ingenting. En termin som venter på svar (`sendt`) kan ikke sendes på
+nytt før svaret er kommet.
+
+### Korrigert melding (#346)
+
+Skatteetaten har ingen egen korrigeringsmelding og ikke noe felt som merker en
+melding som korrigering. Deres veiledning for sluttbrukersystemer sier at den
+som vil korrigere, «sender man inn en ny komplett melding. Siste melding vil
+alltid være gjeldende». Tilleggsmelding finnes ikke lenger.
+
+I regnmed er en korrigering derfor en ny innsending for terminen, med samme
+flyt, rettighet og ID-porten-godkjenning som den første:
+
+- Den kan startes når terminen er levert: `kvittert`, eller lukket etter
+  kontroll med funnet `levert`. Mens en innsending venter på svar, kan den
+  ikke startes.
+- Meldingen bygges på nytt fra hovedboken og er komplett for terminen, ikke
+  en differanse.
+- Er meldingen lik den som er levert, nektes den: da er det ingenting å
+  korrigere.
+- Hendelsen `opprettet` lagrer hvilken levert innsending den korrigerer
+  (`korrigerer`), og API-et og portalen viser det. Den tidligere innsendingen
+  og kvitteringen blir stående uendret som historikk.
+
+Selve rettingen skjer i hovedboken først. Er perioden låst, må den gjenåpnes
+(docs/perioder.md). Det er den måten Skatteetaten anbefaler, fordi SAF-T-filen
+for perioden da underbygger den siste meldingen.
+
+**Ikke bekreftet ennå:** at Altinn tar imot en ny instans for en termin som
+allerede har en kvittering, og at valideringen svarer som for en første
+melding. Det krever en testinnsending i TT02.
+
+**Revisjonsrapporten** har kontrollen «Mva-meldinger» (docs/revisjon.md):
+hver termin som er sendt, kvittert, avvist eller levert ifølge en persons
+kontroll, med hvem som godkjente og SHA-256 av meldingen som ble sendt og
+av kvitteringen Skatteetaten sendte tilbake. Meldingen hashes på nytt mot
+hashen som ble tatt før sending. En `uavklart` innsending er et avvik, for
+da vet ingen om terminen er levert.
 
 ### Når en regnskapsfører leverer for kunden
 
@@ -445,8 +484,11 @@ koster null, kode 87 koster 25 000.
   kjøringer som kommer for sent eller mister låsen, mislykket tokenveksling,
   bekreftet sletting etter usikre steg, lukking med notat, operatørens
   ombinding, en ødelagt rad i oppfølgingen, avvik, utløpt token,
-  usikre steg som aldri gir en andre instans, og at verken token eller
-  fødselsnummer står lesbart i basen. Enhetstester i `regnmed-gov::idporten`,
+  usikre steg som aldri gir en andre instans, at verken token eller
+  fødselsnummer står lesbart i basen, at revisjonsrapporten viser
+  kvitteringens hash og gjør en `uavklart` innsending til avvik, og at en
+  levert termin bare tar imot en korrigert melding med endrede tall, i en ny
+  instans, med den første innsendingen bevart. Enhetstester i `regnmed-gov::idporten`,
   `regnmed-gov::vat_return` og `regnmed-db::vat_filing`.
 - `crates/regnmed-db/tests/mva.rs` (real Postgres, also CI) — the
   spesifikasjon's numbers per termin, the 2017 historical rate (10 %),
