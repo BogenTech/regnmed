@@ -73,8 +73,8 @@ så en regnskapsfører kan se over dem.
 ## Levering ved kontroll — kontrollopplysninger-API-et (#183)
 
 Kartlagt 2026-11-26. **API-et finnes**, men ikke i `docs/api/` i
-Skatteetaten/api-dokumentasjon — det ligger på den publiserte siden,
-lenket fra SBS-siden. Kilder, alle lest 2026-11-26:
+Skatteetaten/api-dokumentasjon — det står i `docs/anvendelsesomraader/`,
+og SBS-siden lenker dit. Kilder, alle lest 2026-11-26:
 
 - [SBS-siden «Innsending av kontrollopplysninger»](https://www.skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/innsending-av-kontrollopplysninger/)
 - [API-dokumentasjonen](https://skatteetaten.github.io/api-dokumentasjon/anvendelsesomraader/innsending-kontrollopplysninger)
@@ -139,9 +139,9 @@ fil, 10 filer, ikke zip) gjelder **e-posttestinnsendingen** til
 **Test** krever en kontrollsak på en syntetisk Tenor-organisasjon, som
 Skatteetaten oppretter etter henvendelse til brukerstøtte (fanen Test).
 
-**Bestilt 2026-11-27** på desken (eksternjira.sits.no, kategori
-Innrapportering, test), sammen med de andre manglende scopene
-(docs/gov.md, punkt 2b): `skatteetaten:innleveringkontroll`, en
+**Bestilt 2026-11-27, sak SSV-6691** på desken (eksternjira.sits.no,
+kategori Innrapportering, test), sammen med de andre manglende scopene
+(docs/gov.md, punkt 3 under «Gjenstår»): `skatteetaten:innleveringkontroll`, en
 kontrollsak på en syntetisk Tenor-organisasjon, og spørsmålene om
 største filstørrelse, hvordan et sluttbrukersystem får `dialogid`, og
 hvilken id `PUT /innsending` skal ha. Egen-virksomhet-ruten krever i

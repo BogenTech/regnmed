@@ -82,17 +82,19 @@ Gjenstår:
    `Krav og betalinger` står i samme skjema, men ble ikke krysset av:
    ingenting i regnmed bruker det ennå (#36). Skal det med, legges det
    til som kommentar på SSV-6690, ikke som ny sak.
-2b. **Innrapportering, bestilt 2026-11-27** (test; saksnummer føres inn
-   når saken er opprettet): `skatteetaten:innleveringkontroll` (#183),
+3. **Innrapportering, bestilt 2026-11-27, sak SSV-6691** (test): `skatteetaten:innleveringkontroll` (#183),
    `skatteetaten:formueinntekt/skattemelding` (#11),
    `skatteetaten:skattdialogdokument` og
    `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende`
    (RF-1321), pluss en kontrollsak på en syntetisk Tenor-organisasjon.
+   `skattdialogdokument` har ingen egen tjeneste i skjemaet og ble bedt
+   om i beskrivelsen — sjekk at tildelingen faktisk tar den med.
    Tjenesteområdene i skjemaet er Kontrollopplysninger, Skattemeldingen
-   og Tredjepartsopplysninger. Disse fire burde vært med i SSV-5760:
-   juli-kartleggingen leste bare `docs/api/` i Skatteetatens
+   og Tredjepartsopplysninger. Kontrollopplysninger og RF-1321 burde
+   vært med i SSV-5760: juli-kartleggingen leste bare `docs/api/` i Skatteetatens
    dokumentasjon, og kontrollopplysninger står under
-   `docs/anvendelsesomraader/`. RF-1321 ble feilplassert som
+   `docs/anvendelsesomraader/`. Skattemelding-scopet var derimot
+   bevisst utsatt til innsendingsveien fantes (se under). RF-1321 ble feilplassert som
    bank/forsikring — plikten gjelder **alle næringsdrivende som kjøper
    tjenester fra selvstendig næringsdrivende uten fast forretningssted**
    (skatteetaten.no, lest 2026-11-27). **Regelen: én sak per KATEGORI
@@ -100,7 +102,7 @@ Gjenstår:
    skjema har sin egen tjenesteliste, og én sak kan ta mange
    tjenesteområder. Kartlegg alle 114 sidene (begge mappene) før neste
    bestilling.
-3. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
+4. ~~Altinn 3-tilgangen for mva-melding-INNSENDING~~ **BESVART
    2026-08-11**: `altinn:instances.read`/`write` bestilles i Digdirs
    registreringsskjema for sluttbrukersystem, ikke hos Skatteetaten.
    Den opprinnelige noten sto slik, og var riktig om skjemaet vi da
@@ -108,7 +110,7 @@ Gjenstår:
    (`altinn:instances.read`/`write` mot mva-melding-appen) hadde ikke
    noe felt i skjemaet — still spørsmålet som oppfølging på SSV-5760
    når saken får en behandler.
-4. Produksjon bestilles i samme skjema når testintegrasjonen er
+5. Produksjon bestilles i samme skjema når testintegrasjonen er
    verifisert.
 
 The **test client exists** with an RS256 keypair registered on it; its
@@ -184,10 +186,18 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
 | `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning. Bestilt i test, SSV-6690 |
 | `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | bestilt i test, SSV-6690 |
-| `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test 2026-11-27 |
-| `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test 2026-11-27 |
-| `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bestilt i test 2026-11-27 |
-| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test 2026-11-27 |
+| `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
+| `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
+| `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bedt om i beskrivelsen av SSV-6691 (ingen egen tjeneste i skjemaet) |
+| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test, SSV-6691 |
+
+De fire nederste radene er bestilt før koden finnes, og det er et
+bevisst unntak fra overskriften: én sak per kategori og ukers ledetid
+gjør det dyrere å bestille hver for seg (punkt 3 under «Gjenstår»).
+Tre av dem er innrapportering — vi sender, vi henter ingenting.
+`skattdialogdokument` henter bare dokumenter i dialogene til kunden
+som har gitt oss systembruker, altså kundens egne opplysninger, ikke
+andres; dataminimeringsregelen under gjelder opplysninger om andre.
 
 `skatteetaten:mvaregisteravgiftssubjekt` sto her til 2026-11-26, men
 tilbys ikke sluttbrukersystemer (punkt 2 under «Gjenstår»).
@@ -208,8 +218,9 @@ skattemelding og PDF av den fastsatte. Å bestille scopene over gir
 altså ikke en innsendingsvei; den krever en innlogget person.
 Konsekvensene for #11 står i docs/skattemelding.md. Siden
 mva-meldingen nå sendes inn etter at en person godkjenner med
-ID-porten (#8), finnes veien, og `skatteetaten:formueinntekt/skattemelding`
-ble derfor bestilt 2026-11-27 (tabellen over).
+ID-porten (#8, docs/mva.md), finnes veien, og
+`skatteetaten:formueinntekt/skattemelding` ble derfor bestilt
+2026-11-27 (SSV-6691, tabellen over).
 
 **Ikke aktuelt for regnmed:** primærnæringsscopene (med mindre et
 kundesegment krever det), oppdragsregisteret (bygg/anlegg),
