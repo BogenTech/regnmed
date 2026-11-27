@@ -683,7 +683,7 @@ Altinns, og som en standard systembruker kan få direkte uten
 tilgangspakker. Regnskapsførerpakkene systemet alt har, gir også
 tilgang til den. `update` mot TT02 og ny endringsforespørsel for
 311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
-ressursene, status `New`, venter på godkjenning med TestID).
+ressursene), **godkjent** samme dag med TestID (`Accepted`).
 
 Tre ting å vite til neste gang:
 
