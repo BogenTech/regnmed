@@ -405,8 +405,8 @@
           </div>
         {/if}
         <p class="text-xs opacity-70 mt-3">
-          Trekkpålegg hentes fra Skatteetaten hver natt og under «Trekkpålegg». Det som er hentet eller
-          registrert når du forhåndsviser, er det som trekkes.
+          Det som er hentet fra Skatteetaten eller registrert under «Trekkpålegg» når du forhåndsviser,
+          er det som trekkes.
         </p>
         <div class="flex flex-wrap gap-2 mt-3">
           <button class="btn btn-primary btn-sm" disabled={arbeider} onclick={bokfor}>

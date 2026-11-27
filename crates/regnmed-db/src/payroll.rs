@@ -2542,9 +2542,9 @@ pub async fn payslip(
         .into_iter()
         .filter(|g| g.employee_id == employee_id && g.withheld_ore != 0)
         .map(|g| PayslipLine {
-            text: match (&g.kid, &g.trekkid) {
-                (Some(kid), Some(trekkid)) => format!(
-                    "Utleggstrekk, {} (trekkpålegg {trekkid}, KID {kid}, versjon {})",
+            text: match (&g.kid, &g.external_id) {
+                (Some(kid), Some(external_id)) => format!(
+                    "Utleggstrekk, {} (trekkpålegg {external_id}, KID {kid}, versjon {})",
                     g.kind.label(),
                     g.version
                 ),
@@ -3335,7 +3335,7 @@ pub struct RunGarnishment {
     /// The registration, for a hand entry.
     pub garnishment_id: Option<Uuid>,
     /// The trekkid, for a fetched order.
-    pub trekkid: Option<String>,
+    pub external_id: Option<String>,
     /// The registration's version, or the trekkversjon.
     pub version: i32,
     pub kind: regnmed_core::garnishment::Kind,
@@ -3346,7 +3346,7 @@ pub struct RunGarnishment {
 
 pub async fn run_garnishments(pool: &PgPool, run_id: Uuid) -> Result<Vec<RunGarnishment>> {
     let rows = sqlx::query(
-        "select g.employee_id, g.garnishment_id, f.trekkid, g.version, g.kind, g.wanted_ore,
+        "select g.employee_id, g.garnishment_id, f.external_id, g.version, g.kind, g.wanted_ore,
                 g.withheld_ore, g.kid
          from payroll_garnishment g left join garnishment_fetched f on f.id = g.fetched_id
          where g.run_id = $1 order by g.id",
@@ -3360,7 +3360,7 @@ pub async fn run_garnishments(pool: &PgPool, run_id: Uuid) -> Result<Vec<RunGarn
             Ok(RunGarnishment {
                 employee_id: r.get("employee_id"),
                 garnishment_id: r.get("garnishment_id"),
-                trekkid: r.get("trekkid"),
+                external_id: r.get("external_id"),
                 version: r.get("version"),
                 kind: regnmed_core::garnishment::Kind::from_slug(&kind)
                     .context("unknown garnishment kind")?,

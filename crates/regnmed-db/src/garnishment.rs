@@ -706,7 +706,7 @@ pub async fn fetch(pool: &PgPool, company_id: Uuid, rail: &Rail, by: &str) -> Re
         Ok(answer) => store_list(pool, company_id, fetch_id, &answer).await,
         Err(e) => {
             let e = format!("{e:#}");
-            record_failure(pool, fetch_id, &e).await?;
+            record_failure(pool, fetch_id, &e, None).await?;
             bail!("Skatteetaten ga ikke trekkpåleggene: {e}")
         }
     }
@@ -724,12 +724,21 @@ pub async fn record_fetch(pool: &PgPool, company_id: Uuid, by: &str) -> Result<U
     Ok(id)
 }
 
-async fn record_failure(pool: &PgPool, fetch_id: Uuid, detail: &str) -> Result<()> {
+/// `detail` is shown in the portal, so it never carries an order's
+/// content; an unreadable answer is kept beside it, unshown, as evidence.
+async fn record_failure(
+    pool: &PgPool,
+    fetch_id: Uuid,
+    detail: &str,
+    answer: Option<&serde_json::Value>,
+) -> Result<()> {
     sqlx::query(
-        "insert into garnishment_fetch_outcome (fetch_id, ok, detail) values ($1, false, $2)",
+        "insert into garnishment_fetch_outcome (fetch_id, ok, detail, answer)
+         values ($1, false, $2, $3)",
     )
     .bind(fetch_id)
     .bind(detail)
+    .bind(answer)
     .execute(pool)
     .await?;
     Ok(())
@@ -753,7 +762,7 @@ pub async fn store_list(
         match orders.iter().find(|o| o.employer != orgnumber) {
             Some(o) => Err(format!(
                 "trekkpålegg {} gjelder trekkpliktig {}, ikke {orgnumber}",
-                o.trekkid, o.employer
+                o.id, o.employer
             )),
             None => Ok(orders),
         }
@@ -761,7 +770,7 @@ pub async fn store_list(
     let orders = match orders {
         Ok(orders) => orders,
         Err(e) => {
-            record_failure(pool, fetch_id, &format!("{e}\n{answer}")).await?;
+            record_failure(pool, fetch_id, &e, Some(answer)).await?;
             bail!("svaret fra Skatteetaten kunne ikke leses: {e}");
         }
     };
@@ -772,14 +781,15 @@ pub async fn store_list(
     for o in &orders {
         new_versions += sqlx::query(
             "insert into garnishment_fetched
-                 (id, company_id, fetch_id, trekkid, trekkversjon, skyldner, opprettet, raw)
+                 (id, company_id, fetch_id, external_id, external_version, debtor_nin,
+                  issued_at, raw)
              values ($1, $2, $3, $4, $5, $6, $7, $8)
-             on conflict (company_id, trekkid, trekkversjon) do nothing",
+             on conflict (company_id, external_id, external_version) do nothing",
         )
         .bind(Uuid::now_v7())
         .bind(company_id)
         .bind(fetch_id)
-        .bind(&o.trekkid)
+        .bind(&o.id)
         .bind(o.version)
         .bind(&o.debtor)
         .bind(o.created)
@@ -788,7 +798,7 @@ pub async fn store_list(
         .await?
         .rows_affected() as usize;
     }
-    let listed: Vec<&str> = orders.iter().map(|o| o.trekkid.as_str()).collect();
+    let listed: Vec<&str> = orders.iter().map(|o| o.id.as_str()).collect();
     sqlx::query(
         "insert into garnishment_fetch_outcome (fetch_id, ok, listed) values ($1, true, $2)",
     )
@@ -811,7 +821,7 @@ pub struct FetchedOrder {
     pub id: Uuid,
     /// The newest stored version, parsed; `Err` when it cannot be read.
     pub order: std::result::Result<regnmed_gov::garnishment::Order, String>,
-    pub trekkid: String,
+    pub external_id: String,
     pub version: i32,
     /// The earliest `opprettet` stored for the order (§2 step 3).
     pub first_created: DateTime<Utc>,
@@ -833,13 +843,14 @@ pub async fn fetched(
     company_id: Uuid,
 ) -> Result<(Vec<FetchedOrder>, Option<LastList>)> {
     let rows = sqlx::query(
-        "select distinct on (f.trekkid) f.id, f.trekkid, f.trekkversjon, f.raw, f.created_at,
-                min(f.opprettet) over (partition by f.trekkid) as first_created,
+        "select distinct on (f.external_id) f.id, f.external_id, f.external_version, f.raw,
+                f.created_at,
+                min(f.issued_at) over (partition by f.external_id) as first_created,
                 e.id as employee_id, e.navn
          from garnishment_fetched f
-         left join employee e on e.company_id = f.company_id and e.fodselsnummer = f.skyldner
+         left join employee e on e.company_id = f.company_id and e.fodselsnummer = f.debtor_nin
          where f.company_id = $1
-         order by f.trekkid, f.trekkversjon desc",
+         order by f.external_id, f.external_version desc",
     )
     .bind(company_id)
     .fetch_all(&mut *conn)
@@ -849,8 +860,8 @@ pub async fn fetched(
         .map(|r| FetchedOrder {
             id: r.get("id"),
             order: regnmed_gov::garnishment::parse_order(&r.get::<serde_json::Value, _>("raw")),
-            trekkid: r.get("trekkid"),
-            version: r.get("trekkversjon"),
+            external_id: r.get("external_id"),
+            version: r.get("external_version"),
             first_created: r.get("first_created"),
             employee: r
                 .get::<Option<Uuid>, _>("employee_id")
@@ -927,13 +938,13 @@ pub enum Source {
     /// Fetched from Skatteetaten (§2): the stored version's row.
     Fetched {
         id: Uuid,
-        trekkid: String,
+        external_id: String,
         case_number: String,
     },
 }
 
 /// An order's identity in the preview set (§3 point 2): (registration,
-/// version) for a hand entry, (trekkid, trekkversjon) for a fetched one.
+/// version) for a hand entry, (external_id, trekkversjon) for a fetched one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Key {
     Registered(Uuid, i32),
@@ -959,7 +970,7 @@ impl Effective {
     pub fn key(&self) -> Key {
         match &self.source {
             Source::Registered { id, .. } => Key::Registered(*id, self.version),
-            Source::Fetched { trekkid, .. } => Key::Fetched(trekkid.clone(), self.version),
+            Source::Fetched { external_id, .. } => Key::Fetched(external_id.clone(), self.version),
         }
     }
 }
@@ -1027,20 +1038,20 @@ pub async fn effective(
             if r.employee_id != f.employee_id {
                 return true;
             }
-            let Source::Fetched { trekkid, .. } = &f.source else {
+            let Source::Fetched { external_id, .. } = &f.source else {
                 unreachable!("fetched_in_force returns fetched orders")
             };
             if r.kind == Kind::Coordinated && r.kid == f.kid {
                 warnings.push(format!(
                     "{name}: trekkpålegget registrert for hånd (KID {}) er avløst av trekkpålegg \
-                     {trekkid} fra Skatteetaten med samme KID, og trekkes ikke lenger.",
+                     {external_id} fra Skatteetaten med samme KID, og trekkes ikke lenger.",
                     r.kid.as_deref().unwrap_or("")
                 ));
             } else {
                 warnings.push(format!(
                     "Avvik: {name} har et trekkpålegg registrert for hånd ({}{}) i tillegg til \
-                     det samordnede trekkpålegget {trekkid} fra Skatteetaten. Et samordnet trekk \
-                     avslutter de andre, så bare {trekkid} trekkes. Kontakt \
+                     det samordnede trekkpålegget {external_id} fra Skatteetaten. Et samordnet trekk \
+                     avslutter de andre, så bare {external_id} trekkes. Kontakt \
                      innkrevingsmyndigheten, og stopp registreringen under Lønn → Trekkpålegg \
                      når det er bekreftet.",
                     r.kind.label(),
@@ -1088,7 +1099,7 @@ async fn fetched_in_force(
                 warnings.push(format!(
                     "Avvik: trekkpålegg {} versjon {} fra Skatteetaten kan ikke leses ({e}), og \
                      trekkes ikke. Kontakt innkrevingsmyndigheten.",
-                    f.trekkid, f.version
+                    f.external_id, f.version
                 ));
                 continue;
             }
@@ -1100,11 +1111,14 @@ async fn fetched_in_force(
             .employee
             .as_ref()
             .map_or("En person som ikke er i ansattregisteret", |e| e.1.as_str());
-        if !last.as_ref().is_some_and(|l| l.listed.contains(&f.trekkid)) {
+        if !last
+            .as_ref()
+            .is_some_and(|l| l.listed.contains(&f.external_id))
+        {
             warnings.push(format!(
                 "Avvik: {who}: trekkpålegg {} er aktivt i regnmed, men var ikke med i siste liste \
                  fra Skatteetaten, og trekkes ikke. Kontakt innkrevingsmyndigheten.",
-                f.trekkid
+                f.external_id
             ));
             continue;
         }
@@ -1113,7 +1127,7 @@ async fn fetched_in_force(
                 "Avvik: trekkpålegg {} (sak {}) fra Skatteetaten gjelder en person som ikke finnes \
                  i ansattregisteret, og trekkes ikke. Kontroller fødselsnummeret på den ansatte, \
                  eller kontakt innkrevingsmyndigheten.",
-                f.trekkid, order.case_number
+                f.external_id, order.case_number
             ));
             continue;
         };
@@ -1127,18 +1141,38 @@ async fn fetched_in_force(
                     "Avvik: {name}: trekkpålegg {} versjon {} har en trekkstørrelse regnmed ikke \
                      kan lese uten å gjette ({why}), og trekkes ikke. Kontakt \
                      innkrevingsmyndigheten.",
-                    f.trekkid, f.version
+                    f.external_id, f.version
                 ));
                 continue;
             }
         };
+        // The run books the KID and pays the account (§2 steps 5–6): what
+        // the payment list would refuse, or the ledger's checks reject, is
+        // an anomaly here rather than a failed run.
+        let account = regnmed_core::pain001::normalize_account_number(&order.account);
+        if !regnmed_core::kid::is_valid(&order.kid)
+            || !regnmed_core::pain001::is_valid_account_number(&account)
+            // Shape only, not MOD11: Skatteetaten's own documented payee
+            // (971648199) fails MOD11, and the payee is never paid by its
+            // number -- the account is.
+            || order.payee.len() != 9
+            || !order.payee.bytes().all(|b| b.is_ascii_digit())
+        {
+            warnings.push(format!(
+                "Avvik: {name}: trekkpålegg {} har betalingsinformasjon regnmed ikke kan betale \
+                 til (KID {}, kontonummer {}, mottaker {}), og trekkes ikke. Kontakt \
+                 innkrevingsmyndigheten.",
+                f.external_id, order.kid, order.account, order.payee
+            ));
+            continue;
+        }
         candidates.push((
             *employee_id,
             f.first_created,
             Effective {
                 source: Source::Fetched {
                     id: f.id,
-                    trekkid: f.trekkid.clone(),
+                    external_id: f.external_id.clone(),
                     case_number: order.case_number.clone(),
                 },
                 version: f.version,
@@ -1147,9 +1181,7 @@ async fn fetched_in_force(
                 size,
                 kid: Some(order.kid.clone()),
                 payee_orgnumber: Some(order.payee.clone()),
-                payee_account: Some(regnmed_core::pain001::normalize_account_number(
-                    &order.account,
-                )),
+                payee_account: Some(account),
                 due_days: None,
             },
             name.clone(),
@@ -1161,17 +1193,17 @@ async fn fetched_in_force(
     let mut out: Vec<(Effective, String)> = Vec::new();
     for (employee_id, _, e, name) in candidates {
         if let Some((kept, _)) = out.iter().find(|(k, _)| k.employee_id == employee_id) {
-            let trekkid = |e: &Effective| match &e.source {
-                Source::Fetched { trekkid, .. } => trekkid.clone(),
+            let external_id = |e: &Effective| match &e.source {
+                Source::Fetched { external_id, .. } => external_id.clone(),
                 Source::Registered { .. } => String::new(),
             };
             warnings.push(format!(
                 "Avvik: {name} har to aktive trekkpålegg fra Skatteetaten ({} og {}). Bare {} \
                  trekkes, siden det er opprettet sist; kontakt innkrevingsmyndigheten om {}.",
-                trekkid(kept),
-                trekkid(&e),
-                trekkid(kept),
-                trekkid(&e),
+                external_id(kept),
+                external_id(&e),
+                external_id(kept),
+                external_id(&e),
             ));
             continue;
         }

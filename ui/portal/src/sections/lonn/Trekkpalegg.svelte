@@ -172,6 +172,12 @@
   const periodNow = (f) =>
     (f.perioder ?? []).filter((p) => p.fra <= today() && (!p.til || today() <= p.til)).at(-1);
   const lastAttempt = $derived(data?.henting?.forsok?.[0]);
+  // A usable fetched order ends the employee's hand entries (§6): the same
+  // KID replaces, anything else is an anomaly. The run's preview is the
+  // authority (it also checks the period); this only keeps the table from
+  // calling a replaced registration simply «aktiv».
+  const fetchedFor = (p) =>
+    data?.hentede?.find((f) => f.employee_id === p.employee_id && f.status === "aktiv" && f.i_siste_liste && !f.feil);
 
   async function fetchNow() {
     busy = true;
@@ -297,6 +303,7 @@
           <tbody>
             {#each data.palegg as p (p.id)}
               {@const v = p.versjoner[0]}
+              {@const f = p.status === "stoppet" ? null : fetchedFor(p)}
               <tr>
                 <td class="whitespace-nowrap">{p.navn}</td>
                 <td class="text-xs">{kindLabel(p.type)}</td>
@@ -306,9 +313,15 @@
                 </td>
                 <td class="font-mono text-xs">{v.kid ?? "selskapets"}</td>
                 <td>
-                  <span class="badge badge-sm" class:badge-warning={p.status !== "aktiv" && p.status !== "stoppet"}>
-                    {p.status}
-                  </span>
+                  {#if f}
+                    <span class="badge badge-sm badge-warning">
+                      {p.type === "samordnet" && v.kid === f.kid ? "avløst av " + f.trekkid : "avvik: " + f.trekkid + " trekkes i stedet"}
+                    </span>
+                  {:else}
+                    <span class="badge badge-sm" class:badge-warning={p.status !== "aktiv" && p.status !== "stoppet"}>
+                      {p.status}
+                    </span>
+                  {/if}
                   <span class="text-xs opacity-60">v{v.versjon}</span>
                 </td>
                 <td class="whitespace-nowrap">

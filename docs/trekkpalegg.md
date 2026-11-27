@@ -314,8 +314,11 @@ betalingsinformasjonen. Veiledningen sier:
 - **Lagringen** (migrasjon 0111): `garnishment_fetch` (forespørselen,
   skrevet før kallet), `garnishment_fetch_outcome` (svaret: trekkid-ene i
   listen, eller feilen) og `garnishment_fetched` (hver versjon ordrett,
-  unik på selskap + `trekkid` + `trekkversjon`). Alle tre er
-  innsettings-bare. Den ansatte lagres ikke: koblingen er `skyldner` mot
+  unik på selskap + `trekkid` + `trekkversjon`, i kolonnene `external_id`
+  og `external_version`). Alle tre er innsettings-bare. En liste som ikke
+  kunne leses, lagres ordrett ved siden av feilen (`answer`), men vises
+  aldri: den bærer fødselsnumre, mens feilteksten portalen viser bare
+  navngir påleggene med `trekkid`. Den ansatte lagres ikke: koblingen er `skyldner` mot
   ansattregisteret, utledet ved lesing, så en ansatt som registreres
   etter at pålegget kom, blir funnet.
 - **Størrelsen** leses fra tallets tekst (kroner til øre, prosent til
@@ -326,9 +329,13 @@ betalingsinformasjonen. Veiledningen sier:
   start).
 - **Avvikene** står i forhåndsvisningen som advarsler som begynner med
   «Avvik:», og pålegget trekkes ikke: aktivt, men ikke i siste liste;
-  ingen ansatt med fødselsnummeret; uleselig størrelse; og to aktive på
-  samme ansatte (da trekkes det med senest første `opprettet`, og det
-  andre navngis).
+  ingen ansatt med fødselsnummeret; uleselig størrelse; KID med feil
+  kontrollsiffer eller kontonummer som ikke består MOD11 (betalingslisten
+  ville nektet dem); og to aktive på samme ansatte (da trekkes det med
+  senest første `opprettet`, og det andre navngis). Mottakerens
+  organisasjonsnummer sjekkes bare for ni siffer, ikke MOD11:
+  dokumentasjonens eget eksempel (971648199) består ikke MOD11, og
+  mottakeren betales med kontonummeret, ikke med nummeret.
 - **Settet** bærer (`trekkid`, `trekkversjon`) som
   `{"trekkid": …, "trekkversjon": …}` ved siden av
   `{"registrering": …, "versjon": …}`, og en ny versjon etter

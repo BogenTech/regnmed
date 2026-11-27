@@ -6,11 +6,11 @@
 --    terms' §7.1 register shows every request, also one that fails or is
 --    lost on the way (the skattekort pattern, migration 0079).
 -- 2. `garnishment_fetch_outcome`: what came back. On success the trekkids
---    the list held: the list is the whole list (§2 step 1), so an active
+--    the list held (`listed`): the list is the whole list (§2 step 1), so an active
 --    order missing from the newest successful one is an anomaly and is not
 --    withheld.
 -- 3. `garnishment_fetched`: every version of every order, verbatim, keyed
---    on (trekkid, trekkversjon) per company. A version regnmed already has
+--    on Skatteetaten's (trekkid, trekkversjon) per company. A version regnmed already has
 --    is skipped. The employee is NOT stored: the link is `skyldner` against
 --    the employee register, derived when read, so an employee registered
 --    after the order arrived is found.
@@ -29,10 +29,14 @@ create index garnishment_fetch_company_idx on garnishment_fetch (company_id, cre
 create table garnishment_fetch_outcome (
     fetch_id    uuid primary key references garnishment_fetch (id),
     ok          boolean not null,
-    -- Success: the trekkids in the list. Failure: Skatteetaten's answer or
+    -- Success: the trekkids (external_id) in the list. Failure: Skatteetaten's answer or
     -- the transport error, verbatim (behind LONN_LES, like the orders).
     listed      text[],
     detail      text,
+    -- An answer that could not be read, verbatim: the evidence. Never
+    -- shown -- it carries the employees' fødselsnumre -- while `detail`
+    -- names orders by trekkid only.
+    answer      jsonb,
     created_at  timestamptz not null default now(),
     check (ok = (listed is not null)),
     check (ok or detail <> '')
@@ -42,16 +46,19 @@ create table garnishment_fetched (
     id             uuid primary key,
     company_id     uuid not null references company (id),
     fetch_id       uuid not null references garnishment_fetch (id),
-    trekkid        text not null check (trekkid <> ''),
-    trekkversjon   integer not null check (trekkversjon >= 1),
-    skyldner       text not null check (skyldner ~ '^[0-9]{11}$'),
-    opprettet      timestamptz not null,
+    -- Skatteetaten's `trekkid` and `trekkversjon`.
+    external_id      text not null check (external_id <> ''),
+    external_version integer not null check (external_version >= 1),
+    -- `skyldner`: the employee's fødsels- or D-nummer.
+    debtor_nin       text not null check (debtor_nin ~ '^[0-9]{11}$'),
+    -- `opprettet`.
+    issued_at        timestamptz not null,
     -- The order as it came: periods, sizes, status, payment details.
     raw            jsonb not null,
     created_at     timestamptz not null default now(),
-    unique (company_id, trekkid, trekkversjon)
+    unique (company_id, external_id, external_version)
 );
-create index garnishment_fetched_skyldner_idx on garnishment_fetched (company_id, skyldner);
+create index garnishment_fetched_debtor_idx on garnishment_fetched (company_id, debtor_nin);
 
 create trigger garnishment_fetch_append_only
     before update or delete on garnishment_fetch

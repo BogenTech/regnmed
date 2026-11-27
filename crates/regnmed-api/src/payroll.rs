@@ -1051,8 +1051,10 @@ pub enum GarnishmentKey {
         version: i32,
     },
     Fetched {
-        trekkid: String,
-        trekkversjon: i32,
+        #[serde(rename = "trekkid")]
+        external_id: String,
+        #[serde(rename = "trekkversjon")]
+        external_version: i32,
     },
 }
 
@@ -1061,9 +1063,9 @@ impl From<GarnishmentKey> for regnmed_db::garnishment::Key {
         match k {
             GarnishmentKey::Registered { order, version } => Self::Registered(order, version),
             GarnishmentKey::Fetched {
-                trekkid,
-                trekkversjon,
-            } => Self::Fetched(trekkid, trekkversjon),
+                external_id,
+                external_version,
+            } => Self::Fetched(external_id, external_version),
         }
     }
 }
@@ -1074,9 +1076,9 @@ impl From<regnmed_db::garnishment::Key> for GarnishmentKey {
             regnmed_db::garnishment::Key::Registered(order, version) => {
                 Self::Registered { order, version }
             }
-            regnmed_db::garnishment::Key::Fetched(trekkid, trekkversjon) => Self::Fetched {
-                trekkid,
-                trekkversjon,
+            regnmed_db::garnishment::Key::Fetched(external_id, external_version) => Self::Fetched {
+                external_id,
+                external_version,
             },
         }
     }
@@ -1195,11 +1197,11 @@ fn garnishment_json(company_id: Uuid, w: &regnmed_db::payroll::Withheld) -> serd
             "brev_filnavn": letter_filename,
         }),
         regnmed_db::garnishment::Source::Fetched {
-            trekkid,
+            external_id,
             case_number,
             ..
         } => json!({
-            "trekkid": trekkid,
+            "trekkid": external_id,
             "trekkversjon": o.version,
             "saksnummer": case_number,
         }),

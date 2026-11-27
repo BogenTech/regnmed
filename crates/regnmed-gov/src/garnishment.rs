@@ -75,7 +75,8 @@ impl GarnishmentClient {
 /// One version of one order, as Skatteetaten sent it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
-    pub trekkid: String,
+    /// `trekkid`: stable across versions.
+    pub id: String,
     pub version: i32,
     pub sequence: i64,
     /// `opprettet`. Per version in the documentation's examples (10003 v1
@@ -130,13 +131,17 @@ pub fn parse_list(answer: &Value) -> std::result::Result<Vec<Order>, String> {
         .collect()
 }
 
+/// The messages name the order by `trekkid`, never by its content: the
+/// content carries the employee's fødselsnummer, and the message is shown
+/// in the portal.
 pub fn parse_order(o: &Value) -> std::result::Result<Order, String> {
+    let who = o["trekkid"].as_str().unwrap_or("uten trekkid").to_string();
     let text = |field: &str| -> std::result::Result<String, String> {
         o[field]
             .as_str()
             .filter(|s| !s.is_empty())
             .map(str::to_string)
-            .ok_or_else(|| format!("trekkpålegget mangler {field}: {o}"))
+            .ok_or_else(|| format!("trekkpålegg {who} mangler {field}"))
     };
     let pay = &o["betalingsinformasjon"];
     let pay_text = |field: &str| -> std::result::Result<String, String> {
@@ -144,12 +149,12 @@ pub fn parse_order(o: &Value) -> std::result::Result<Order, String> {
             .as_str()
             .filter(|s| !s.is_empty())
             .map(str::to_string)
-            .ok_or_else(|| format!("trekkpålegget mangler betalingsinformasjon/{field}: {o}"))
+            .ok_or_else(|| format!("trekkpålegg {who} mangler betalingsinformasjon/{field}"))
     };
     let status = text("trekkstatus")?;
     let periods = o["trekkstoerrelseForPeriode"]
         .as_array()
-        .ok_or_else(|| format!("trekkpålegget mangler trekkstoerrelseForPeriode: {o}"))?
+        .ok_or_else(|| format!("trekkpålegg {who} mangler trekkstoerrelseForPeriode"))?
         .iter()
         .map(|p| {
             let date = |field: &str| {
@@ -158,30 +163,35 @@ pub fn parse_order(o: &Value) -> std::result::Result<Order, String> {
                     .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
             };
             Ok(Period {
-                from: date("startdato").ok_or_else(|| format!("periode uten startdato: {p}"))?,
+                from: date("startdato")
+                    .ok_or_else(|| format!("trekkpålegg {who} har en periode uten startdato"))?,
                 to: date("sluttdato"),
                 size: size(p),
             })
         })
         .collect::<std::result::Result<_, String>>()?;
     Ok(Order {
-        trekkid: text("trekkid")?,
+        id: text("trekkid")?,
         version: o["trekkversjon"]
             .as_i64()
             .and_then(|v| i32::try_from(v).ok())
             .filter(|v| *v >= 1)
-            .ok_or_else(|| format!("trekkpålegget mangler trekkversjon: {o}"))?,
+            .ok_or_else(|| format!("trekkpålegg {who} mangler trekkversjon"))?,
         sequence: o["sekvensnummer"].as_i64().unwrap_or(0),
         created: o["opprettet"]
             .as_str()
             .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
             .map(|t| t.with_timezone(&Utc))
-            .ok_or_else(|| format!("trekkpålegget mangler opprettet: {o}"))?,
+            .ok_or_else(|| format!("trekkpålegg {who} mangler opprettet"))?,
         case_number: o["saksnummer"].as_str().unwrap_or("").to_string(),
         active: match status.as_str() {
             "aktiv" => true,
             "avsluttet" => false,
-            other => return Err(format!("ukjent trekkstatus «{other}»")),
+            other => {
+                return Err(format!(
+                    "trekkpålegg {who} har ukjent trekkstatus «{other}»"
+                ));
+            }
         },
         employer: text("trekkpliktig")?,
         debtor: text("skyldner")?,
@@ -230,7 +240,7 @@ mod tests {
     fn the_documentations_examples_are_read() {
         let orders = documented();
         assert_eq!(orders.len(), 9);
-        let o = orders.iter().find(|o| o.trekkid == "10006").unwrap();
+        let o = orders.iter().find(|o| o.id == "10006").unwrap();
         assert_eq!(o.version, 3);
         assert!(o.active);
         assert_eq!(o.kid, "6487719756");
@@ -242,13 +252,13 @@ mod tests {
         assert_eq!(size("2025-10-16"), Some(Ok(Size::AmountOre(600_000))));
         assert_eq!(size("2026-01-25"), Some(Ok(Size::AmountOre(700_000))));
         assert_eq!(size("2025-09-30"), None, "before it starts");
-        let percent = orders.iter().find(|o| o.trekkid == "10001").unwrap();
+        let percent = orders.iter().find(|o| o.id == "10001").unwrap();
         assert_eq!(
             percent.period_on(date("2025-09-25")).unwrap().size,
             Ok(Size::PercentBp(1700))
         );
         assert!(
-            !orders.iter().find(|o| o.trekkid == "10004").unwrap().active,
+            !orders.iter().find(|o| o.id == "10004").unwrap().active,
             "avsluttet"
         );
     }

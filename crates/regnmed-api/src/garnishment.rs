@@ -76,9 +76,9 @@ fn order_json(company_id: Uuid, o: &db::Order) -> serde_json::Value {
 
 /// A fetched order: its newest stored version, as the run reads it.
 fn fetched_json(f: &db::FetchedOrder, last: Option<&db::LastList>) -> serde_json::Value {
-    let in_list = last.is_some_and(|l| l.listed.contains(&f.trekkid));
+    let in_list = last.is_some_and(|l| l.listed.contains(&f.external_id));
     let mut j = json!({
-        "trekkid": f.trekkid,
+        "trekkid": f.external_id,
         "trekkversjon": f.version,
         "employee_id": f.employee.as_ref().map(|e| e.0),
         "navn": f.employee.as_ref().map(|e| &e.1),

@@ -4399,6 +4399,7 @@ mod garnishment {
         trekkid: &'a str,
         version: i32,
         debtor: &'a str,
+        kid: &'a str,
         created: &'a str,
         status: &'a str,
         /// The size of the period from March on; January–February is 1 000 kr.
@@ -4423,7 +4424,7 @@ mod garnishment {
                 "trekkversjon": self.version,
                 "sekvensnummer": 100 + self.version,
                 "betalingsinformasjon": {
-                    "kidnummer": KID,
+                    "kidnummer": self.kid,
                     "kontonummer": ACCOUNT,
                     "betalingsmottaker": PAYEE,
                 },
@@ -4446,6 +4447,7 @@ mod garnishment {
             trekkid,
             version,
             debtor,
+            kid: KID,
             created: "2026-02-10T15:00:00.00Z",
             status: "aktiv",
             size: amount("4000"),
@@ -4625,33 +4627,43 @@ mod garnishment {
 
     /// §2 steps 1 and 3: what the list cannot back is shown, never
     /// withheld -- an order missing from the newest list, one nobody in
-    /// the register owes, an unreadable size, and an ended order.
+    /// the register owes, an unreadable size, payment details that cannot
+    /// be paid, and an ended order. An order that is itself an anomaly
+    /// replaces no hand entry: Kari's registration is still withheld.
     #[tokio::test]
     async fn what_cannot_be_withheld_is_shown_as_an_anomaly() {
         let Some(pool) = pool().await else { return };
         let company = company(&pool).await;
         let kari = employee(&pool, company, KARI, "Kari Utvikler", 5_000_000).await;
         let ola = employee(&pool, company, "15929998666", "Ola Testesen", 5_000_000).await;
+        let per = employee(&pool, company, "20857597940", "Per Testesen", 5_000_000).await;
+        let by = person(&pool, "Lønnsansvarlig").await;
+        let hand = register(&pool, company, kari, coordinated(300_000), by).await;
         store(&pool, company, &[order("20005", 1, KARI)]).await;
         let mut unreadable = order("20007", 1, "15929998666");
         unreadable.size = serde_json::json!({"trekkprosent": {"trekkprosent": 12.345}});
         let mut ended = order("20008", 1, "20857597940");
         ended.status = "avsluttet";
+        let bad_kid = Fetched {
+            kid: "6487719757",
+            ..order("20013", 1, "20857597940")
+        };
         // The newest list no longer has 20005.
         store(
             &pool,
             company,
-            &[order("20006", 1, "01010112345"), unreadable, ended],
+            &[order("20006", 1, "01010112345"), unreadable, ended, bad_kid],
         )
         .await;
 
-        let shown = preview(&pool, company, &[entry(kari), entry(ola)])
+        let shown = preview(&pool, company, &[entry(kari), entry(ola), entry(per)])
             .await
             .unwrap();
-        assert!(
-            shown.garnishment_set.is_empty(),
+        assert_eq!(
+            shown.garnishment_set,
+            vec![g::Key::Registered(hand, 1)],
             "{:?}",
-            shown.garnishment_set
+            shown.warnings
         );
         let says = |needle: &str| shown.warnings.iter().any(|w| w.contains(needle));
         assert!(
@@ -4665,7 +4677,13 @@ mod garnishment {
             "{:?}",
             shown.warnings
         );
+        assert!(
+            says("20013 har betalingsinformasjon"),
+            "{:?}",
+            shown.warnings
+        );
         assert!(!says("20008"), "{:?}", shown.warnings);
+        assert!(!says("avløst"), "{:?}", shown.warnings);
     }
 
     /// §2 step 3: two active orders on one employee -- the one created last
@@ -4753,8 +4771,34 @@ mod garnishment {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("trekkpliktig"), "{err}");
+        // An unreadable list fails whole too. Neither failure shows the
+        // orders' content: the detail is read in the portal, and the
+        // content carries the employee's fødselsnummer.
+        let fetch = g::record_fetch(&pool, company, "Test").await.unwrap();
+        let employer = orgnumber(&pool, company).await;
+        let mut unreadable = order("20014", 1, KARI).json(&employer);
+        unreadable.as_object_mut().unwrap().remove("trekkversjon");
+        let err = g::store_list(&pool, company, fetch, &serde_json::json!([unreadable]))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("20014"), "{err}");
         let attempts = g::fetch_attempts(&pool, company).await.unwrap();
-        assert_eq!(attempts[0].ok, Some(false));
+        assert_eq!(attempts.len(), 2);
+        for a in &attempts {
+            assert_eq!(a.ok, Some(false));
+            let detail = a.detail.as_deref().unwrap();
+            assert!(!detail.contains(KARI), "{detail}");
+        }
+        let kept: Option<serde_json::Value> =
+            sqlx::query_scalar("select answer from garnishment_fetch_outcome where fetch_id = $1")
+                .bind(fetch)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            kept.unwrap().to_string().contains(KARI),
+            "the evidence is kept"
+        );
         let (orders, last) = g::fetched(&mut pool.acquire().await.unwrap(), company)
             .await
             .unwrap();
