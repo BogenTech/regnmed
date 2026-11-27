@@ -1108,7 +1108,11 @@ Rekkefølgen er omtrent den de bør tas i.
    systembrukerskinne som a-meldingen og krever at kunden har
    rapportert gjennom regnmed minst én gang. Forslaget står i
    docs/trekkpalegg.md.
-3. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
+3. **Inntektsmelding til Nav** (#184). Når Nav ber om inntektsmelding
+   for en sykmeldt, må selskapet sende den selv, på nav.no eller i et
+   annet system. regnmed registrerer ikke fravær. Navs API tar bare
+   imot svar på en forespørsel fra Nav. Forslaget står i docs/inntektsmelding.md.
+4. **Sykepengerefusjon, naturalytelser, pensjonstrekk, tariff-logikk,
    OTP** — uttrykkelig utenfor v1 i #46 selv.
 
 ## Timelønn fra timeføringen
