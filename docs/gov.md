@@ -572,8 +572,8 @@ per kundeform vi allerede har i produktet (#77s to ruter):
 Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
 `ske-innrapportering-aksjonaerregisteroppgave`, og senere
-`ske-informasjon-om-trekkpaalegg` (2026-11-26) og `ske-kontroll`
-(2026-11-27). Den ruten berøres ikke av regel 1 i det hele tatt.
+`ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll` og
+`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -614,7 +614,7 @@ begge er Altinns egne regler, ikke vår slutning:
 
 Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
 med begge kundeformene: `rights` med Skatteetatens ressurser (tre ved
-registreringen, fem fra 2026-11-27)
+registreringen, seks fra 2026-11-27)
 (egen virksomhet) og `accessPackages` med de tre REGN-pakkene
 (regnskapsfører). Hver forespørsel ber om sin del: en standard
 systembruker om rettighetene, en klient-systembruker om ÉN pakke.
@@ -675,6 +675,15 @@ samme dag av selskapets daglige leder med TestID (`change-status` →
 `Accepted`, alle fem ressursene). TestID ber om den syntetiske
 personens fødselsnummer, ikke selskapets organisasjonsnummer. Scopet
 `skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
+
+**`app_skd_formueinntekt-skattemelding-v2` lagt til 2026-11-27**
+(skattemelding, #11): Skatteetatens Altinn 3-app for skattemeldingen,
+som ifølge onboardingsguiden kreves både for Skatteetatens API og for
+Altinns, og som en standard systembruker kan få direkte uten
+tilgangspakker. Regnskapsførerpakkene systemet alt har, gir også
+tilgang til den. `update` mot TT02 og ny endringsforespørsel for
+311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
+ressursene, status `New`, venter på godkjenning med TestID).
 
 Tre ting å vite til neste gang:
 
