@@ -573,7 +573,8 @@ Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
 `ske-innrapportering-aksjonaerregisteroppgave`, og senere
 `ske-informasjon-om-trekkpaalegg` (2026-11-26), `ske-kontroll` og
-`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten berøres ikke av regel 1 i det hele tatt.
+`app_skd_formueinntekt-skattemelding-v2` (begge 2026-11-27). Den ruten
+berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -680,8 +681,10 @@ personens fødselsnummer, ikke selskapets organisasjonsnummer. Scopet
 (skattemelding, #11): Skatteetatens Altinn 3-app for skattemeldingen,
 som ifølge onboardingsguiden kreves både for Skatteetatens API og for
 Altinns, og som en standard systembruker kan få direkte uten
-tilgangspakker. Regnskapsførerpakkene systemet alt har, gir også
-tilgang til den. `update` mot TT02 og ny endringsforespørsel for
+tilgangspakker. For regnskapsførerruten gir
+`regnskapsforer-med-signeringsrettighet` og `-uten-signeringsrettighet`
+tilgang (ikke `regnskapsforer-lonn`), men bare den med
+signeringsrettighet kan bekrefte i signeringssteget. `update` mot TT02 og ny endringsforespørsel for
 311032240 (id `b33296a4-83e8-436a-ae1c-af8f1d58102d`, alle seks
 ressursene), **godkjent** samme dag med TestID (`Accepted`).
 

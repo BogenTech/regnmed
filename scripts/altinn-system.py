@@ -78,7 +78,7 @@ SYSTEM = {
             # SAF-T delivered in a control (#183, docs/saft/README.md); scope ordered in SSV-6691.
             "ske-kontroll",
             # Skattemelding with næringsspesifikasjon (#11): Skatteetaten's Altinn 3 app,
-            # needed for both their API and Altinn's (docs/skattemelding.md); scope in SSV-6691.
+            # needed for both their API and Altinn's (onboarding guide, docs/gov.md); scope in SSV-6691.
             "app_skd_formueinntekt-skattemelding-v2",
         )
     ],
