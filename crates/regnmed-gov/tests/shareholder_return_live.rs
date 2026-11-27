@@ -56,10 +56,11 @@ fn sub(nin: &str, last: i64, this: i64, movements: Vec<ShareMovement>) -> String
     .unwrap()
 }
 
-/// Stiftelse (T) to one owner, then a sale (K/R) and an overføring med
-/// skattemessig kontinuitet (OK, both sides naming the other) to a
-/// second — every code regnmed files beyond the founding, against the
-/// real validator.
+/// Stiftelse (T) to one owner, then a sale (K/R), an overføring med
+/// skattemessig kontinuitet (OK, both sides naming the other), a gave (G),
+/// an arv (A) and a konsernintern overføring (O) to a second, and two
+/// emisjoner (NF, NK) that also stand in post 9 — every code regnmed
+/// files, against the real validator.
 #[tokio::test]
 async fn skatteetaten_takes_our_oppgave() {
     if std::env::var("AKSJONAER_LIVE").as_deref() != Ok("1") {
@@ -85,28 +86,46 @@ async fn skatteetaten_takes_our_oppgave() {
             contact_email: Some("test@regnmed.no".into()),
         },
         inntektsar: YEAR,
-        // 100 shares at 300 kr: the 30 000 kr minimum.
-        share_capital: this_year(3_000_000),
+        // 100 shares at 300 kr (the 30 000 kr minimum), then 30 more.
+        share_capital: this_year(3_900_000),
         nominal_value_ore: this_year(30_000),
-        share_count: this_year(100),
-        paid_in_share_capital: this_year(3_000_000),
+        share_count: this_year(130),
+        paid_in_share_capital: this_year(3_900_000),
         share_premium: this_year(0),
         dividend: vec![],
-        new_issues: vec![NewIssue {
-            date: d(1, 1),
-            type_: TransactionType::Stiftelse,
-            new_shares: 100,
-            shares_after: 100,
-            nominal_value_ore: 30_000,
-            share_premium_ore: 0,
-        }],
+        new_issues: vec![
+            NewIssue {
+                date: d(1, 1),
+                type_: TransactionType::Stiftelse,
+                new_shares: 100,
+                shares_after: 100,
+                nominal_value_ore: 30_000,
+                share_premium_ore: 0,
+            },
+            NewIssue {
+                date: d(10, 1),
+                type_: TransactionType::NyemisjonKonverteringFordring,
+                new_shares: 20,
+                shares_after: 120,
+                nominal_value_ore: 30_000,
+                share_premium_ore: 0,
+            },
+            NewIssue {
+                date: d(11, 1),
+                type_: TransactionType::NyemisjonKonserninternOverforing,
+                new_shares: 10,
+                shares_after: 130,
+                nominal_value_ore: 30_000,
+                share_premium_ore: 0,
+            },
+        ],
     })
     .unwrap();
     use TransactionType::*;
     let giver = sub(
         GIVER,
         0,
-        60,
+        55,
         vec![
             movement(1, 1, Stiftelse, 100, Some(3_000_000), None),
             movement(3, 1, Salg, 30, Some(1_200_000), None),
@@ -118,15 +137,37 @@ async fn skatteetaten_takes_our_oppgave() {
                 None,
                 Some(RECEIVER),
             ),
+            movement(7, 1, GaveUtenKontinuitetAvgang, 5, None, None),
+            movement(8, 1, ArvUtenKontinuitetAvgang, 5, None, None),
+            movement(9, 1, KonserninternOverforingAvgang, 5, None, None),
+            movement(
+                11,
+                1,
+                NyemisjonKonserninternOverforing,
+                10,
+                Some(300_000),
+                None,
+            ),
         ],
     );
     let receiver = sub(
         RECEIVER,
         0,
-        40,
+        75,
         vec![
             movement(3, 1, Kjop, 30, Some(1_200_000), None),
             movement(6, 1, OverforingMedKontinuitet, 10, None, Some(GIVER)),
+            movement(7, 1, GaveUtenKontinuitet, 5, None, None),
+            movement(8, 1, ArvUtenKontinuitet, 5, None, None),
+            movement(9, 1, KonserninternOverforing, 5, None, None),
+            movement(
+                10,
+                1,
+                NyemisjonKonverteringFordring,
+                20,
+                Some(600_000),
+                None,
+            ),
         ],
     );
 

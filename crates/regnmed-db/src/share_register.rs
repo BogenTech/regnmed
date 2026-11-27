@@ -744,6 +744,8 @@ pub async fn build_return(pool: &PgPool, company_id: Uuid, year: i32) -> Result<
                 TransactionType::Stiftelse
                     | TransactionType::Nyemisjon
                     | TransactionType::NyemisjonAnsattaksjer
+                    | TransactionType::NyemisjonKonverteringFordring
+                    | TransactionType::NyemisjonKonserninternOverforing
             ) {
                 new_issues.push(tax_return::NewIssue {
                     date: h.date,
