@@ -79,9 +79,20 @@ Gjenstår:
    visning i sluttbrukersystem», og tilgang krever et lovregulert
    behandlingsgrunnlag. Mva-registreringen forblir et manuelt flagg i
    firmaopplysningene (docs/faktura.md).
-   `Krav og betalinger` står i samme skjema, men ble ikke krysset av:
-   ingenting i regnmed bruker det ennå (#36). Skal det med, legges det
-   til som kommentar på SSV-6690, ikke som ny sak.
+   `Krav og betalinger` (`skatteetaten:kravogbetalinger`, rettighetspakken
+   «regnskapssystem» med systembruker) ble ikke krysset av i skjemaet,
+   men er **bedt om som kommentar på SSV-6690 2026-11-27**, ikke som ny
+   sak: likviditetsoversikten (#36) kan vise kundens egne krav og
+   innbetalinger. Tjenesten er i pilot; kommentaren spør om vi heller
+   skal gå via fremtidensinnkreving@skatteetaten.no. Vilkår fra
+   API-dokumentasjonen (lest 2026-11-27): leverandøren må være integrert
+   mot minst ett innrapporterings-API, og kunden må ha rapportert gjennom
+   oss minst én gang. Tilgangspakkene er `ansvarlig-revisor`,
+   `krav-og-utlegg`, `regnskapsforer-med-signeringsrettighet`,
+   `-uten-signeringsrettighet` og `revisormedarbeider`: regnskapsfører-
+   ruten virker med pakkene systemet alt har, mens egen-virksomhet-ruten
+   trenger en ressurs-id i systemets `rights` som dokumentasjonen ikke
+   oppgir — spør om den når scopet tildeles.
 3. **Innrapportering, bestilt 2026-11-27, sak SSV-6691** (test): `skatteetaten:innleveringkontroll` (#183),
    `skatteetaten:formueinntekt/skattemelding` (#11),
    `skatteetaten:skattdialogdokument` og
@@ -186,6 +197,7 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
 | `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning. Bestilt i test, SSV-6690 |
 | `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | bestilt i test, SSV-6690 |
+| `skatteetaten:kravogbetalinger` | kundens egne krav og innbetalinger i likviditetsoversikten (#36) | bedt om som kommentar på SSV-6690 2026-11-27; tjenesten er i pilot |
 | `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
 | `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
 | `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bedt om i beskrivelsen av SSV-6691 (ingen egen tjeneste i skjemaet) |
