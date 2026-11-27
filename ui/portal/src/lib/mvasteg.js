@@ -10,8 +10,10 @@ export function nesteSteg(filing) {
   if (filing.status === "sendt" && filing.henter_svar) {
     return { handling: null, poll: 15_000, stoppet: false };
   }
-  // Delivered by a person's own check: the term stays closed.
-  if (filing.lukking?.funn === "levert") return { handling: null, poll: null, stoppet: false };
+  // Delivered: a correction is a new complete melding, and the last one counts.
+  if (filing.status === "kvittert" || filing.lukking?.funn === "levert") {
+    return { handling: "korriger", poll: null, stoppet: false };
+  }
   const stoppet = I_ARBEID.includes(filing.status);
   if (NY_FRA_START.includes(filing.status)) return { handling: "godkjenn", poll: null, stoppet };
   if (!filing.kan_godkjennes) return { handling: null, poll: null, stoppet };

@@ -716,7 +716,80 @@ async fn an_approved_melding_is_filed_and_the_answer_arrives_without_anyone() {
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
-        "a filed period stays filed"
+        "the same figures again correct nothing"
+    );
+}
+
+/// A correction is a new complete melding for the term; the last one
+/// filed counts (Skatteetaten's FAQ, docs/mva.md).
+#[tokio::test]
+async fn a_delivered_term_is_corrected_with_a_new_complete_melding() {
+    let Some(s) = setup().await else { return };
+    let (first, _) = approved_and_settled(&s).await;
+    let uri = format!("/companies/{}/vat-filings", s.company);
+    let (status, body) = call(
+        &s.state,
+        &s.token,
+        "POST",
+        &uri,
+        json!({ "year": 2026, "period": 1 }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "no correction before the answer: {body}"
+    );
+    assert!(body.to_string().contains("venter på svar"), "{body}");
+    s.mock.lock().unwrap().feedback = true;
+    regnmed_db::vat_filing::reconcile(&s.state.pool, &s.worker)
+        .await
+        .unwrap();
+    assert_eq!(read(&s, &first).await["status"], "kvittert");
+
+    let (status, body) = call(
+        &s.state,
+        &s.token,
+        "POST",
+        &uri,
+        json!({ "year": 2026, "period": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("ingenting å korrigere"), "{body}");
+
+    regnmed_db::post_voucher(&s.state.pool, s.company, &sale(4_000_00), "test")
+        .await
+        .unwrap();
+    s.mock.lock().unwrap().feedback = false;
+    let (second, login) = start(&s).await;
+    assert_ne!(second, first);
+    assert_eq!(read(&s, &second).await["korrigerer"], first);
+    let (status, body) = approve(&s, &s.token, &second, &login).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(settled(&s, &second).await["status"], "sendt");
+    s.mock.lock().unwrap().feedback = true;
+    regnmed_db::vat_filing::reconcile(&s.state.pool, &s.worker)
+        .await
+        .unwrap();
+    let corrected = read(&s, &second).await;
+    assert_eq!(corrected["status"], "kvittert", "{corrected}");
+    assert_eq!(
+        s.mock.lock().unwrap().creates,
+        2,
+        "a new instance, not the old one"
+    );
+    assert_eq!(
+        read(&s, &first).await["status"],
+        "kvittert",
+        "the history stays"
+    );
+
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(detail.contains("2026 termin 1 kvittert"), "{detail}");
+    assert!(
+        detail.contains("2026 termin 1 (korrigert melding) kvittert"),
+        "{detail}"
     );
 }
 
@@ -1673,8 +1746,8 @@ async fn a_term_found_delivered_stays_closed() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
-        body.to_string().contains("levert ifølge kontrollen"),
-        "{body}"
+        body.to_string().contains("ingenting å korrigere"),
+        "a delivered term only takes a correction: {body}"
     );
     assert_eq!(s.mock.lock().unwrap().creates, 1);
 }

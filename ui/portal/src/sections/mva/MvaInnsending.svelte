@@ -93,10 +93,15 @@
     try {
       const answer = await post(base, { year, period: termin });
       const amount = answer.filing.assessed_kr;
+      const correction = answer.filing.korrigerer;
       const ok = await bekreft(
         title + ": " + (amount >= 0 ? "å betale " : "til gode ") + kr(Math.abs(amount) * 100) +
-          " kr. Du logger inn med ID-porten, og innloggingen din er godkjenningen av meldingen.",
-        { tittel: "Godkjenn og send mva-meldingen?", ok: "Gå til ID-porten" },
+          " kr." + (correction ? " Meldingen erstatter den som er levert for terminen." : "") +
+          " Du logger inn med ID-porten, og innloggingen din er godkjenningen av meldingen.",
+        {
+          tittel: correction ? "Godkjenn og send korrigert melding?" : "Godkjenn og send mva-meldingen?",
+          ok: "Gå til ID-porten",
+        },
       );
       if (ok) toIdporten(answer.authorize_url);
       else await load(companyId, year, termin);
@@ -153,7 +158,7 @@
       ],
       {
         melding:
-          "Dette endrer ingenting i Altinn. Navnet ditt, tidspunktet, funnet og notatet lagres. Er meldingen levert, kan terminen ikke sendes på nytt herfra. Er den ikke levert, kan du starte en ny innsending.",
+          "Dette endrer ingenting i Altinn. Navnet ditt, tidspunktet, funnet og notatet lagres. Er meldingen levert, kan terminen bare korrigeres herfra. Er den ikke levert, kan du starte en ny innsending.",
         ok: "Lukk innsendingen",
         farlig: true,
       },
@@ -205,6 +210,7 @@
       <div class="alert alert-soft alert-{shown[1]}" role="status">
         <div>
           <p class="font-medium">{shown[0]}</p>
+          {#if filing.korrigerer}<p class="text-sm">Korrigert melding. Den erstatter meldingen som ble levert tidligere for terminen.</p>{/if}
           {#if filing.melding}<p class="text-sm">{filing.melding}</p>{/if}
           {#if filing.lukking}
             <p class="text-sm">Kontrollert av {filing.lukking.av}, {formatTime(filing.lukking.tidspunkt)}: {filing.lukking.notat}</p>
@@ -251,13 +257,15 @@
     {/if}
 
     {#if !canSend}
-      {#if steg.handling}
+      {#if steg.handling && steg.handling !== "korriger"}
         <p class="text-sm opacity-80">Du kan se meldingen, men ikke sende den. Det krever rettigheten «Godkjenne og sende inn mva-melding».</p>
       {/if}
     {:else}
       <div class="flex flex-wrap gap-2">
         {#if steg.handling === "godkjenn"}
           <button class="btn btn-primary" onclick={approve} disabled={working} aria-busy={working}>Godkjenn og send</button>
+        {:else if steg.handling === "korriger"}
+          <button class="btn" onclick={approve} disabled={working} aria-busy={working}>Send korrigert melding</button>
         {:else if steg.handling}
           <button class="btn btn-primary" onclick={signInAgain} disabled={working} aria-busy={working}>
             {steg.handling === "hent" ? "Logg inn og hent svar" : "Logg inn og fortsett"}
@@ -270,7 +278,12 @@
           <button class="btn" onclick={abandon} disabled={working}>Avbryt innsendingen</button>
         {/if}
       </div>
-      {#if steg.handling === "godkjenn"}
+      {#if steg.handling === "korriger"}
+        <p class="text-sm opacity-70">
+          Har du rettet regnskapet for terminen etter at meldingen ble levert, sender du en ny, komplett melding. Den siste
+          meldingen er den som gjelder.
+        </p>
+      {:else if steg.handling === "godkjenn"}
         <p class="text-sm opacity-70">
           Du logger inn med ID-porten. Du må ha rett til å levere mva-melding for selskapet i Altinn.
           Regnskapsfører må ha fått klienten av byrået sitt.
