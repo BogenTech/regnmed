@@ -629,6 +629,26 @@ async fn job_closed(s: &Setup, id: &str) {
     panic!("the job never finished");
 }
 
+/// The revisjon report's account of the filings.
+async fn audit_check(s: &Setup) -> Value {
+    let (status, report) = call(
+        &s.state,
+        &s.token,
+        "GET",
+        &format!("/companies/{}/reports/revisjon", s.company),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    report["kontroller"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["navn"] == "Mva-meldinger")
+        .cloned()
+        .expect("the Mva-meldinger check")
+}
+
 async fn grants(s: &Setup, id: &str) -> i64 {
     sqlx::query_scalar("select count(*) from vat_filing_grant where filing_id = $1")
         .bind(id.parse::<Uuid>().unwrap())
@@ -671,6 +691,20 @@ async fn an_approved_melding_is_filed_and_the_answer_arrives_without_anyone() {
     let done = read(&s, &id).await;
     assert_eq!(done["status"], "kvittert", "{done}");
     assert_eq!(grants(&s, &id).await, 0, "the token is gone with the work");
+
+    // The revisor sees the filing and can compare the receipt byte for byte.
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], true, "{check}");
+    let detail = check["detalj"].as_str().unwrap();
+    let receipt = hex::encode(Sha256::digest(b"%PDF-receipt"));
+    assert!(
+        detail.contains("2026 termin 1 kvittert, godkjent av Kari Nordmann"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(&format!("kvittering sha256 {receipt}")),
+        "{detail}"
+    );
     let (status, _) = call(
         &s.state,
         &s.token,
@@ -1440,6 +1474,8 @@ async fn a_person_closes_an_unresolved_filing_with_a_note() {
     s.mock.lock().unwrap().create_fails = Some(502);
     let (id, filing) = approved_and_settled(&s).await;
     assert_eq!(filing["status"], "uavklart");
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], false, "an unknown fate is an avvik: {check}");
     let uri = format!("/companies/{}/vat-filings/{id}/close-unresolved", s.company);
 
     for body in [
@@ -1463,6 +1499,7 @@ async fn a_person_closes_an_unresolved_filing_with_a_note() {
     let (status, closed) = call(&s.state, &s.token, "POST", &uri, body.clone()).await;
     assert_eq!(status, StatusCode::OK, "{closed}");
     assert_eq!(closed["status"], "lukket_etter_kontroll");
+    assert_eq!(audit_check(&s).await["ok"], true, "closed with a finding");
     let events = regnmed_db::vat_filing::events(&s.state.pool, id.parse().unwrap())
         .await
         .unwrap();

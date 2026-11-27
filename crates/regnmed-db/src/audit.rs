@@ -370,6 +370,10 @@ pub async fn build_audit_report(
         },
     });
 
+    // 11. Mva-meldinger (docs/mva.md): what was filed, by whom, and the
+    // hashes of the melding sent and the receipt Skatteetaten returned.
+    checks.push(crate::vat_filing::audit_check(pool, company_id).await?);
+
     let anchors = crate::company_anchors(pool, company_id, None)
         .await?
         .into_iter()

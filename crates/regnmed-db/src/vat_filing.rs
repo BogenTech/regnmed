@@ -817,6 +817,76 @@ pub async fn document(
     Ok(row.map(|r| (r.get("content"), r.get("content_type"))))
 }
 
+/// The revisjon report's account of the mva-meldinger filed from regnmed
+/// (docs/revisjon.md). Each stored melding is re-hashed against the hash
+/// taken before it was sent, and each receipt's SHA-256 is printed so the
+/// revisor can download it and compare. A filing nobody knows the fate of
+/// is an avvik: the term may or may not be delivered.
+pub async fn audit_check(pool: &PgPool, company_id: Uuid) -> Result<regnmed_core::audit::Check> {
+    let rows = sqlx::query(
+        "select id, year, period, melding_xml, melding_sha256 from vat_filing
+         where company_id = $1 order by year, period, created_at",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    let (mut lines, mut problems, mut other) = (Vec::new(), Vec::new(), 0);
+    for row in &rows {
+        let id: Uuid = row.get("id");
+        let term = format!(
+            "{} termin {}",
+            row.get::<i32, _>("year"),
+            row.get::<i32, _>("period")
+        );
+        let xml: String = row.get("melding_xml");
+        let stored: Vec<u8> = row.get("melding_sha256");
+        if regnmed_core::hash::sha256(xml.as_bytes()).as_slice() != stored.as_slice() {
+            problems.push(format!(
+                "{term}: meldingen stemmer ikke med hashen tatt før sending"
+            ));
+        }
+        let events = events(pool, id).await?;
+        let by = approver_name(&events).unwrap_or("ukjent");
+        let melding = format!("melding sha256 {}", hex::encode(&stored));
+        match status(&events) {
+            "kvittert" => {
+                let receipt = match document(pool, id, "kvittering").await? {
+                    Some((bytes, _)) => {
+                        format!("kvittering sha256 {}", hex::encode(regnmed_core::hash::sha256(&bytes)))
+                    }
+                    None => "kvitteringen er ikke hentet".into(),
+                };
+                lines.push(format!("{term} kvittert, godkjent av {by}; {melding}; {receipt}"));
+            }
+            "avvist" => lines.push(format!("{term} avvist av Skatteetaten, godkjent av {by}; {melding}")),
+            "sendt" => lines.push(format!("{term} sendt, venter på svar; {melding}")),
+            "lukket_etter_kontroll" if closed_as_delivered(&events) => lines.push(format!(
+                "{term} levert ifølge personens kontroll i Altinn, regnmed har ikke kvitteringen; {melding}"
+            )),
+            "uavklart" => problems.push(format!(
+                "{term} er uavklart: ingen vet om meldingen nådde Altinn"
+            )),
+            _ => other += 1,
+        }
+    }
+    if other > 0 {
+        lines.push(format!("{other} forsøk som ikke ble sendt"));
+    }
+    Ok(regnmed_core::audit::Check {
+        name: "Mva-meldinger".into(),
+        ok: problems.is_empty(),
+        detail: if rows.is_empty() {
+            "ingen mva-melding er sendt fra regnmed".into()
+        } else {
+            problems
+                .into_iter()
+                .chain(lines)
+                .collect::<Vec<_>>()
+                .join("; ")
+        },
+    })
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitInput {
     pub filing_id: Uuid,

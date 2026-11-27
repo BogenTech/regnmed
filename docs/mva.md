@@ -186,10 +186,11 @@ en kode der ville telt det samme grunnlaget to ganger.
 **Gjenstår, uavklart mot Skatteetaten:** om en tosidig kode skal sendes
 som ÉN linje (beregnet avgift i `merverdiavgift`, fradraget bare i
 totalen — slik vi gjør nå) eller som to linjer. XSD-en tillater begge,
-og `fastsattMerverdiavgift` er uansett riktig. Spørsmålet avklares mot
-valideringstjenesten før første innsending (`regnmed mva-melding
---validate`, docs/gov.md). Selve avgiftsbeløpet er ikke lenger avhengig
-av svaret — bare linjeformen.
+og `fastsattMerverdiavgift` er uansett riktig. Testinnsendingene i TT02
+hadde ingen tosidige koder, så spørsmålet er fortsatt åpent. Det avklares
+med en testinnsending som har en slik kode, før første innsending i
+produksjon. Selve avgiftsbeløpet er ikke lenger avhengig av svaret — bare
+linjeformen.
 
 Validation and submission against Skatteetaten's APIs: see
 [gov.md](gov.md).
@@ -332,6 +333,13 @@ innsending. Utkastet forsøkes slettet i Altinn, og en mislykket sletting
 stopper ingenting. En termin som er sendt kan ikke sendes på nytt herfra.
 Korrigert melding er ikke bygget.
 
+**Revisjonsrapporten** har kontrollen «Mva-meldinger» (docs/revisjon.md):
+hver termin som er sendt, kvittert, avvist eller levert ifølge en persons
+kontroll, med hvem som godkjente og SHA-256 av meldingen som ble sendt og
+av kvitteringen Skatteetaten sendte tilbake. Meldingen hashes på nytt mot
+hashen som ble tatt før sending. En `uavklart` innsending er et avvik, for
+da vet ingen om terminen er levert.
+
 ### Når en regnskapsfører leverer for kunden
 
 Regnskapsføreren godkjenner med **sin egen** ID-porten-innlogging. Det må
@@ -445,8 +453,9 @@ koster null, kode 87 koster 25 000.
   kjøringer som kommer for sent eller mister låsen, mislykket tokenveksling,
   bekreftet sletting etter usikre steg, lukking med notat, operatørens
   ombinding, en ødelagt rad i oppfølgingen, avvik, utløpt token,
-  usikre steg som aldri gir en andre instans, og at verken token eller
-  fødselsnummer står lesbart i basen. Enhetstester i `regnmed-gov::idporten`,
+  usikre steg som aldri gir en andre instans, at verken token eller
+  fødselsnummer står lesbart i basen, og at revisjonsrapporten viser
+  kvitteringens hash og gjør en `uavklart` innsending til avvik. Enhetstester i `regnmed-gov::idporten`,
   `regnmed-gov::vat_return` og `regnmed-db::vat_filing`.
 - `crates/regnmed-db/tests/mva.rs` (real Postgres, also CI) — the
   spesifikasjon's numbers per termin, the 2017 historical rate (10 %),

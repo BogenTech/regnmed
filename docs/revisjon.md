@@ -34,6 +34,7 @@ it is never an error that hides the document.
 | Regelverkssatser | no monitored sats domain in the satsregister is older than its known change cadence ([regelverk.md](regelverk.md)) — outdated satser would silently produce unlawful gebyrer/renter |
 | Balansedokumentasjon | which balance accounts with a nonzero saldo lack documentation at the latest closed period ([bokføringsloven §11](https://lovdata.no/lov/2004-11-19-73/§11), balansedokumentasjon.md). **This one IS an avvik**, unlike Dokumentasjon below: §10 says booked information shall be documented and the documentation may lawfully live elsewhere, while §11 says it shall exist for the balance post — and regnmed is where the company records that it does. Also reports accounts posted to AFTER they were reconciled, which is a different finding and said in different words |
 | Dokumentasjon | how many bilag lack an attachment in regnmed, oldest first ([bokføringsloven §10](https://lovdata.no/lov/2004-11-19-73/§10)). **Informational, never an avvik**: a missing attachment is not proof of a missing document — it may live in another oppbevaringsmedium, and documentation legitimately arrives after the posting. Bilag that carry documentation BY CONSTRUCTION are not counted (faktura and innboks copy the document onto the voucher when it is posted, so they simply have one), and the import journal is left out because kontroll «Importert historikk» hashes its source files instead. The same set backs `GET …/vouchers?uten_vedlegg=true`, so whoever tidies up works from exactly the numbers the revisor read |
+| Mva-meldinger | every mva-melding filed from regnmed ([mva.md](mva.md)): term, outcome, who approved it, and the SHA-256 of the melding sent and of the receipt Skatteetaten returned, so the receipt can be downloaded and compared byte for byte. The stored melding is re-hashed against the hash taken before it was sent. **An avvik** when a filing is `uavklart` — nobody knows whether the term was delivered — or a melding no longer matches its hash |
 | Importert historikk | which external SAF-T files the ledger was built from ([migration.md](migration.md)): full content hashes from the insert-only import log, so the source system's export can be compared byte for byte; history imported before the log existed is stated, never hidden (informational) |
 
 The report also lists every external anchor covering the company
@@ -105,6 +106,9 @@ and no access yields 404, as everywhere.
   and asserts the konto, the amount and the øre difference by name,
   that only kontroll 4 fails, and that a healthy company reports the
   total it reconciled.
+- `crates/regnmed-api/tests/grupper/vat_filing.rs` — a filed melding
+  shows the receipt's sha256 in kontroll «Mva-meldinger»; an `uavklart`
+  filing makes it an avvik until a person closes it with a finding.
 - `crates/regnmed-api/tests/grupper/saft_migration.rs` — a ledger built
   from four import files carries kontroll «Importert historikk» with
   the full sha256 of each file in the report.
