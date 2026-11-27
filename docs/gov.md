@@ -79,9 +79,12 @@ Gjenstår:
    visning i sluttbrukersystem», og tilgang krever et lovregulert
    behandlingsgrunnlag. Mva-registreringen forblir et manuelt flagg i
    firmaopplysningene (docs/faktura.md).
-   `Krav og betalinger` står i samme skjema, men ble ikke krysset av:
-   ingenting i regnmed bruker det ennå (#36). Skal det med, legges det
-   til som kommentar på SSV-6690, ikke som ny sak.
+   `Krav og betalinger` (`skatteetaten:kravogbetalinger`, rettighetspakken
+   «regnskapssystem» med systembruker) ble ikke krysset av i skjemaet,
+   men er **bedt om som kommentar på SSV-6690 2026-11-27**, ikke som ny
+   sak: likviditetsoversikten (#36) kan vise kundens egne krav og
+   innbetalinger. Tjenesten er i pilot; kommentaren spør om vi heller
+   skal gå via fremtidensinnkreving@skatteetaten.no.
 3. **Innrapportering, bestilt 2026-11-27, sak SSV-6691** (test): `skatteetaten:innleveringkontroll` (#183),
    `skatteetaten:formueinntekt/skattemelding` (#11),
    `skatteetaten:skattdialogdokument` og
