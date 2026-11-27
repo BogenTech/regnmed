@@ -141,14 +141,19 @@ impl Order {
         (None, waiting)
     }
 
-    /// For the portal: «aktiv», «stoppet», «venter på attestering»,
-    /// «avvist ved attestering».
+    /// For the portal, from the version that is actually withheld.
     pub fn status(&self) -> &'static str {
-        match self.versions.first() {
-            Some(v) if v.stopped => "stoppet",
-            Some(v) if v.in_force() => "aktiv",
-            Some(v) if v.attestation.as_deref() == Some("avvist") => "avvist ved attestering",
-            _ => "venter på attestering",
+        let (governing, waiting) = self.governing();
+        let refused = waiting
+            .first()
+            .is_some_and(|w| w.attestation.as_deref() == Some("avvist"));
+        match (governing, waiting.is_empty()) {
+            _ if self.versions.first().is_some_and(|v| v.stopped) => "stoppet",
+            (Some(_), true) => "aktiv",
+            (Some(_), false) if refused => "aktiv, endringen er avvist ved attestering",
+            (Some(_), false) => "aktiv, endringen venter på attestering",
+            (None, _) if refused => "avvist ved attestering",
+            (None, _) => "venter på attestering",
         }
     }
 }
@@ -510,7 +515,10 @@ pub async fn attest(
 // ---- the payroll settings ------------------------------------------------
 
 /// The payroll settings for utleggstrekk (§2 step 5, §6). Every row is the
-/// whole set; the newest with `valid_from` on or before a date applies.
+/// whole set; of the rows with `valid_from` on or before a date, the one
+/// recorded last applies. Ordering by `valid_from` instead would let the
+/// account a run remembered (dated at its pay date) shadow settings a
+/// person saved after it with an earlier date.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub valid_from: Option<NaiveDate>,
@@ -546,7 +554,7 @@ pub async fn settings_on(
     let row = sqlx::query(&format!(
         "select {SETTINGS_COLUMNS} from payroll_garnishment_setting
          where company_id = $1 and valid_from <= $2
-         order by valid_from desc, created_at desc, id desc limit 1"
+         order by created_at desc, id desc limit 1"
     ))
     .bind(company_id)
     .bind(date)
@@ -559,7 +567,7 @@ pub async fn settings_on(
 pub async fn settings_history(pool: &PgPool, company_id: Uuid) -> Result<Vec<Settings>> {
     let rows = sqlx::query(&format!(
         "select {SETTINGS_COLUMNS} from payroll_garnishment_setting
-         where company_id = $1 order by valid_from desc, created_at desc, id desc"
+         where company_id = $1 order by created_at desc, id desc"
     ))
     .bind(company_id)
     .fetch_all(pool)

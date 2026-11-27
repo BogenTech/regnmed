@@ -80,5 +80,5 @@
     onDone={reload}
   />
   <Skattekort {companyId} ansatte={data.ansatte} onDone={reload} />
-  <Trekkpalegg {companyId} ansatte={data.ansatte} />
+  <Trekkpalegg {companyId} employees={data.ansatte} />
 {/if}

@@ -3994,6 +3994,30 @@ mod garnishment {
         // The account is remembered as the company's choice.
         let settings = g::settings_history(&pool, company).await.unwrap();
         assert_eq!(settings[0].account_number.as_deref(), Some("2610"));
+        // Settings saved after the run, dated before its pay date, still
+        // govern later months: the remembered row does not shadow them.
+        g::set_settings(
+            &pool,
+            company,
+            &g::Settings {
+                valid_from: Some(date(2026, 3, 1)),
+                account_number: Some("2610".into()),
+                tax_kid: Some("12345678903".into()),
+                set_by: "Test".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let april = g::settings_on(
+            &mut *pool.acquire().await.unwrap(),
+            company,
+            date(2026, 4, 25),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(april.tax_kid.as_deref(), Some("12345678903"));
 
         let draft = payroll::amelding_for_run(&pool, company, run.id, chrono::Utc::now())
             .await
@@ -4205,6 +4229,8 @@ mod garnishment {
         let shown = preview(&pool, company, &poster).await.unwrap();
         assert_eq!(shown.garnishment_set, vec![(order, 1)]);
         assert_eq!(shown.lines[0].garnishments[0].withheld_ore, 400_000);
+        let listed = g::list(&pool, company).await.unwrap();
+        assert_eq!(listed[0].status(), "aktiv, endringen venter på attestering");
         assert!(
             shown
                 .warnings

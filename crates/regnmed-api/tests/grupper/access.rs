@@ -1289,3 +1289,76 @@ async fn built_in_role_names_are_reserved() {
         assert_eq!(code, StatusCode::BAD_REQUEST, "{name}: {response}");
     }
 }
+
+/// Trekkpålegg (docs/trekkpalegg.md §3 point 4): who owes what is for
+/// LONN_LES, registering is LONN_SKRIV, attesting needs ATTESTERING_UTFOR
+/// AND LONN_LES. Every body below is valid, so a 403 is the guard and not
+/// an extractor.
+#[tokio::test]
+async fn garnishments_are_for_payroll_readers_only() {
+    let Some((state, idp, company, admin, bookkeeping, les)) = setup().await else {
+        return;
+    };
+    let employee = person_with_role(&state, &idp, company, "ansatt").await;
+    let c = company.to_string();
+    let some = Uuid::new_v4();
+    let reads = [
+        format!("/companies/{c}/payroll/garnishments"),
+        format!("/companies/{c}/payroll/garnishments/letters/{some}"),
+    ];
+    for uri in &reads {
+        for (name, token) in [("les", &les), ("ansatt", &employee)] {
+            assert_eq!(
+                status(&state, "GET", uri, token, "").await,
+                StatusCode::FORBIDDEN,
+                "{name} skulle vært nektet {uri}"
+            );
+        }
+    }
+    assert_eq!(
+        status(&state, "GET", &reads[0], &bookkeeping, "").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&state, "GET", &reads[0], &admin, "").await,
+        StatusCode::OK
+    );
+
+    let writes = [
+        (
+            "POST",
+            format!("/companies/{c}/payroll/garnishments/letters?filename=brev.pdf"),
+            "%PDF-1.4".to_string(),
+        ),
+        (
+            "PUT",
+            format!("/companies/{c}/payroll/garnishment-settings"),
+            "{}".to_string(),
+        ),
+        (
+            "POST",
+            format!("/companies/{c}/payroll/garnishments/{some}/stop"),
+            "{}".to_string(),
+        ),
+        (
+            "POST",
+            format!("/companies/{c}/payroll/garnishments/{some}/versions/1/attest"),
+            r#"{"godkjent":true}"#.to_string(),
+        ),
+    ];
+    for (method, uri, body) in &writes {
+        for (name, token) in [("les", &les), ("ansatt", &employee)] {
+            assert_eq!(
+                status(&state, method, uri, token, body).await,
+                StatusCode::FORBIDDEN,
+                "{name} skulle vært nektet {method} {uri}"
+            );
+        }
+    }
+    // Bokføring may: the attempt reaches the handler and fails on the
+    // unknown order, not on the guard.
+    assert_eq!(
+        status(&state, "POST", &writes[2].1, &bookkeeping, "{}").await,
+        StatusCode::BAD_REQUEST
+    );
+}

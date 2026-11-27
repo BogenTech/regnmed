@@ -57,7 +57,7 @@ impl Kind {
         match self {
             Kind::Coordinated => "samordnet trekk",
             Kind::Tax => "utleggstrekk skatt",
-            Kind::Other => "utleggstrekk, øvrige krav",
+            Kind::Other => "øvrige krav",
         }
     }
 }

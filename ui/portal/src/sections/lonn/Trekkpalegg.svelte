@@ -1,8 +1,8 @@
 <script>
-  // Trekkpålegg registrert for hånd (docs/trekkpalegg.md §6, #339): fra
-  // brevet, med brevet lagret ved siden av. En endring eller en stopp er en
-  // ny versjon; ingenting rettes i ettertid. Synlig bare med LONN_LES —
-  // uten den svarer serveren nei, og kortet viser seg ikke.
+  // Trekkpålegg registered by hand (docs/trekkpalegg.md §6, #339), from the
+  // letter, with the letter stored beside it. A change or a stop is a new
+  // version; nothing is edited afterwards. Visible only with LONN_LES —
+  // without it the server says no and the card does not show.
   import { api, post, send } from "../../lib/api.js";
   import { toast } from "../../lib/toast.svelte.js";
   import { bekreft, sporsmal } from "../../lib/dialog.svelte.js";
@@ -11,19 +11,19 @@
   import { strictOre } from "../../lib/planer.js";
   import Card from "../../components/Card.svelte";
 
-  let { companyId, ansatte, onDone } = $props();
+  let { companyId, employees } = $props();
 
-  const TYPER = [
+  const KINDS = [
     ["samordnet", "Samordnet trekk (ny ordning)"],
     ["skatt", "Skatt og avgift (gammel ordning)"],
     ["ovrige", "Øvrige krav (gammel ordning)"],
   ];
-  const typeNavn = (t) => TYPER.find((x) => x[0] === t)?.[1] ?? t;
+  const kindLabel = (k) => KINDS.find((x) => x[0] === k)?.[1] ?? k;
 
   let data = $state(null);
-  let arbeider = $state(false);
+  let busy = $state(false);
 
-  async function hent() {
+  async function load() {
     try {
       data = await api("/companies/" + companyId + "/payroll/garnishments");
     } catch {
@@ -32,145 +32,145 @@
   }
   $effect(() => {
     companyId;
-    hent();
+    load();
   });
 
-  const tom = () => ({
-    endrer: null, // the order being changed, or null for a new one
-    employee_id: "",
-    type: "samordnet",
-    form: "belop",
-    belop: "",
-    prosent: "",
-    fra: today(),
-    til: "",
+  const emptyDraft = () => ({
+    editing: null, // the order being changed, or null for a new one
+    employeeId: "",
+    kind: "samordnet",
+    sizeKind: "amount",
+    amount: "",
+    percent: "",
+    from: today(),
+    to: "",
     kid: "",
-    orgnr: "",
-    konto: "",
-    frist: "",
-    notat: "",
-    fil: null,
+    payeeOrgnumber: "",
+    payeeAccount: "",
+    dueDays: "",
+    note: "",
+    file: null,
   });
-  let skjema = $state(null);
+  let draft = $state(null);
 
-  function endre(p) {
-    const v = p.versjoner[0];
-    const tekst = (ore) => (ore / 100).toFixed(2).replace(".", ",");
-    skjema = {
-      ...tom(),
-      endrer: p.id,
-      employee_id: p.employee_id,
-      type: p.type,
-      form: v.prosent_bp != null ? "prosent" : "belop",
-      belop: v.belop_ore != null ? tekst(v.belop_ore) : "",
-      prosent: v.prosent_bp != null ? tekst(v.prosent_bp) : "",
-      fra: v.gjelder_fra,
-      til: v.gjelder_til ?? "",
+  function edit(order) {
+    const v = order.versjoner[0];
+    const text = (n) => (n / 100).toFixed(2).replace(".", ",");
+    draft = {
+      ...emptyDraft(),
+      editing: order.id,
+      employeeId: order.employee_id,
+      kind: order.type,
+      sizeKind: v.prosent_bp != null ? "percent" : "amount",
+      amount: v.belop_ore != null ? text(v.belop_ore) : "",
+      percent: v.prosent_bp != null ? text(v.prosent_bp) : "",
+      from: v.gjelder_fra,
+      to: v.gjelder_til ?? "",
       kid: v.kid ?? "",
-      orgnr: v.mottaker_orgnr ?? "",
-      konto: v.mottaker_konto ?? "",
-      frist: v.frist_dager != null ? String(v.frist_dager) : "",
+      payeeOrgnumber: v.mottaker_orgnr ?? "",
+      payeeAccount: v.mottaker_konto ?? "",
+      dueDays: v.frist_dager != null ? String(v.frist_dager) : "",
     };
   }
 
-  async function lagre(event) {
+  async function save(event) {
     event.preventDefault();
-    const s = skjema;
-    const form = s.type === "ovrige" ? "belop" : s.form;
+    const d = draft;
+    const sizeKind = d.kind === "ovrige" ? "amount" : d.sizeKind;
     // Money and percent are read as TEXT, never through a float: "12,34"
     // is 1 234 øre or 1 234 basis points.
-    const tall = form === "belop" ? strictOre(s.belop) : strictOre(s.prosent);
-    if (tall == null) {
-      toast(form === "belop" ? "Skriv beløpet i kroner, f.eks. 4 000 eller 4 000,50" : "Skriv prosenten med høyst to desimaler, f.eks. 12,5", false);
+    const value = sizeKind === "amount" ? strictOre(d.amount) : strictOre(d.percent);
+    if (value == null) {
+      toast(sizeKind === "amount" ? "Skriv beløpet i kroner, f.eks. 4 000 eller 4 000,50" : "Skriv prosenten med høyst to desimaler, f.eks. 12,5", false);
       return;
     }
-    if (!s.endrer && !s.fil) {
+    if (!d.editing && !d.file) {
       toast("Last opp brevet pålegget kom i", false);
       return;
     }
-    arbeider = true;
+    busy = true;
     try {
-      let brev_id = null;
-      if (s.fil) {
-        const svar = await api(
-          "/companies/" + companyId + "/payroll/garnishments/letters?filename=" + encodeURIComponent(s.fil.name),
-          { method: "POST", headers: { "content-type": s.fil.type || "application/octet-stream" }, body: s.fil },
+      let letterId = null;
+      if (d.file) {
+        const reply = await api(
+          "/companies/" + companyId + "/payroll/garnishments/letters?filename=" + encodeURIComponent(d.file.name),
+          { method: "POST", headers: { "content-type": d.file.type || "application/octet-stream" }, body: d.file },
         );
-        brev_id = svar.brev_id;
+        letterId = reply.brev_id;
       }
-      const gammel = s.type !== "skatt";
+      const hasPayee = d.kind !== "skatt";
       const body = {
-        employee_id: s.employee_id || null,
-        type: s.type,
-        belop_ore: form === "belop" ? tall : null,
-        prosent_bp: form === "prosent" ? tall : null,
-        gjelder_fra: s.fra,
-        gjelder_til: s.til || null,
-        kid: gammel ? s.kid : null,
-        mottaker_orgnr: gammel ? s.orgnr : null,
-        mottaker_konto: gammel ? s.konto : null,
-        frist_dager: s.type === "ovrige" && s.frist !== "" ? Number(s.frist) : null,
-        brev_id,
-        notat: s.notat || null,
+        employee_id: d.employeeId || null,
+        type: d.kind,
+        belop_ore: sizeKind === "amount" ? value : null,
+        prosent_bp: sizeKind === "percent" ? value : null,
+        gjelder_fra: d.from,
+        gjelder_til: d.to || null,
+        kid: hasPayee ? d.kid : null,
+        mottaker_orgnr: hasPayee ? d.payeeOrgnumber : null,
+        mottaker_konto: hasPayee ? d.payeeAccount : null,
+        frist_dager: d.kind === "ovrige" && d.dueDays !== "" ? Number(d.dueDays) : null,
+        brev_id: letterId,
+        notat: d.note || null,
       };
       const base = "/companies/" + companyId + "/payroll/garnishments";
-      if (s.endrer) await send("PUT", base + "/" + s.endrer, body);
+      if (d.editing) await send("PUT", base + "/" + d.editing, body);
       else await post(base, body);
-      toast(s.endrer ? "Ny versjon av pålegget er registrert" : "Pålegget er registrert", true);
-      skjema = null;
-      await hent();
-      onDone?.();
+      toast(d.editing ? "Ny versjon av pålegget er registrert" : "Pålegget er registrert", true);
+      draft = null;
+      await load();
     } catch (error) {
       toast(error.message, false);
     } finally {
-      arbeider = false;
+      busy = false;
     }
   }
 
-  async function stopp(p) {
-    const notat = await sporsmal("Stoppe trekkpålegget for " + p.navn + "?", {
+  async function stop(order) {
+    const note = await sporsmal("Stoppe trekkpålegget for " + order.navn + "?", {
       melding: "Fra neste lønnskjøring trekkes ingenting. Stoppen lagres som en ny versjon og kan ikke angres — et nytt brev registreres som et nytt pålegg.",
       valgfri: true,
       ok: "Stopp pålegget",
       farlig: true,
     });
-    if (notat === null) return;
+    if (note === null) return;
     try {
-      await post("/companies/" + companyId + "/payroll/garnishments/" + p.id + "/stop", { notat: notat || null });
+      await post("/companies/" + companyId + "/payroll/garnishments/" + order.id + "/stop", { notat: note || null });
       toast("Pålegget er stoppet", true);
-      await hent();
+      await load();
     } catch (error) {
       toast(error.message, false);
     }
   }
 
-  async function attester(p, v, godkjent) {
+  async function attest(order, v, approved) {
     let note = null;
-    if (godkjent) {
-      if (!(await bekreft("Godkjenne versjon " + v.versjon + " av trekkpålegget for " + p.navn + "? Sammenlign beløp og KID med brevet først."))) return;
+    if (approved) {
+      if (!(await bekreft("Godkjenne versjon " + v.versjon + " av trekkpålegget for " + order.navn + "? Sammenlign beløp og KID med brevet først."))) return;
     } else {
       note = await sporsmal("Hvorfor avvises pålegget?", { ok: "Avvis" });
       if (!note) return;
     }
     try {
       await post(
-        "/companies/" + companyId + "/payroll/garnishments/" + p.id + "/versions/" + v.versjon + "/attest",
-        { godkjent, note },
+        "/companies/" + companyId + "/payroll/garnishments/" + order.id + "/versions/" + v.versjon + "/attest",
+        { godkjent: approved, note },
       );
-      await hent();
+      await load();
     } catch (error) {
       toast(error.message, false);
     }
   }
 
-  const storrelse = (v) =>
+  const sizeText = (v) =>
     v.belop_ore != null ? kr(v.belop_ore) + " kr/mnd" : (v.prosent_bp / 100).toFixed(2).replace(".", ",") + " %";
 
-  // Payroll settings: the account and the company's own KID for skatt.
-  let innst = $state(null);
-  function aapneInnst() {
+  // Payroll settings: the account and the company's own KID for skatt. The
+  // object's keys are the request's wire names.
+  let settings = $state(null);
+  function openSettings() {
     const i = data.innstillinger ?? {};
-    innst = {
+    settings = {
       konto: i.konto ?? "",
       skatt_kid: i.skatt_kid ?? "",
       skatt_konto: i.skatt_konto ?? "",
@@ -178,13 +178,13 @@
       gjelder_fra: today(),
     };
   }
-  async function lagreInnst(event) {
+  async function saveSettings(event) {
     event.preventDefault();
     try {
-      await send("PUT", "/companies/" + companyId + "/payroll/garnishment-settings", innst);
+      await send("PUT", "/companies/" + companyId + "/payroll/garnishment-settings", settings);
       toast("Innstillingene er lagret", true);
-      innst = null;
-      await hent();
+      settings = null;
+      await load();
     } catch (error) {
       toast(error.message, false);
     }
@@ -218,8 +218,8 @@
               {@const v = p.versjoner[0]}
               <tr>
                 <td class="whitespace-nowrap">{p.navn}</td>
-                <td class="text-xs">{typeNavn(p.type)}</td>
-                <td class="text-right whitespace-nowrap">{storrelse(v)}</td>
+                <td class="text-xs">{kindLabel(p.type)}</td>
+                <td class="text-right whitespace-nowrap">{sizeText(v)}</td>
                 <td class="whitespace-nowrap text-xs">
                   {formatDate(v.gjelder_fra)}{v.gjelder_til ? " – " + formatDate(v.gjelder_til) : ""}
                 </td>
@@ -231,16 +231,16 @@
                   <span class="text-xs opacity-60">v{v.versjon}</span>
                 </td>
                 <td class="whitespace-nowrap">
-                  <button class="btn btn-ghost btn-xs" onclick={() => download(v.brev_url, v.brev_filnavn)}>
+                  <button class="btn btn-ghost btn-xs" aria-label={"Brevet for " + p.navn} onclick={() => download(v.brev_url, v.brev_filnavn)}>
                     Brevet
                   </button>
-                  {#if p.status === "venter på attestering"}
-                    <button class="btn btn-ghost btn-xs" onclick={() => attester(p, v, true)}>Godkjenn</button>
-                    <button class="btn btn-ghost btn-xs" onclick={() => attester(p, v, false)}>Avvis</button>
+                  {#if p.status.includes("venter på attestering")}
+                    <button class="btn btn-ghost btn-xs" aria-label={"Godkjenn pålegget for " + p.navn} onclick={() => attest(p, v, true)}>Godkjenn</button>
+                    <button class="btn btn-ghost btn-xs" aria-label={"Avvis pålegget for " + p.navn} onclick={() => attest(p, v, false)}>Avvis</button>
                   {/if}
                   {#if p.status !== "stoppet"}
-                    <button class="btn btn-ghost btn-xs" onclick={() => endre(p)}>Endre</button>
-                    <button class="btn btn-ghost btn-xs text-error" onclick={() => stopp(p)}>Stopp</button>
+                    <button class="btn btn-ghost btn-xs" aria-label={"Endre pålegget for " + p.navn} onclick={() => edit(p)}>Endre</button>
+                    <button class="btn btn-ghost btn-xs text-error" aria-label={"Stopp pålegget for " + p.navn} onclick={() => stop(p)}>Stopp</button>
                   {/if}
                 </td>
               </tr>
@@ -250,21 +250,21 @@
       </div>
     {/if}
 
-    {#if skjema}
-      <form class="border border-base-300 rounded-box p-3 mb-3 grid gap-3 max-w-3xl" onsubmit={lagre}>
-        <h3 class="font-semibold">{skjema.endrer ? "Ny versjon av pålegget" : "Registrer pålegg fra brev"}</h3>
+    {#if draft}
+      <form class="border border-base-300 rounded-box p-3 mb-3 grid gap-3 max-w-3xl" onsubmit={save}>
+        <h3 class="font-semibold">{draft.editing ? "Ny versjon av pålegget" : "Registrer pålegg fra brev"}</h3>
         <div class="grid sm:grid-cols-2 gap-3">
           <label class="flex flex-col gap-1 text-sm">
             Ansatt
-            <select class="select select-sm" required disabled={!!skjema.endrer} bind:value={skjema.employee_id}>
+            <select class="select select-sm" required disabled={!!draft.editing} bind:value={draft.employeeId}>
               <option value="" disabled>Velg ansatt</option>
-              {#each ansatte as a (a.id)}<option value={a.id}>{a.navn}</option>{/each}
+              {#each employees as a (a.id)}<option value={a.id}>{a.navn}</option>{/each}
             </select>
           </label>
           <label class="flex flex-col gap-1 text-sm">
             Type (står i brevet)
-            <select class="select select-sm" disabled={!!skjema.endrer} bind:value={skjema.type}>
-              {#each TYPER as t (t[0])}<option value={t[0]}>{t[1]}</option>{/each}
+            <select class="select select-sm" disabled={!!draft.editing} bind:value={draft.kind}>
+              {#each KINDS as t (t[0])}<option value={t[0]}>{t[1]}</option>{/each}
             </select>
           </label>
         </div>
@@ -272,36 +272,36 @@
           <legend class="text-sm mb-1">Trekk per måned</legend>
           <div class="flex gap-3 text-sm">
             <label class="label cursor-pointer gap-2">
-              <input type="radio" class="radio radio-sm" value="belop" bind:group={skjema.form} /> Beløp
+              <input type="radio" class="radio radio-sm" value="amount" bind:group={draft.sizeKind} /> Beløp
             </label>
-            <label class="label cursor-pointer gap-2" class:opacity-50={skjema.type === "ovrige"}>
-              <input type="radio" class="radio radio-sm" value="prosent" disabled={skjema.type === "ovrige"} bind:group={skjema.form} />
+            <label class="label cursor-pointer gap-2" class:opacity-50={draft.kind === "ovrige"}>
+              <input type="radio" class="radio radio-sm" value="percent" disabled={draft.kind === "ovrige"} bind:group={draft.sizeKind} />
               Prosent
             </label>
           </div>
-          {#if skjema.form === "belop" || skjema.type === "ovrige"}
+          {#if draft.sizeKind === "amount" || draft.kind === "ovrige"}
             <label class="flex flex-col gap-1 text-sm">
               Beløp per måned (kr)
-              <input class="input input-sm text-right" inputmode="decimal" required bind:value={skjema.belop} />
+              <input class="input input-sm text-right" inputmode="decimal" required bind:value={draft.amount} />
             </label>
           {:else}
             <label class="flex flex-col gap-1 text-sm">
               Prosent av bruttolønn (høyst to desimaler)
-              <input class="input input-sm text-right" inputmode="decimal" required bind:value={skjema.prosent} />
+              <input class="input input-sm text-right" inputmode="decimal" required bind:value={draft.percent} />
             </label>
           {/if}
         </fieldset>
         <div class="grid sm:grid-cols-2 gap-3">
           <label class="flex flex-col gap-1 text-sm">
             Gjelder fra
-            <input type="date" class="input input-sm" required bind:value={skjema.fra} />
+            <input type="date" class="input input-sm" required bind:value={draft.from} />
           </label>
           <label class="flex flex-col gap-1 text-sm">
             Gjelder til (valgfri)
-            <input type="date" class="input input-sm" bind:value={skjema.til} />
+            <input type="date" class="input input-sm" bind:value={draft.to} />
           </label>
         </div>
-        {#if skjema.type === "skatt"}
+        {#if draft.kind === "skatt"}
           <p class="text-sm opacity-80">
             Utleggstrekk skatt betales samlet med selskapets egen KID for utleggstrekk skatt, ikke en KID
             per ansatt. Den legges inn under «Innstillinger» nedenfor.
@@ -310,81 +310,81 @@
           <div class="grid sm:grid-cols-3 gap-3">
             <label class="flex flex-col gap-1 text-sm">
               KID
-              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={skjema.kid} />
+              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={draft.kid} />
             </label>
             <label class="flex flex-col gap-1 text-sm">
               Mottakers org.nr.
-              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={skjema.orgnr} />
+              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={draft.payeeOrgnumber} />
             </label>
             <label class="flex flex-col gap-1 text-sm">
               Mottakers kontonummer
-              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={skjema.konto} />
+              <input class="input input-sm font-mono" inputmode="numeric" required bind:value={draft.payeeAccount} />
             </label>
           </div>
         {/if}
-        {#if skjema.type === "ovrige"}
+        {#if draft.kind === "ovrige"}
           <label class="flex flex-col gap-1 text-sm max-w-xs">
             Betalingsfrist (dager etter utbetaling)
-            <input type="number" min="0" max="365" class="input input-sm" required bind:value={skjema.frist} />
+            <input type="number" min="0" max="365" class="input input-sm" required bind:value={draft.dueDays} />
           </label>
         {/if}
         <label class="flex flex-col gap-1 text-sm">
-          Brevet (PDF eller bilde){skjema.endrer ? " — valgfritt, ellers beholdes forrige" : ""}
+          Brevet (PDF eller bilde){draft.editing ? " — valgfritt, ellers beholdes forrige" : ""}
           <input
             type="file"
             accept="application/pdf,image/*"
             class="file-input file-input-sm"
-            required={!skjema.endrer}
-            onchange={(e) => (skjema.fil = e.currentTarget.files?.[0] ?? null)}
+            required={!draft.editing}
+            onchange={(e) => (draft.file = e.currentTarget.files?.[0] ?? null)}
           />
         </label>
         <label class="flex flex-col gap-1 text-sm">
           Notat (valgfritt)
-          <input class="input input-sm" bind:value={skjema.notat} />
+          <input class="input input-sm" bind:value={draft.note} />
         </label>
         <div class="flex gap-2">
-          <button class="btn btn-primary btn-sm" disabled={arbeider}>
-            {skjema.endrer ? "Lagre ny versjon" : "Registrer pålegget"}
+          <button class="btn btn-primary btn-sm" disabled={busy}>
+            {draft.editing ? "Lagre ny versjon" : "Registrer pålegget"}
           </button>
-          <button type="button" class="btn btn-ghost btn-sm" onclick={() => (skjema = null)}>Avbryt</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick={() => (draft = null)}>Avbryt</button>
         </div>
       </form>
     {:else}
-      <button class="btn btn-sm w-fit mb-3" onclick={() => (skjema = tom())}>Registrer pålegg fra brev</button>
+      <button class="btn btn-sm w-fit mb-3" onclick={() => (draft = emptyDraft())}>Registrer pålegg fra brev</button>
     {/if}
 
-    <details class="text-sm" open={!!innst}>
+    <details class="text-sm" open={!!settings}>
       <summary class="cursor-pointer">Innstillinger for utleggstrekk</summary>
-      {#if innst}
-        <form class="grid gap-3 mt-2 max-w-3xl" onsubmit={lagreInnst}>
+      {#if settings}
+        <form class="grid gap-3 mt-2 max-w-3xl" onsubmit={saveSettings}>
           <div class="grid sm:grid-cols-2 gap-3">
             <label class="flex flex-col gap-1">
               Konto for utleggstrekk (leverandørreskontro)
-              <input class="input input-sm font-mono" placeholder="2610 velges automatisk" bind:value={innst.konto} />
+              <input class="input input-sm font-mono" placeholder="2610 velges automatisk" bind:value={settings.konto} />
             </label>
             <label class="flex flex-col gap-1">
               Gjelder fra
-              <input type="date" class="input input-sm" required bind:value={innst.gjelder_fra} />
+              <input type="date" class="input input-sm" required bind:value={settings.gjelder_fra} />
             </label>
           </div>
           <p class="opacity-80">Fra Skatteetatens betalingsinformasjon for utleggstrekk skatt:</p>
           <div class="grid sm:grid-cols-3 gap-3">
             <label class="flex flex-col gap-1">
               KID for utleggstrekk skatt
-              <input class="input input-sm font-mono" inputmode="numeric" bind:value={innst.skatt_kid} />
+              <input class="input input-sm font-mono" inputmode="numeric" bind:value={settings.skatt_kid} />
             </label>
             <label class="flex flex-col gap-1">
               Kontonummer
-              <input class="input input-sm font-mono" inputmode="numeric" bind:value={innst.skatt_konto} />
+              <input class="input input-sm font-mono" inputmode="numeric" bind:value={settings.skatt_konto} />
             </label>
             <label class="flex flex-col gap-1">
               Mottakers org.nr.
-              <input class="input input-sm font-mono" inputmode="numeric" bind:value={innst.skatt_mottaker_orgnr} />
+              <input class="input input-sm font-mono" inputmode="numeric" bind:value={settings.skatt_mottaker_orgnr} />
             </label>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-primary btn-sm">Lagre innstillingene</button>
-            <button type="button" class="btn btn-ghost btn-sm" onclick={() => (innst = null)}>Avbryt</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick={() => (settings = null)}>Avbryt</button>
           </div>
         </form>
       {:else}
@@ -398,7 +398,7 @@
           <dt class="opacity-70">Mottaker skatt</dt>
           <dd class="font-mono">{data.innstillinger?.skatt_mottaker_orgnr ?? "mangler"}</dd>
         </dl>
-        <button class="btn btn-ghost btn-sm mt-2" onclick={aapneInnst}>Endre innstillingene</button>
+        <button class="btn btn-ghost btn-sm mt-2" onclick={openSettings}>Endre innstillingene</button>
       {/if}
     </details>
   </Card>

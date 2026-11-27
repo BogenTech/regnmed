@@ -99,7 +99,7 @@
 
   const periode = $derived(MANEDER[maned - 1] + " " + year);
   // Every order in the preview, with the employee's name for the list.
-  let trekk = $derived(
+  let garnishments = $derived(
     forhand
       ? forhand.svar.linjer.flatMap((l) => (l.trekkpalegg ?? []).map((t) => ({ ...t, navn: l.navn })))
       : [],
@@ -337,7 +337,7 @@
                 <th class="text-right">Feriepenger</th>
                 <th class="text-right">Trekk</th>
                 <th class="text-right">Kjøring og diett</th>
-                {#if trekk.length}<th class="text-right">Trekkpålegg</th>{/if}
+                {#if garnishments.length}<th class="text-right">Trekkpålegg</th>{/if}
                 <th class="text-right">Netto</th>
               </tr>
             </thead>
@@ -351,7 +351,7 @@
                   <td class="text-right">{kr(l.feriepenger_ore)}</td>
                   <td class="text-right">{kr(l.forskuddstrekk_ore)}</td>
                   <td class="text-right">{kr(l.kjoregodtgjorelse_ore)}</td>
-                  {#if trekk.length}
+                  {#if garnishments.length}
                     <td class="text-right">{kr(l.trekkpalegg.reduce((sum, t) => sum + t.trukket_ore, 0))}</td>
                   {/if}
                   <td class="text-right font-medium">{kr(l.netto_ore)}</td>
@@ -372,13 +372,13 @@
           <dt class="opacity-70">Lønnskostnad i alt</dt>
           <dd>{kr(s.kjoring.lonnskostnad_ore)}</dd>
         </dl>
-        {#if trekk.length}
+        {#if garnishments.length}
           <!-- Each order with amount, KID and its letter, so the person
                running pay can check them against the letters before booking
                (docs/trekkpalegg.md §6, Avgjørelser). -->
           <h4 class="font-semibold text-sm mt-3">Trekkpålegg</h4>
           <ul class="text-sm grid gap-1 mt-1">
-            {#each trekk as t (t.registrering)}
+            {#each garnishments as t (t.registrering)}
               <li>
                 {t.navn}: {kr(t.trukket_ore)} kr
                 {#if t.trukket_ore < t.onsket_ore}(av {kr(t.onsket_ore)}){/if}

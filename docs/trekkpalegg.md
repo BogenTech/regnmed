@@ -530,8 +530,8 @@ Det som ikke står over, og som ble avgjort da koden ble skrevet:
   både `ATTESTERING_UTFOR` og `LONN_LES`.
 - **Innstillingene** (`payroll_garnishment_setting`) er én rad med hele
   settet — kontoen, KID, kontonummer og mottaker for skatt — med
-  `valid_from`; den nyeste med `valid_from` på eller før
-  utbetalingsdatoen gjelder. Velger kjøringen kontoen selv (§2 steg 5),
+  `valid_from`; av radene med `valid_from` på eller før
+  utbetalingsdatoen gjelder den som ble lagret sist. Velger kjøringen kontoen selv (§2 steg 5),
   skriver den en ny rad med kontoen og resten uendret.
 - **Rekkefølgen under taket**: samordnet, skatt, øvrige, og innen hver
   type eldste registrering først.
