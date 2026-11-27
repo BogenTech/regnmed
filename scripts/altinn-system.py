@@ -57,11 +57,11 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, henter skattekort og trekkpålegg, leverer aksjonærregisteroppgaven "
-        "og leverer SAF-T ved kontroll.",
+        "Leverer a-melding, aksjonærregisteroppgaven og SAF-T ved kontroll, og henter "
+        "skattekort og trekkpålegg.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, hentar skattekort og trekkpålegg, leverer aksjonærregisteroppgåva "
-        "og leverer SAF-T ved kontroll.",
+        "Leverer a-melding, aksjonærregisteroppgåva og SAF-T ved kontroll, og hentar "
+        "skattekort og trekkpålegg.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
         "Files the a-melding, fetches tax cards and garnishment orders, and files the "
         "shareholder register return and SAF-T for tax audits.",
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     elif cmd == "update":
         call("PUT", f"{PLATFORM}/{SYSTEM_ID}", SYSTEM)
     elif cmd == "request" and len(sys.argv) == 3:
-        # Egen virksomhet: alle tre ressursene. Svaret har confirmUrl, som
+        # Egen virksomhet: alle ressursene i `rights`. Svaret har confirmUrl, som
         # daglig leder (eller en med tilgangsstyring) åpner og godkjenner.
         call("POST", REQUESTS, {
             "systemId": SYSTEM_ID,

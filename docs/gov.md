@@ -571,8 +571,9 @@ per kundeform vi allerede har i produktet (#77s to ruter):
 
 Ressursene til den første (fra API-dokumentasjonen, ikke gjettet):
 `ske-innrapportering-amelding`, `ske-skattekort-til-arbeidsgiver`,
-`ske-innrapportering-aksjonaerregisteroppgave`. Den ruten berøres ikke
-av regel 1 i det hele tatt.
+`ske-innrapportering-aksjonaerregisteroppgave`, og senere
+`ske-informasjon-om-trekkpaalegg` (2026-11-26) og `ske-kontroll`
+(2026-11-27). Den ruten berøres ikke av regel 1 i det hele tatt.
 
 Til den andre gir ER-rollen «Regnskapsfører» disse tre pakkene, og
 API-ene godtar dem slik:
@@ -612,7 +613,8 @@ begge er Altinns egne regler, ikke vår slutning:
    én.
 
 Derfor er regnmed registrert som **ett system, `935115086_regnmed`**,
-med begge kundeformene: `rights` med de tre Skatteetaten-ressursene
+med begge kundeformene: `rights` med Skatteetatens ressurser (tre ved
+registreringen, fem fra 2026-11-27)
 (egen virksomhet) og `accessPackages` med de tre REGN-pakkene
 (regnskapsfører). Hver forespørsel ber om sin del: en standard
 systembruker om rettighetene, en klient-systembruker om ÉN pakke.
@@ -668,7 +670,9 @@ nytt.
 docs/saft/README.md) på samme måte: `rights` + beskrivelse i
 `scripts/altinn-system.py`, `update` mot TT02 (bekreftet med `show`),
 og en endringsforespørsel for 311032240 som ber om alle fem
-ressursene (status `New`, venter på godkjenning med TestID). Scopet
+ressursene (id `6a10e8d6-a8cd-4e02-aaf7-df2c927a7651`, status `New`,
+venter på godkjenning med TestID). Trekkpålegg-forespørselen over er
+alt godkjent, så denne er den eneste som står åpen. Scopet
 `skatteetaten:innleveringkontroll` er bestilt i SSV-6691.
 
 Tre ting å vite til neste gang:
