@@ -675,6 +675,22 @@ pub async fn tax_return_outcome(
     db::submission(&state.pool, company_id, submission_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    // A filing delivered before the subscription existed gets one here, so
+    // the next answer in its dialog arrives by itself.
+    let orgnumber = regnmed_db::company_settings(&state.pool, company_id)
+        .await?
+        .orgnumber;
+    crate::payroll::ensure_event_subscription(
+        &state,
+        &rail.tokens,
+        &rail.events,
+        rail.events_endpoint.as_deref(),
+        company_id,
+        &orgnumber,
+        regnmed_gov::altinn_events::SHAREHOLDER_RETURN_RESOURCE,
+        person.display(),
+    )
+    .await;
     fetch_outcome(&state, &rail, company_id, submission_id, person.display())
         .await
         .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;

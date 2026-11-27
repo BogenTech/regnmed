@@ -863,10 +863,12 @@ pub async fn altinn_event(
     Json(event): Json<regnmed_gov::altinn_events::CloudEvent>,
 ) -> axum::http::StatusCode {
     use regnmed_gov::altinn_events::{
-        AMELDING_RESOURCE, SHAREHOLDER_RETURN_RESOURCE, VALIDATE_SUBSCRIPTION,
+        AMELDING_RESOURCE, SHAREHOLDER_RETURN_RESOURCE, TRANSMISSION_CREATED,
     };
     let ok = axum::http::StatusCode::OK;
-    if event.kind == VALIDATE_SUBSCRIPTION {
+    // Only a new transmission can carry an answer; the subscription's
+    // validation event and anything else are acknowledged and dropped.
+    if event.kind != TRANSMISSION_CREATED {
         return ok;
     }
     if let (Some(SHAREHOLDER_RETURN_RESOURCE), Some(dialog)) =
