@@ -17,6 +17,10 @@
 //! 7. Regelverkssatser: no monitored sats domain is older than its
 //!    known change cadence — the machine's side of the yearly
 //!    regelverksrevisjon (docs/regelverk.md).
+//! 8. Importert historikk: the hashed SAF-T source files (informational).
+//! 9. Dokumentasjon: bilag without attachments (informational).
+//! 10. Balansedokumentasjon: bokføringsloven §11 at the latest lock.
+//! 11. Mva-meldinger: filed terms with the melding's and receipt's hashes.
 
 use anyhow::Result;
 use regnmed_core::audit::{AnchorInfo, AuditInput, Check};

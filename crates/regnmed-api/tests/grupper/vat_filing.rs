@@ -817,6 +817,11 @@ async fn a_changed_ledger_stops_an_unsent_instance_but_not_a_sent_one() {
     let (id, filing) = approved_and_settled(&s).await;
     assert_eq!(filing["status"], "feilet", "{filing}");
     assert!(!filing["kan_avbrytes"].as_bool().unwrap());
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(
+        detail.contains("påbegynt, ikke bekreftet innsending"),
+        "{detail}"
+    );
     regnmed_db::post_voucher(&s.state.pool, s.company, &sale(4_000_00), "test")
         .await
         .unwrap();
@@ -824,6 +829,8 @@ async fn a_changed_ledger_stops_an_unsent_instance_but_not_a_sent_one() {
     let stopped = again(&s, &id).await;
     assert_eq!(stopped["status"], "avbrutt", "{stopped}");
     assert_eq!(s.mock.lock().unwrap().task, 1, "still not confirmed");
+    let detail = audit_check(&s).await["detalj"].to_string();
+    assert!(detail.contains("1 forsøk som ikke ble sendt"), "{detail}");
 
     let (next, _) = start(&s).await;
     assert_ne!(next, id);
@@ -1642,6 +1649,15 @@ async fn a_term_found_delivered_stays_closed() {
     assert_eq!(closed["lukking"]["notat"], "Kvittering i Altinn");
     assert_eq!(closed["kan_godkjennes"], false);
     assert_eq!(closed["dokumenter"], json!([]), "regnmed holds no receipt");
+    let check = audit_check(&s).await;
+    assert_eq!(check["ok"], true, "{check}");
+    assert!(
+        check["detalj"]
+            .as_str()
+            .unwrap()
+            .contains("2026 termin 1 levert ifølge personens kontroll i Altinn"),
+        "{check}"
+    );
     let kinds = event_kinds(&s, &id).await;
     assert!(!kinds.contains(&"sendt".to_string()));
     assert!(!kinds.contains(&"kvittert".to_string()));

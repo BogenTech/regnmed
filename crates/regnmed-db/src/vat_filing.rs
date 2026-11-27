@@ -866,6 +866,17 @@ pub async fn audit_check(pool: &PgPool, company_id: Uuid) -> Result<regnmed_core
             "uavklart" => problems.push(format!(
                 "{term} er uavklart: ingen vet om meldingen nådde Altinn"
             )),
+            // Final and not filed: the draft is gone, or a person found it undelivered.
+            "avbrutt" | "lukket_etter_kontroll" => other += 1,
+            // A run that stopped after the confirm may still have filed.
+            other_status if confirm_unsettled(&events) => lines.push(format!(
+                "{term} står som {other_status}, men bekreftelsen er sendt uten svar og \
+                 meldingen kan være levert; {melding}"
+            )),
+            other_status if may_have_reached_altinn(&events) => lines.push(format!(
+                "{term} står som {other_status} med en påbegynt, ikke bekreftet innsending \
+                 i Altinn; {melding}"
+            )),
             _ => other += 1,
         }
     }
