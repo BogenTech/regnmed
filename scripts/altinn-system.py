@@ -57,15 +57,17 @@ SYSTEM = {
     "name": {"nb": "RegnMed", "nn": "RegnMed", "en": "RegnMed"},
     "description": {
         "nb": "Regnskapssystem for små og mellomstore virksomheter og deres regnskapsførere. "
-        "Leverer a-melding, aksjonærregisteroppgaven, skattemeldingen, betalinger til "
-        "selvstendig næringsdrivende og SAF-T ved kontroll, og henter skattekort og trekkpålegg.",
+        "Leverer a-melding, aksjonærregisteroppgaven, skattemeldingen, opplysninger om "
+        "betalinger til selvstendig næringsdrivende og SAF-T ved kontroll, og henter "
+        "skattekort og trekkpålegg.",
         "nn": "Rekneskapssystem for små og mellomstore verksemder og rekneskapsførarane deira. "
-        "Leverer a-melding, aksjonærregisteroppgåva, skattemeldinga, betalingar til "
-        "sjølvstendig næringsdrivande og SAF-T ved kontroll, og hentar skattekort og trekkpålegg.",
+        "Leverer a-melding, aksjonærregisteroppgåva, skattemeldinga, opplysningar om "
+        "betalingar til sjølvstendig næringsdrivande og SAF-T ved kontroll, og hentar "
+        "skattekort og trekkpålegg.",
         "en": "Accounting system for small and medium-sized businesses and their accountants. "
-        "Files the a-melding, fetches tax cards and garnishment orders, and files the "
-        "shareholder register return, the tax return, payments to self-employed people and "
-        "SAF-T for tax audits.",
+        "Files the a-melding, the shareholder register return and the tax return, reports "
+        "payments to self-employed people, delivers SAF-T for tax audits, and fetches tax "
+        "cards and garnishment orders.",
     },
     # Egen virksomhet: Skatteetatens ressurser (API-dokumentasjonen, ikke gjettet).
     "rights": [
