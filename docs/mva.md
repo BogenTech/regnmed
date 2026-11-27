@@ -360,9 +360,17 @@ Selve rettingen skjer i hovedboken først. Er perioden låst, må den gjenåpnes
 (docs/perioder.md). Det er den måten Skatteetaten anbefaler, fordi SAF-T-filen
 for perioden da underbygger den siste meldingen.
 
-**Ikke bekreftet ennå:** at Altinn tar imot en ny instans for en termin som
-allerede har en kvittering, og at valideringen svarer som for en første
-melding. Det krever en testinnsending i TT02.
+**Prøvd mot TT02 2026-11-27:** testselskapet 310857734 hadde fått kvittering for
+september–oktober 2026 (250 kr å betale). Et nytt salgsbilag i terminen ga en
+korrigert melding på 350 kr. Den ble godkjent med TestID og gikk gjennom
+Skatteetatens validering og en ny Altinn-instans, og Skatteetaten svarte med
+kvittering og `ingen avvik` etter 44 sekunder. Dette er dermed bekreftet:
+
+- Altinn tar imot en ny instans for en termin som allerede har en kvittering,
+  med samme konvolutt og uten noe korrigeringsfelt.
+- valideringen svarer som for en første melding.
+- betalingsinformasjonen for korrigeringen oppgir hele beløpet for terminen
+  (350 kr), ikke differansen, med samme KID og frist som før.
 
 **Revisjonsrapporten** har kontrollen «Mva-meldinger» (docs/revisjon.md):
 hver termin som er sendt, kvittert, avvist eller levert ifølge en persons
