@@ -65,12 +65,18 @@ pub enum TransactionType {
     AvgiftspliktigArvGaveMedKontinuitetAvgang,
     OverforingMedKontinuitetAvgang,
     FordelingEktefellerSkilsmisseAvgang,
+    // The giving side of the transfers without continuity: post 25 has
+    // A, G and O too (KodelisteSKD_RF1086_TransTyper_p25).
+    ArvUtenKontinuitetAvgang,
+    GaveUtenKontinuitetAvgang,
+    KonserninternOverforingAvgang,
     Likvidasjon,
     PartiellLikvidasjonLikedelt,
     PartiellLikvidasjonSkjevdelt,
     InnlosningSkattefriFusjonFisjon,
-    Spleis,
     SlettingEgneAksjer,
+    // Post 26 — avgang through omfordeling.
+    Spleis,
 }
 
 /// Which RF-1086 post a transaction is reported under.
@@ -82,6 +88,8 @@ pub enum FormItem {
     AcquisitionReallocation,
     /// Post 25: shares in avgang.
     Disposal,
+    /// Post 26: shares in avgang through omfordeling (spleis).
+    DisposalReallocation,
 }
 
 impl TransactionType {
@@ -123,6 +131,9 @@ impl TransactionType {
             }
             OverforingMedKontinuitetAvgang => "overføring med skattemessig kontinuitet",
             FordelingEktefellerSkilsmisseAvgang => "fordeling mellom ektefeller ved skilsmisse",
+            ArvUtenKontinuitetAvgang => "arv uten skattemessig kontinuitet",
+            GaveUtenKontinuitetAvgang => "gave uten skattemessig kontinuitet",
+            KonserninternOverforingAvgang => "konsernintern overføring",
             Likvidasjon => "likvidasjon",
             PartiellLikvidasjonLikedelt => "likedelt partiell likvidasjon",
             PartiellLikvidasjonSkjevdelt => "skjevdelt partiell likvidasjon",
@@ -169,6 +180,9 @@ impl TransactionType {
             }
             OverforingMedKontinuitetAvgang => "overforing_med_kontinuitet_avgang",
             FordelingEktefellerSkilsmisseAvgang => "fordeling_ektefeller_skilsmisse_avgang",
+            ArvUtenKontinuitetAvgang => "arv_uten_kontinuitet_avgang",
+            GaveUtenKontinuitetAvgang => "gave_uten_kontinuitet_avgang",
+            KonserninternOverforingAvgang => "konsernintern_overforing_avgang",
             Likvidasjon => "likvidasjon",
             PartiellLikvidasjonLikedelt => "partiell_likvidasjon_likedelt",
             PartiellLikvidasjonSkjevdelt => "partiell_likvidasjon_skjevdelt",
@@ -195,19 +209,40 @@ impl TransactionType {
             | AvgiftspliktigArvGaveMedKontinuitetAvgang
             | OverforingMedKontinuitetAvgang
             | FordelingEktefellerSkilsmisseAvgang
+            | ArvUtenKontinuitetAvgang
+            | GaveUtenKontinuitetAvgang
+            | KonserninternOverforingAvgang
             | Likvidasjon
             | PartiellLikvidasjonLikedelt
             | PartiellLikvidasjonSkjevdelt
             | InnlosningSkattefriFusjonFisjon
-            | Spleis
             | SlettingEgneAksjer => FormItem::Disposal,
+            // AksjerSpleisMvType (orid 17758), list p26 — not post 25.
+            Spleis => FormItem::DisposalReallocation,
             _ => FormItem::Acquisition,
         }
     }
 
+    /// New shares the company issued, reported at company level too
+    /// (hovedskjema post 9) on the same date as the shareholder's post 23.
+    pub fn is_new_issue(self) -> bool {
+        use TransactionType::*;
+        matches!(
+            self,
+            Stiftelse
+                | Nyemisjon
+                | NyemisjonAnsattaksjer
+                | NyemisjonKonverteringFordring
+                | NyemisjonKonserninternOverforing
+        )
+    }
+
     /// Whether the movement adds shares to the shareholder.
     pub fn is_acquisition(self) -> bool {
-        self.post() != FormItem::Disposal
+        !matches!(
+            self.post(),
+            FormItem::Disposal | FormItem::DisposalReallocation
+        )
     }
 
     /// The code RF-1086 expects in the `Transaksjonstype` field — or
@@ -218,9 +253,11 @@ impl TransactionType {
     /// rejects anything outside them. **The XSDs give no names.** A code
     /// is mapped here only where an official Skatteetaten artifact pairs
     /// it with the name of the transaction: the RF-1086/RF-1086-U
-    /// «Detaljert design» spreadsheets (2024) and the example filings on
-    /// skatteetaten.no/samarbeidspartnere/sluttbrukersystemer/
-    /// aksjonarregisteroppgaven-sbs/ (docs/aksjonaer.md, «Transaksjonskoder»).
+    /// «Detaljert design» spreadsheets (2024), the «Kodelister» sheet of
+    /// the «spesifikasjon til OR» spreadsheets (2024) and the example
+    /// filings, all on skatteetaten.no/samarbeidspartnere/
+    /// sluttbrukersystemer/aksjonarregisteroppgaven-sbs/
+    /// (docs/aksjonaer.md, «Transaksjonskoder»).
     ///
     /// Everything else stays `None` and the renderer refuses it rather
     /// than guess. A wrong transaksjonstype is not a cosmetic error: it
@@ -230,6 +267,9 @@ impl TransactionType {
     /// company-level counterpart the hovedskjema does not render yet
     /// (fusjon, fisjon, omdanning, flytting, likvidasjon, spleis, post
     /// 24) stay `None` for that reason too, even where the code is named.
+    /// So does `TN` (stiftelse/nyemisjon med inntektsfradrag): its post 9
+    /// checks bound antall x (pålydende + overkurs), and the hovedskjema
+    /// files overkurs as 0.
     pub fn code(self) -> Option<&'static str> {
         use TransactionType::*;
         match self {
@@ -253,6 +293,14 @@ impl TransactionType {
             }
             OverforingMedKontinuitet | OverforingMedKontinuitetAvgang => Some("OK"),
             FordelingEktefellerSkilsmisse | FordelingEktefellerSkilsmisseAvgang => Some("ES"),
+            // The rest are named in the «Kodelister» sheet of
+            // rf-1086u_spesifikasjon_til_or_2024.xls (posts 23 and 25) and
+            // rf-1086_spesifikasjon_til_or_2024.xls (post 9), same page.
+            ArvUtenKontinuitet | ArvUtenKontinuitetAvgang => Some("A"),
+            GaveUtenKontinuitet | GaveUtenKontinuitetAvgang => Some("G"),
+            KonserninternOverforing | KonserninternOverforingAvgang => Some("O"),
+            NyemisjonKonverteringFordring => Some("NF"),
+            NyemisjonKonserninternOverforing => Some("NK"),
             _ => None,
         }
     }
@@ -271,6 +319,12 @@ impl TransactionType {
             OverforingMedKontinuitetAvgang => OverforingMedKontinuitet,
             FordelingEktefellerSkilsmisse => FordelingEktefellerSkilsmisseAvgang,
             FordelingEktefellerSkilsmisseAvgang => FordelingEktefellerSkilsmisse,
+            ArvUtenKontinuitet => ArvUtenKontinuitetAvgang,
+            ArvUtenKontinuitetAvgang => ArvUtenKontinuitet,
+            GaveUtenKontinuitet => GaveUtenKontinuitetAvgang,
+            GaveUtenKontinuitetAvgang => GaveUtenKontinuitet,
+            KonserninternOverforing => KonserninternOverforingAvgang,
+            KonserninternOverforingAvgang => KonserninternOverforing,
             _ => return None,
         })
     }
@@ -301,7 +355,7 @@ pub enum CounterpartyId {
     NinOrOrgnumber,
 }
 
-pub const ALL: [TransactionType; 35] = {
+pub const ALL: [TransactionType; 38] = {
     use TransactionType::*;
     [
         Kjop,
@@ -333,12 +387,15 @@ pub const ALL: [TransactionType; 35] = {
         AvgiftspliktigArvGaveMedKontinuitetAvgang,
         OverforingMedKontinuitetAvgang,
         FordelingEktefellerSkilsmisseAvgang,
+        ArvUtenKontinuitetAvgang,
+        GaveUtenKontinuitetAvgang,
+        KonserninternOverforingAvgang,
         Likvidasjon,
         PartiellLikvidasjonLikedelt,
         PartiellLikvidasjonSkjevdelt,
         InnlosningSkattefriFusjonFisjon,
-        Spleis,
         SlettingEgneAksjer,
+        Spleis,
     ]
 };
 
@@ -486,15 +543,20 @@ mod tests {
     fn only_verified_codes_exist() {
         use TransactionType::*;
         let with_code: Vec<_> = ALL.iter().filter(|t| t.code().is_some()).collect();
-        assert_eq!(with_code.len(), 14, "{with_code:?}");
+        assert_eq!(with_code.len(), 22, "{with_code:?}");
         assert_eq!(Stiftelse.code(), Some("T"));
         assert_eq!(Nyemisjon.code(), Some("N"));
         assert_eq!(Kjop.code(), Some("K"));
         assert_eq!(Salg.code(), Some("R"));
+        assert_eq!(ArvUtenKontinuitet.code(), Some("A"));
+        assert_eq!(GaveUtenKontinuitetAvgang.code(), Some("G"));
+        assert_eq!(KonserninternOverforing.code(), Some("O"));
+        assert_eq!(NyemisjonKonverteringFordring.code(), Some("NF"));
+        assert_eq!(NyemisjonKonserninternOverforing.code(), Some("NK"));
         assert_eq!(
-            ArvUtenKontinuitet.code(),
+            StiftelseNyemisjonMedInntektsfradrag.code(),
             None,
-            "A is unnamed in every source"
+            "TN is named, but post 9 needs the overkurs"
         );
         assert_eq!(
             Likvidasjon.code(),
@@ -512,11 +574,18 @@ mod tests {
             "R", "A", "G", "GK", "AK", "GS", "L", "PLD", "PLS", "UP", "IP", "UII", "UE", "O", "W",
             "OK", "FS", "AE", "ES", "YA", "YAP",
         ];
+        // KodelisteSKD_RF1086_TransTyper_p9 in the hovedskjema XSD: the
+        // new issues the db also reports at company level (post 9).
+        const POST_9: &[&str] = &["IP", "N", "NF", "NK", "UP", "T", "FS", "M", "NAK", "TN"];
+        for t in ALL.iter().filter(|t| t.is_new_issue()) {
+            assert!(POST_9.contains(&t.code().unwrap()), "{t:?} not in post 9");
+        }
         for t in with_code {
             let list = match t.post() {
                 FormItem::Acquisition => POST_23,
                 FormItem::Disposal => POST_25,
                 FormItem::AcquisitionReallocation => panic!("post 24 is not rendered: {t:?}"),
+                FormItem::DisposalReallocation => panic!("post 26 is not rendered: {t:?}"),
             };
             assert!(
                 list.contains(&t.code().unwrap()),

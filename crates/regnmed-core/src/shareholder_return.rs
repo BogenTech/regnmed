@@ -49,9 +49,9 @@ impl std::fmt::Display for ReturnError {
         match self {
             Self::UnverifiedCode(t) => write!(
                 f,
-                "transaksjonstypen «{}» kan ikke leveres: RF-1086-koden for den er ikke \
-                 publisert i XSD-en eller rettledningen, og regnmed gjetter den ikke \
-                 (se docs/aksjonaer.md)",
+                "transaksjonstypen «{}» kan ikke leveres ennå: regnmed leverer bare koder \
+                 Skatteetatens egne kilder navngir, og bare hendelser hovedskjemaet kan \
+                 vise — vi gjetter ikke (se docs/aksjonaer.md)",
                 t.name()
             ),
             Self::ManglerIdentitet(name) => write!(
@@ -860,15 +860,15 @@ mod tests {
         assert!(!xml.contains(&"Æ".repeat(36)));
     }
 
-    /// The core of the honest limitation: an inheritance without
-    /// continuity has a code (`A`, by every appearance) that no
-    /// Skatteetaten source names — so we say so instead of guessing.
+    /// The core of the honest limitation: `TN` is named, but filing it
+    /// needs a post 9 the hovedskjema cannot give yet — so we say so
+    /// instead of filing half of it.
     #[test]
     fn an_unverified_transaction_type_is_refused_loudly() {
         let mut u = sub_form();
         u.movements = vec![ShareMovement {
             date: d(2026, 6, 1),
-            type_: TransactionType::ArvUtenKontinuitet,
+            type_: TransactionType::StiftelseNyemisjonMedInntektsfradrag,
             quantity: 10,
             counterparty: None,
             amount_ore: Some(1_000_000),
@@ -876,10 +876,53 @@ mod tests {
         let error = render_sub_form(&u).unwrap_err();
         assert_eq!(
             error,
-            ReturnError::UnverifiedCode(TransactionType::ArvUtenKontinuitet)
+            ReturnError::UnverifiedCode(TransactionType::StiftelseNyemisjonMedInntektsfradrag)
         );
-        assert!(error.to_string().contains("arv uten"), "{error}");
+        assert!(error.to_string().contains("inntektsfradrag"), "{error}");
         assert!(error.to_string().contains("gjetter"), "{error}");
+    }
+
+    /// Transfers without continuity (A, G, O) file on both sides with no
+    /// counterparty field: the design requires one only for GK, AK, OK,
+    /// ES and GS.
+    #[test]
+    fn transfers_without_continuity_file_on_both_sides_and_validate() {
+        use TransactionType::*;
+        for (inn, ut, code) in [
+            (ArvUtenKontinuitet, ArvUtenKontinuitetAvgang, "A"),
+            (GaveUtenKontinuitet, GaveUtenKontinuitetAvgang, "G"),
+            (KonserninternOverforing, KonserninternOverforingAvgang, "O"),
+        ] {
+            let mut u = sub_form();
+            u.movements = vec![ShareMovement {
+                date: d(2026, 2, 1),
+                type_: inn,
+                quantity: 40,
+                counterparty: None,
+                amount_ore: None,
+            }];
+            let xml = render_sub_form(&u).unwrap();
+            assert!(xml.contains(&format!(
+                "<AksjeErvervType-datadef-17745 orid=\"17745\">{code}<"
+            )));
+            assert!(!xml.contains("26530") && !xml.contains("26531"));
+            valider(
+                &xml,
+                "aksjonaerregisteroppgaveUnderskjema.xsd",
+                "under-uk-inn",
+            );
+
+            u.movements[0].type_ = ut;
+            let xml = render_sub_form(&u).unwrap();
+            assert!(xml.contains(&format!(
+                "<AksjerArvMvOmsattType-datadef-17753 orid=\"17753\">{code}<"
+            )));
+            valider(
+                &xml,
+                "aksjonaerregisteroppgaveUnderskjema.xsd",
+                "under-uk-ut",
+            );
+        }
     }
 
     /// A gift with continuity names the other party on both sides, in the
