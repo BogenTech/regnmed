@@ -24,6 +24,7 @@ pub mod email;
 pub mod engagement;
 pub mod expenses;
 pub mod firm_members;
+pub mod garnishment;
 pub mod herding;
 pub mod inbox;
 pub mod integration;
@@ -837,6 +838,34 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/payroll",
             get(payroll::list_payroll).post(payroll::run_payroll),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments",
+            get(garnishment::list).post(garnishment::register),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/letters",
+            axum::routing::post(garnishment::upload_letter),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/letters/{letter_id}",
+            get(garnishment::letter),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/{order_id}",
+            axum::routing::put(garnishment::change),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/{order_id}/stop",
+            axum::routing::post(garnishment::stop),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishments/{order_id}/versions/{version}/attest",
+            axum::routing::post(garnishment::attest),
+        )
+        .route(
+            "/companies/{company_id}/payroll/garnishment-settings",
+            axum::routing::put(garnishment::set_settings),
         )
         .route(
             "/companies/{company_id}/payroll/{run_id}/amelding",

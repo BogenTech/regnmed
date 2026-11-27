@@ -31,6 +31,7 @@ pub mod email;
 pub mod engagement;
 pub mod expenses;
 pub mod firm_members;
+pub mod garnishment;
 pub mod inbox;
 pub mod integration;
 pub mod invoice;

@@ -27,6 +27,7 @@ pub mod error;
 pub mod expenses;
 pub mod fakturapdf;
 pub mod fiscal_year;
+pub mod garnishment;
 pub mod hash;
 pub mod inventory;
 pub mod invoice;

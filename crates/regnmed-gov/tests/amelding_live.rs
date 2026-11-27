@@ -63,6 +63,7 @@ fn melding() -> Melding {
                 amount_ore: 4_000_000,
             }],
             withholding_ore: 1_400_000,
+            garnishments: Vec::new(),
         }],
     }
 }

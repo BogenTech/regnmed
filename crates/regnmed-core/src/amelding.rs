@@ -297,6 +297,16 @@ pub struct Recipient {
     pub income: Vec<Income>,
     /// Withheld this month, positive øre as booked on 2600.
     pub withholding_ore: i64,
+    /// Trekkpålegg withheld this month (docs/trekkpalegg.md). Øvrige are
+    /// carried but never rendered: Skatteetaten does not take them.
+    pub garnishments: Vec<Garnishment>,
+}
+
+/// One trekkpålegg withheld on this payment, positive øre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Garnishment {
+    pub kind: crate::garnishment::Kind,
+    pub amount_ore: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -444,6 +454,7 @@ const JSON_LISTS: &[&str] = &[
     "arbeidsforhold",
     "inntekt",
     "forskuddstrekk",
+    "utleggstrekk",
     "loennOgGodtgjoerelse",
     "sumForskuddstrekkPerLoennsutbetalingsdato",
 ];
@@ -638,6 +649,20 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
         "sumArbeidsgiveravgift",
         whole_kroner("arbeidsgiveravgift", m.employer_contribution_ore)?,
     );
+    // «Sum utleggstrekk å betale»: samordnet and skatt together.
+    let garnishments: i64 = m
+        .recipients
+        .iter()
+        .flat_map(|r| &r.garnishments)
+        .filter(|g| g.kind.amelding_description().is_some())
+        .map(|g| g.amount_ore)
+        .sum();
+    if garnishments != 0 {
+        x.int(
+            "sumUtleggstrekk",
+            whole_kroner("utleggstrekk", garnishments)?,
+        );
+    }
     // No payment, no payment date to sum per.
     if let Some(date) = m.payment_date.filter(|_| year >= 2026) {
         x.open("sumForskuddstrekkPerLoennsutbetalingsdato");
@@ -650,7 +675,7 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
     x.open("virksomhet");
     x.leaf("norskIdentifikator", business);
     for r in &m.recipients {
-        recipient(&mut x, r)?;
+        recipient(&mut x, r, m.payment_date)?;
     }
     // F184: the basis is the sum of the inntekter that trigger avgift.
     // A melding without any inntekt has no grunnlag to report.
@@ -672,7 +697,11 @@ fn build(m: &Melding) -> Result<Node, AmeldingError> {
     Ok(x.finish())
 }
 
-fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
+fn recipient(
+    x: &mut Tree,
+    r: &Recipient,
+    payment_date: Option<NaiveDate>,
+) -> Result<(), AmeldingError> {
     if !crate::nin::is_valid(&r.nin) {
         return Err(AmeldingError::InvalidNin(r.name.clone()));
     }
@@ -685,6 +714,9 @@ fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
     };
     if r.withholding_ore < 0 {
         return Err(negative("forskuddstrekket", r.withholding_ore));
+    }
+    if let Some(g) = r.garnishments.iter().find(|g| g.amount_ore < 0) {
+        return Err(negative("utleggstrekket", g.amount_ore));
     }
     if let Some(i) = r.income.iter().find(|i| i.amount_ore < 0) {
         return Err(negative("inntekten", i.amount_ore));
@@ -752,6 +784,19 @@ fn recipient(x: &mut Tree, r: &Recipient) -> Result<(), AmeldingError> {
         x.close("loennsinntekt");
         x.close("inntekt");
     }
+    for g in r.garnishments.iter().filter(|g| g.amount_ore != 0) {
+        let Some(description) = g.kind.amelding_description() else {
+            continue;
+        };
+        x.open("utleggstrekk");
+        x.leaf("beskrivelse", description);
+        // Negative, like forskuddstrekk (Skatteetaten's guidance).
+        x.int("beloep", whole_kroner("utleggstrekk", -g.amount_ore)?);
+        if let Some(date) = payment_date {
+            x.leaf("datoForUtleggstrekk", &date.to_string());
+        }
+        x.close("utleggstrekk");
+    }
     x.close("inntektsmottaker");
     Ok(())
 }
@@ -808,8 +853,55 @@ mod tests {
                     },
                 ],
                 withholding_ore: 1_500_000,
+                garnishments: Vec::new(),
             }],
         }
+    }
+
+    /// Samordnet and skatt are reported, negative and dated, and summed into
+    /// «sum utleggstrekk å betale»; øvrige never are (docs/trekkpalegg.md §6).
+    #[test]
+    fn garnishments_are_reported_by_type_and_validate() {
+        use crate::garnishment::Kind;
+        let mut m = melding();
+        m.recipients[0].garnishments = vec![
+            Garnishment {
+                kind: Kind::Coordinated,
+                amount_ore: 400_000,
+            },
+            Garnishment {
+                kind: Kind::Tax,
+                amount_ore: 150_000,
+            },
+            Garnishment {
+                kind: Kind::Other,
+                amount_ore: 90_000,
+            },
+        ];
+        let xml = render(&m).unwrap();
+        validate(&xml, "utleggstrekk");
+        let xml: String = xml.lines().map(str::trim).collect();
+        assert!(
+            xml.contains("<sumUtleggstrekk>5500</sumUtleggstrekk>"),
+            "{xml}"
+        );
+        assert!(xml.contains(
+            "<utleggstrekk><beskrivelse>utleggstrekkSamordnet</beskrivelse><beloep>-4000</beloep>\
+             <datoForUtleggstrekk>2026-03-25</datoForUtleggstrekk></utleggstrekk>"
+        ), "{xml}");
+        assert!(xml.contains("<beskrivelse>utleggstrekkSkatt</beskrivelse><beloep>-1500</beloep>"));
+        assert!(!xml.contains("-900"), "øvrige must not be reported: {xml}");
+        let json = render_json(&m).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let o = &v["leveranse"]["oppgave"];
+        assert_eq!(o["betalingsinformasjon"]["sumUtleggstrekk"], 5500);
+        let trekk = &o["virksomhet"][0]["inntektsmottaker"][0]["utleggstrekk"];
+        assert_eq!(trekk.as_array().unwrap().len(), 2);
+        assert_eq!(trekk[0]["beloep"], -4000);
+
+        // Øre cannot be reported.
+        m.recipients[0].garnishments[0].amount_ore = 400_050;
+        assert!(render(&m).is_err());
     }
 
     /// Runs xmllint against the vendored XSD, skipping when it is absent.
@@ -1178,6 +1270,7 @@ mod tests {
             },
             income: Vec::new(),
             withholding_ore: 0,
+            garnishments: Vec::new(),
         });
         let xml = render(&m).unwrap();
         validate(&xml, "employment-without-pay");
