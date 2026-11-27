@@ -210,6 +210,15 @@ Tre av dem er innrapportering — vi sender, vi henter ingenting.
 `skattdialogdokument` henter bare dokumenter i dialogene til kunden
 som har gitt oss systembruker, altså kundens egne opplysninger, ikke
 andres; dataminimeringsregelen under gjelder opplysninger om andre.
+Det har heller **ingen egen Altinn-ressurs**: tilgangen sjekkes mot
+ressursen dialogen tilhører (API-dokumentasjonen, lest 2026-11-27).
+Skattemelding og skattekort ligger alt i systemets `rights`, så bare
+de dokumentene kan hentes i dag — skatteoppgjør og forskuddsskatt fra
+raden over krever sine egne ressurser først. De andre dialogtypene — blant annet
+`ske-skatteoppgjoer-upersonlig`, `ske-forskuddsskatt-upersonlig` og
+`ske-trekkontroll-forskuddstrekk` — legges bevisst ikke til før noe i
+regnmed leser dem; det er en `update` og en endringsforespørsel, ikke
+en ny bestilling.
 
 `skatteetaten:mvaregisteravgiftssubjekt` sto her til 2026-11-26, men
 tilbys ikke sluttbrukersystemer (punkt 2 under «Gjenstår»).
