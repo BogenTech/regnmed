@@ -9,7 +9,7 @@ const src = join(here, "../../../docs");
 const out = join(here, "../src/content/docs/teknisk");
 const GH = "https://github.com/BogenTech/regnmed/blob/main/docs";
 // Left out: drafts and operator-internal notes.
-const SKIP = new Set(["README.md", "kundevilkar.md", "secrets.md"]);
+const SKIP = new Set(["README.md", "kundevilkar.md", "kundevilkar-gjennomgang.md", "secrets.md"]);
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });

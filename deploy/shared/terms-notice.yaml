@@ -1,0 +1,49 @@
+# E-mail notice of new customer terms (docs/kundevilkar.md §14.1,
+# docs/vilkar-teknisk.md): every company bound by an earlier version is
+# told about the current one, once. Idempotent: the insert-only
+# terms_notice log holds one row per company and version, and its id is
+# the mail's Nats-Msg-Id.
+#
+# PORTAL_BASE_URL (the link to the terms) differs per environment and is
+# set in the overlay patch; without it the job fails loudly.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-terms-notice
+  namespace: regnmed
+spec:
+  schedule: "0 8 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: terms-notice
+              image: regnmed:dev
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+              command: ["/app/regnmed", "terms-notice"]
+              env:
+                - name: NATS_URL
+                  value: nats://nats:4222
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-credentials
+                      key: regnmed-url
+              resources:
+                requests:
+                  memory: 8Mi
+                limits:
+                  memory: 32Mi

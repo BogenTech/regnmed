@@ -1,0 +1,16 @@
+# The terms notice links to the terms on this environment's own portal.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regnmed-terms-notice
+  namespace: regnmed
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: terms-notice
+              env:
+                - name: PORTAL_BASE_URL
+                  value: https://test.regnmed.no

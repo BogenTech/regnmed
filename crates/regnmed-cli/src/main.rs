@@ -131,6 +131,11 @@ enum Command {
         #[arg(long = "orgnr")]
         orgnumber: Option<String>,
     },
+    /// E-mail every company bound by an earlier version of the customer
+    /// terms about the current one (docs/kundevilkar.md §14.1,
+    /// docs/vilkar-teknisk.md). Each company is told once per version;
+    /// run daily (CronJob). Needs NATS_URL and PORTAL_BASE_URL.
+    TermsNotice,
     /// Grant a platform role (docs/auth.md §8). This is the BOOTSTRAP
     /// path: the first systemadmin cannot arrive through an API only
     /// systemadmins may call. Time-limited by design — --til is required.
@@ -576,6 +581,36 @@ async fn main() -> Result<()> {
                 .any(|u| u.invoice_no.is_none() && u.detail.as_deref() != Some("hoppet over"))
             {
                 anyhow::bail!("en eller flere abonnementsfakturaer feilet");
+            }
+        }
+        Command::TermsNotice => {
+            let js = regnmed_mail::connect_from_env()
+                .await?
+                .context("NATS_URL is not set: the terms notice cannot be sent")?;
+            let portal = std::env::var("PORTAL_BASE_URL")
+                .context("PORTAL_BASE_URL is not set: the notice has no link to the terms")?;
+            let today: chrono::NaiveDate = sqlx::query_scalar("select current_date")
+                .fetch_one(&pool)
+                .await?;
+            let outcomes =
+                regnmed_mail::terms_notice::send_terms_notices(&pool, &js, &portal, today).await?;
+            let mut failed = 0usize;
+            for (due, sent) in &outcomes {
+                match sent {
+                    Ok(_) => println!("{}: terms notice sent", due.company_name),
+                    Err(e) => {
+                        println!("{}: terms notice NOT sent: {e:#}", due.company_name);
+                        failed += 1;
+                    }
+                }
+            }
+            println!(
+                "terms {}: {} notice(s) sent, {failed} failed",
+                &regnmed_db::terms::VERSION[..12],
+                outcomes.len() - failed
+            );
+            if failed > 0 {
+                anyhow::bail!("{failed} terms notice(s) could not be sent");
             }
         }
         Command::SubscriptionFollowUp { orgnumber } => {
@@ -1486,6 +1521,7 @@ mod tests {
         ("abonnement-pris", &["fra", "kilde", "plan", "pris-ore"]),
         ("abonnement-faktura", &["bare-orgnr", "orgnr"]),
         ("abonnement-oppfolging", &["orgnr"]),
+        ("terms-notice", &[]),
         ("platform-grant", &["email", "notat", "role", "til"]),
         (
             "idporten-rebind",

@@ -11,6 +11,8 @@ futures-util.workspace = true
 regnmed-core.workspace = true
 # The job runner fetches through the bank providers (docs/jobs.md, bank_sync).
 regnmed-gov = { path = "../regnmed-gov" }
+# The customer terms text and its archive, embedded at build time (terms.rs).
+include_dir.workspace = true
 
 anyhow.workspace = true
 hex.workspace = true

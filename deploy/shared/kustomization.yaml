@@ -16,6 +16,7 @@ resources:
   - backup.yaml
   - abonnement-faktura.yaml
   - abonnement-oppfolging.yaml
+  - terms-notice.yaml
   - agent-worker.yaml
   - job-watch.yaml
   - job-worker.yaml

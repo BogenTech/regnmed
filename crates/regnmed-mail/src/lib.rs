@@ -23,6 +23,7 @@ pub mod follow_up;
 pub mod jobqueue;
 pub mod peppol_events;
 pub mod taskqueue;
+pub mod terms_notice;
 #[cfg(test)]
 mod testnats;
 use base64::Engine as _;
