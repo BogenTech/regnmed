@@ -294,10 +294,36 @@ Knappen består som reserve. Abonnementet står i registeret over
 myndighetskall som de andre (docs/vilkar-teknisk.md).
 
 Alle innsendinger for samme selskap og år havner i **samme dialog**, hver
-med sin egen `forsendelseId`; en ny oppgave for et år som alt er levert
-ble godkjent i test uten innvendinger. Hvordan den forholder seg til den
-forrige (erstatter eller legges til) er ikke bekreftet, og derfor nekter
-regnmed fortsatt en andre innsending for et levert år.
+med sin egen `forsendelseId`.
+
+### Korrigering
+
+Skatteetaten har **ingen egen korrigeringsvei** for RF-1086: API-et har
+bare hovedskjema, underskjema, bekreft og oppslag (OpenAPI 1.3.0), og
+XSD-ene har ikke noe felt som sier at en oppgave retter en annen. En
+korrigering er derfor en **ny, komplett oppgave** for samme år. To kilder
+sier hvordan den behandles:
+
+- Rettledningen (RF-1087B, 2022): en oppgave som ikke godkjennes, må selskapet
+  levere på nytt.
+- API-dokumentasjonen (endret 2026-11-13, om `GET prefill`): «Sist
+  gjeldende er den innrapporteringen som saksbehandler har sist
+  behandlet, uavhengig av status.»
+
+I testmiljøet ble en ny oppgave for et år som alt var levert, godkjent
+tre ganger (2026-11-11 og 2026-11-27).
+
+regnmed sender en korrigering bare når den blir bedt om det
+(`?korriger=true`, knappen «Send korrigert oppgave»), og bare når
+
+- Skatteetaten har **svart** på oppgaven som er levert. Siden den som
+  gjelder er den de behandler sist, skal ikke to oppgaver for samme år
+  være under behandling samtidig.
+- oppgaven **er annerledes** enn den som er levert. En lik oppgave har
+  ingenting å rette.
+
+Korrigeringen lagres og sendes som enhver annen innsending, med nye
+nøkler. Portalen merker den «Korrigering» i historikken.
 
 ### Det som sendes, lagres før det sendes
 
@@ -313,7 +339,8 @@ hendelsesloggen (`receipt` / `failed` / `outcome`) og lagres aldri.
 - **Ingen kvittering, endret aksjeeierbok:** den gamle står som historikk
   og en ny lagres med nye nøkler. Den gamle nådde aldri `bekreft`, så
   Skatteetaten har ikke tatt den.
-- **Kvittering finnes:** nektes, se over.
+- **Kvittering finnes:** nektes, med mindre det er en korrigering (se
+  over).
 - **Uverifiserte transaksjonskoder** stopper innsendingen med hindringene
   navngitt, akkurat som forhåndsvisningen.
 
@@ -325,7 +352,6 @@ levering og står på innsendingen for alltid.
 - **Kundevilkårene i kraft** (#185). Innsendingen nekter til selskapet har
   godtatt dem (docs/vilkar-teknisk.md, «Aksept»), men teksten er fortsatt et
   utkast som venter på advokat.
-- **Korrigering** av en levert oppgave.
 
 ## Endepunkter
 
@@ -339,7 +365,7 @@ levering og står på innsendingen for alltid.
 | GET/POST | `/companies/{id}/dividends` | utbyttevedtak (`?preview=true`: fordeling uten å bokføre) |
 | GET | `/companies/{id}/reports/aksjonaeroppgave?year=&format=` | oppgaven |
 | GET | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | innsendinger m/ status og kvittering |
-| POST | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=` | send oppgaven til Skatteetaten (`AKSJEBOK_SKRIV`) |
+| POST | `/companies/{id}/reports/aksjonaeroppgave/submissions?year=&korriger=` | send oppgaven til Skatteetaten (`AKSJEBOK_SKRIV`); `korriger=true` for et år som er levert |
 | POST | `/companies/{id}/reports/aksjonaeroppgave/submissions/{sid}/outcome` | hent Skatteetatens svar fra Dialogporten |
 
 Lesing er åpen for alle tilgangsnivåer — revisor skal kunne lese
