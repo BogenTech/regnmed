@@ -257,7 +257,7 @@
     {/if}
 
     {#if !canSend}
-      {#if steg.handling}
+      {#if steg.handling && steg.handling !== "korriger"}
         <p class="text-sm opacity-80">Du kan se meldingen, men ikke sende den. Det krever rettigheten «Godkjenne og sende inn mva-melding».</p>
       {/if}
     {:else}

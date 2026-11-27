@@ -726,13 +726,27 @@ async fn an_approved_melding_is_filed_and_the_answer_arrives_without_anyone() {
 async fn a_delivered_term_is_corrected_with_a_new_complete_melding() {
     let Some(s) = setup().await else { return };
     let (first, _) = approved_and_settled(&s).await;
+    let uri = format!("/companies/{}/vat-filings", s.company);
+    let (status, body) = call(
+        &s.state,
+        &s.token,
+        "POST",
+        &uri,
+        json!({ "year": 2026, "period": 1 }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "no correction before the answer: {body}"
+    );
+    assert!(body.to_string().contains("venter på svar"), "{body}");
     s.mock.lock().unwrap().feedback = true;
     regnmed_db::vat_filing::reconcile(&s.state.pool, &s.worker)
         .await
         .unwrap();
     assert_eq!(read(&s, &first).await["status"], "kvittert");
 
-    let uri = format!("/companies/{}/vat-filings", s.company);
     let (status, body) = call(
         &s.state,
         &s.token,
