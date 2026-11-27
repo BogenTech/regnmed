@@ -435,15 +435,10 @@ pub async fn prepare(
         lock_writes(&mut tx, filing.id).await?;
         let past = events(&mut *tx, filing.id).await?;
         match status(&past) {
-            "sendt" | "kvittert" => {
+            "sendt" => {
                 return Ok(Prepared::Refused(
-                    "Mva-meldingen for denne terminen er allerede sendt inn.".into(),
-                ));
-            }
-            "lukket_etter_kontroll" if closed_as_delivered(&past) => {
-                return Ok(Prepared::Refused(
-                    "Mva-meldingen for denne terminen er levert ifølge kontrollen i Altinn, så \
-                     den kan ikke sendes på nytt herfra."
+                    "Mva-meldingen for denne terminen er sendt inn og venter på svar. Vent på \
+                     svaret før du sender en korrigert melding."
                         .into(),
                 ));
             }
@@ -478,6 +473,20 @@ pub async fn prepare(
             _ => {}
         }
     }
+    // A correction is a new complete melding for the term, and the last one
+    // filed is the one that counts (docs/mva.md). Sending the same figures
+    // again would correct nothing.
+    let corrects = match delivered(&mut tx, company_id, year, period).await? {
+        Some((_, delivered_xml)) if delivered_xml == melding_xml => {
+            return Ok(Prepared::Refused(
+                "Regnskapet for terminen er ikke endret siden meldingen ble levert, så det er \
+                 ingenting å korrigere."
+                    .into(),
+            ));
+        }
+        Some((id, _)) => Some(id),
+        None => None,
+    };
     let id = Uuid::now_v7();
     sqlx::query(
         "insert into vat_filing (id, company_id, year, period, melding_xml, melding_sha256,
@@ -495,13 +504,54 @@ pub async fn prepare(
     .bind(requested_by)
     .execute(&mut *tx)
     .await?;
-    record(&mut *tx, id, "opprettet", json!({})).await?;
+    let created = match corrects {
+        Some(earlier) => json!({ "korrigerer": earlier }),
+        None => json!({}),
+    };
+    record(&mut *tx, id, "opprettet", created).await?;
     tx.commit().await?;
     Ok(Prepared::Ready(
         get(pool, company_id, id)
             .await?
             .context("the filing just stored")?,
     ))
+}
+
+/// The filing that counts for a term: the newest one Skatteetaten gave a
+/// receipt for, or that a person found delivered in Altinn.
+async fn delivered(
+    conn: &mut PgConnection,
+    company_id: Uuid,
+    year: i32,
+    period: i32,
+) -> Result<Option<(Uuid, String)>> {
+    let rows = sqlx::query(
+        "select id, melding_xml from vat_filing
+         where company_id = $1 and year = $2 and period = $3
+         order by created_at desc",
+    )
+    .bind(company_id)
+    .bind(year)
+    .bind(period)
+    .fetch_all(&mut *conn)
+    .await?;
+    for row in rows {
+        let id: Uuid = row.get("id");
+        let past = events(&mut *conn, id).await?;
+        if status(&past) == "kvittert" || closed_as_delivered(&past) {
+            return Ok(Some((id, row.get("melding_xml"))));
+        }
+    }
+    Ok(None)
+}
+
+/// The earlier filing this one corrects, if it is a correction.
+pub fn corrects(events: &[Event]) -> Option<Uuid> {
+    events
+        .iter()
+        .find(|e| e.kind == "opprettet")
+        .and_then(|e| e.detail["korrigerer"].as_str())
+        .and_then(|id| id.parse().ok())
 }
 
 /// Remembers a sign-in in progress. A later attempt replaces an earlier one.
@@ -848,6 +898,12 @@ pub async fn audit_check(pool: &PgPool, company_id: Uuid) -> Result<regnmed_core
         let events = events(pool, id).await?;
         let by = approver_name(&events).unwrap_or("ukjent");
         let melding = format!("melding sha256 {}", hex::encode(&stored));
+        // The last filing for a term is the one that counts.
+        let term = if corrects(&events).is_some() {
+            format!("{term} (korrigert melding)")
+        } else {
+            term
+        };
         match status(&events) {
             "kvittert" => {
                 let receipt = match document(pool, id, "kvittering").await? {
