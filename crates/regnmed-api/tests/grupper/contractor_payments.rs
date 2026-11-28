@@ -165,8 +165,10 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
     for (number, name) in [
         ("1920", "Bank"),
         ("2400", "Leverandørgjeld"),
+        ("2090", "Kredittkort"),
         ("2710", "Inngående mva"),
         ("4000", "Innkjøp"),
+        ("8060", "Valutagevinst (agio)"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -226,6 +228,29 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
             line("2400", 250_000, Some(&snekker_no)),
             line("4000", -200_000, None),
             line("2710", -50_000, None),
+        ],
+    )
+    .await;
+    // Paid by company credit card and an agio gain on the supplier: both
+    // debit the supplier without crediting a cost, so neither is a credit
+    // note (seen to fail when only 19xx counted as payment).
+    post(
+        &state,
+        company,
+        (2026, 4, 3),
+        vec![
+            line("2400", 100_000, Some(&snekker_no)),
+            line("2090", -100_000, None),
+        ],
+    )
+    .await;
+    post(
+        &state,
+        company,
+        (2026, 4, 4),
+        vec![
+            line("2400", 1_000, Some(&snekker_no)),
+            line("8060", -1_000, None),
         ],
     )
     .await;
@@ -337,6 +362,10 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
         !body.to_string().contains("26829398612"),
         "the number is never shown"
     );
+    // Saving yes again without retyping the number keeps it.
+    let (status, body) = assess(snekker, json!({"selvstendig": true})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["gjeldende"]["har_fodselsnummer"], true, "{body}");
 
     let (status, body) = call(&state, &token, "GET", &report, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");

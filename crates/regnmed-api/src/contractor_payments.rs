@@ -187,7 +187,7 @@ pub async fn outcome(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require(&state, person.person_id, company_id, Right::SubledgerRead).await?;
     let rail = rail(&state)?;
-    db::fetch_outcome(
+    let found = db::fetch_outcome(
         &state.pool,
         company_id,
         &rail,
@@ -196,5 +196,8 @@ pub async fn outcome(
     )
     .await
     .map_err(|e| ApiError::BadRequest(format!("kunne ikke hente svaret: {e:#}")))?;
+    if !found {
+        return Err(ApiError::NotFound);
+    }
     Ok(Json(json!({ "ok": true })))
 }

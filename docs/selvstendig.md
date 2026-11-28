@@ -87,12 +87,15 @@ Tre utfall per leverandør med fakturaer i året:
 `regnmed-db::contractor_payments::report` leser leverandørreskontroen for
 året (bilagsdato i året):
 
-- En postering på en leverandørkonto (`reskontro_kind = 'leverandor'`) er
-  en **faktura** når den krediterer leverandøren og en **kreditnota** når
-  den debiterer. Unntaket er når penger gikk motsatt vei i samme bilag
-  (konto 19xx). Da er den en **betaling** eller en **tilbakebetaling**, og
-  telles ikke. En faktura som bokføres og betales i samme bilag, telles
-  derfor riktig.
+- En postering som **krediterer** leverandøren på en leverandørkonto
+  (`reskontro_kind = 'leverandor'`) er en **faktura**, med mindre penger
+  kom inn i samme bilag (konto 19xx). Da er den en tilbakebetaling.
+- En postering som **debiterer** leverandøren er en **kreditnota** bare
+  når samme bilag krediterer en kostnads- eller inntektskonto (klasse
+  3–8, agio 8060/8160 unntatt) eller mva, og ingen penger gikk ut. Alt
+  annet er en **betaling** og telles ikke, også betaling med
+  firmakredittkort, via en mellomregningskonto eller ved motregning. En
+  faktura som bokføres og betales i samme bilag, telles riktig.
 - **Mva** er bilagets egen på 2700–2719. Den deles forholdsmessig hvis
   bilaget har flere leverandører (`regnmed-core::contractor_payments::invoiced_excl_vat`).
   Omvendt avgiftsplikt går i null og trekker ingenting fra.
@@ -108,6 +111,13 @@ Tre utfall per leverandør med fakturaer i året:
   rene varer (eller husleie) fra samme selvstendige, kommer alt med.
 - Mva leses fra kontoene 2700–2719. Mva bokført på en annen konto blir
   stående i beløpet.
+- En reversering av en faktura som var ført mot en balansekonto (for
+  eksempel et aktivert arbeid på 1100) trekker ikke fra, siden den ikke
+  krediterer en kostnad. Beløpet blir da for høyt, som er den trygge
+  retningen: ved tvil skal det rapporteres.
+- En levering Skatteetaten avviser, regnes som ikke levert: den kan
+  sendes igjen uendret, og den teller ikke når en korrigering avgjør hva
+  som skal trekkes tilbake.
 - En fil kunden har lastet ned og levert selv, vet regnmed ikke om. En
   korrigering trekker bare tilbake det **regnmed** har levert.
 

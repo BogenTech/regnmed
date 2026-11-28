@@ -71,6 +71,23 @@ pub async fn assess(
             "«{n}» er ikke et gyldig fødselsnummer eller D-nummer"
         );
     }
+    // A yes without a number keeps the one already given: the portal asks
+    // for it again only to change it, and a person's number does not move.
+    let nin = match nin {
+        Some(n) => Some(n.to_string()),
+        None if self_employed && row.get::<Option<String>, _>("orgnr").is_none() => {
+            sqlx::query_scalar(
+                "select nin from contractor_assessment
+                 where company_id = $1 and party_id = $2 and nin is not null
+                 order by created_at desc, id desc limit 1",
+            )
+            .bind(company_id)
+            .bind(party_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        None => None,
+    };
     sqlx::query(
         "insert into contractor_assessment
              (id, company_id, party_id, self_employed, nin, decided_by)
@@ -164,10 +181,12 @@ pub struct Report {
 /// Every supplier's invoiced amount in the year excluding VAT, from the
 /// supplier ledger (docs/selvstendig.md, «Tallene»):
 ///
-/// - An entry on a supplier-ledger account is an invoice when it credits
-///   the supplier and a credit note when it debits it, unless money moved
-///   the other way in the same voucher (an account 19xx): then it is a
-///   payment or a refund, and is not counted.
+/// - An entry crediting the supplier is an invoice, unless money came in
+///   in the same voucher (an account 19xx): then it is a refund.
+/// - An entry debiting the supplier is a credit note only when the same
+///   voucher credits a cost or income account (class 3–8, agio excepted)
+///   or VAT, and no money went out. Anything else is a payment, also one
+///   through a credit card, a clearing account or set-off.
 /// - The VAT is the voucher's own on 2700–2719, shared pro rata if the
 ///   voucher holds several suppliers.
 async fn invoiced(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Vec<(Uuid, i64)>> {
@@ -185,7 +204,13 @@ async fn invoiced(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Vec<(Uui
              select e.voucher_id,
                     coalesce(sum(e.amount_ore) filter (where a.number like '19%'), 0) as money,
                     coalesce(sum(e.amount_ore)
-                             filter (where a.number between '2700' and '2719'), 0) as vat
+                             filter (where a.number between '2700' and '2719'), 0) as vat,
+                    -- Something was credited back against costs or VAT: what
+                    -- makes a debit on the supplier a credit note rather than
+                    -- a payment through some other account. Agio is not.
+                    coalesce(bool_or(e.amount_ore < 0
+                        and ((a.number >= '3000' and a.number not in ('8060', '8160'))
+                             or a.number between '2700' and '2719')), false) as reversed
              from entry e
              join account a on a.id = e.account_id
              where e.voucher_id in (select voucher_id from sup)
@@ -193,7 +218,8 @@ async fn invoiced(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Vec<(Uui
          )
          select s.voucher_id, s.party_id, -sum(s.amount_ore)::bigint as gross, vo.vat::bigint as vat
          from sup s join vo on vo.voucher_id = s.voucher_id
-         where (s.amount_ore < 0 and vo.money <= 0) or (s.amount_ore > 0 and vo.money >= 0)
+         where (s.amount_ore < 0 and vo.money <= 0)
+            or (s.amount_ore > 0 and vo.money >= 0 and vo.reversed)
          group by s.voucher_id, s.party_id, vo.vat",
     )
     .bind(company_id)
@@ -384,6 +410,10 @@ async fn newest_delivered_document(
          where s.company_id = $1 and s.income_year = $2
            and exists (select 1 from contractor_report_submission_event e
                        where e.submission_id = s.id and e.kind = 'receipt')
+           -- A rejected delivery counts as not delivered.
+           and not exists (select 1 from contractor_report_submission_event o
+                           where o.submission_id = s.id and o.kind = 'outcome'
+                             and o.detail->>'kind' = 'Rejection')
          order by s.created_at desc limit 1",
     )
     .bind(company_id)
@@ -506,19 +536,27 @@ async fn prepare(pool: &PgPool, company_id: Uuid, year: i32, by: &str) -> Result
         .execute(&mut *tx)
         .await?;
     let existing = submissions(pool, company_id, year).await?;
-    if let Some(s) = existing.first() {
-        // The stored id is the reference inside the stored document, so
-        // re-rendering with it shows whether anything changed.
-        let same = document(pool, company_id, year, &s.id.to_string()).await? == s.document;
-        match (s.status, same) {
-            ("ikke_levert", true) => return Ok(s.clone()),
-            ("ikke_levert", false) => {}
-            (_, true) => bail!(
-                "oppgaven for {year} er allerede levert slik den står nå. Rett leverandørene \
-                 eller bilagene først om noe er feil"
-            ),
-            (_, false) => {}
-        }
+    // The stored id is the reference inside the stored document, so
+    // re-rendering with it shows whether anything has changed since.
+    let unchanged = async |s: &Submission| -> Result<bool> {
+        Ok(document(pool, company_id, year, &s.id.to_string()).await? == s.document)
+    };
+    if let Some(s) = existing.first().filter(|s| s.status == "ikke_levert")
+        && unchanged(s).await?
+    {
+        return Ok(s.clone());
+    }
+    // A rejected report counts as not delivered (the rettledning), so the
+    // same one may go again.
+    if let Some(d) = existing
+        .iter()
+        .find(|s| s.status != "ikke_levert" && s.status != "avvist")
+        && unchanged(d).await?
+    {
+        bail!(
+            "oppgaven for {year} er allerede levert slik den står nå. Rett leverandørene \
+             eller bilagene først om noe er feil"
+        );
     }
     let id = Uuid::now_v7();
     let doc = document(pool, company_id, year, &id.to_string()).await?;
@@ -608,22 +646,24 @@ pub async fn submit(
 }
 
 /// Fetches Skatteetaten's answer for a delivered submission that waits for
-/// one, and stores it when it exists.
+/// one, and stores it when it exists. `false`: no such submission.
 pub async fn fetch_outcome(
     pool: &PgPool,
     company_id: Uuid,
     rail: &Rail,
     submission_id: Uuid,
     by: &str,
-) -> Result<()> {
-    let year: i32 = sqlx::query_scalar(
+) -> Result<bool> {
+    let Some(year): Option<i32> = sqlx::query_scalar(
         "select income_year from contractor_report_submission where id = $1 and company_id = $2",
     )
     .bind(submission_id)
     .bind(company_id)
     .fetch_optional(pool)
     .await?
-    .context("ukjent innsending")?;
+    else {
+        return Ok(false);
+    };
     let s = submissions(pool, company_id, year)
         .await?
         .into_iter()
@@ -631,7 +671,7 @@ pub async fn fetch_outcome(
         .context("ukjent innsending")?;
     let (Some(dialog), Some(forsendelse), None) = (&s.dialog_id, &s.forsendelse_id, &s.outcome)
     else {
-        return Ok(());
+        return Ok(true);
     };
     let orgnumber = crate::company_settings(pool, company_id).await?.orgnumber;
     if let Some(o) = rail
@@ -649,7 +689,7 @@ pub async fn fetch_outcome(
         )
         .await?;
     }
-    Ok(())
+    Ok(true)
 }
 
 async fn record(
