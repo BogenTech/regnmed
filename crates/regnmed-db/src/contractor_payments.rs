@@ -285,6 +285,15 @@ pub async fn report(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Report
             "ingen selvstendig næringsdrivende å rapportere for {year}"
         ));
     }
+    // Whatever else the renderer refuses (an orgnr failing its check
+    // digits, a name too long) is named here too, so the preview never
+    // offers a file the download then refuses.
+    if report.hindrances.is_empty() {
+        let settings = crate::company_settings(pool, company_id).await?;
+        if let Err(e) = core::render(&delivery(&report, settings, "preview")) {
+            report.hindrances.push(e.to_string());
+        }
+    }
     Ok(report)
 }
 
@@ -327,13 +336,19 @@ pub async fn document(
         report.hindrances.join("; ")
     );
     let settings = crate::company_settings(pool, company_id).await?;
+    Ok(core::render(&delivery(&report, settings, reference))?)
+}
+
+fn delivery(report: &Report, settings: crate::CompanySettings, reference: &str) -> Delivery {
     let mut recipients: Vec<Recipient> = report
         .recipients
         .iter()
-        .map(|l| Recipient {
-            id: l.id().expect("no hindrance, so every line has an id"),
-            name: l.name.clone(),
-            paid_ore: l.invoiced_ore,
+        .filter_map(|l| {
+            Some(Recipient {
+                id: l.id()?,
+                name: l.name.clone(),
+                paid_ore: l.invoiced_ore,
+            })
         })
         .collect();
     for w in &report.withdrawn {
@@ -343,8 +358,8 @@ pub async fn document(
             paid_ore: 0,
         });
     }
-    Ok(core::render(&Delivery {
-        income_year: year,
+    Delivery {
+        income_year: report.income_year,
         payer_orgnumber: settings.orgnumber,
         reference: reference.to_string(),
         source_system: SOURCE_SYSTEM.into(),
@@ -356,7 +371,7 @@ pub async fn document(
             email: settings.email,
         },
         recipients,
-    })?)
+    }
 }
 
 async fn newest_delivered_document(

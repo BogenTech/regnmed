@@ -46,6 +46,8 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | PUT | `/companies/{company_id}/parties/{party_id}/contact` | `KONTAKT_SKRIV` |
 | GET | `/companies/{company_id}/parties/{party_id}/items` | `RESKONTRO_LES` |
 | GET | `/companies/{company_id}/parties/{party_id}/matches` | `RESKONTRO_LES` |
+| GET | `/companies/{company_id}/parties/{party_id}/self-employed` | `RESKONTRO_LES` |
+| POST | `/companies/{company_id}/parties/{party_id}/self-employed` | `RESKONTRO_SKRIV` |
 | GET | `/companies/{company_id}/products` | `PRODUKT_LES` |
 | POST | `/companies/{company_id}/products` | `PRODUKT_SKRIV` |
 | PUT | `/companies/{company_id}/products/{number}` | `PRODUKT_SKRIV` |

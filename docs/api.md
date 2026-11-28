@@ -270,6 +270,7 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/parties/{party_id}/contact` | PUT |
 | `/companies/{company_id}/parties/{party_id}/items` | GET |
 | `/companies/{company_id}/parties/{party_id}/matches` | GET |
+| `/companies/{company_id}/parties/{party_id}/self-employed` | GET POST |
 | `/companies/{company_id}/payments/payable` | GET |
 | `/companies/{company_id}/payments/runs` | GET POST |
 | `/companies/{company_id}/payments/runs/{run_id}/approve` | POST |
@@ -292,6 +293,9 @@ endepunktene når noe selskaps hovedbok.
 | `/companies/{company_id}/tax-cards/{order_id}/answer` | POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions` | GET POST |
 | `/companies/{company_id}/reports/aksjonaeroppgave/submissions/{submission_id}/outcome` | POST |
+| `/companies/{company_id}/reports/selvstendig` | GET |
+| `/companies/{company_id}/reports/selvstendig/submissions` | GET POST |
+| `/companies/{company_id}/reports/selvstendig/submissions/{submission_id}/outcome` | POST |
 | `/companies/{company_id}/reports/avvik` | GET |
 | `/companies/{company_id}/reports/balanse` | GET |
 | `/companies/{company_id}/reports/bokforingsspesifikasjon` | GET |

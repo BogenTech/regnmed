@@ -35,6 +35,10 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | GET | `/companies/{company_id}/reports/revisjon` | `RAPPORT_LES` |
 | GET | `/companies/{company_id}/reports/saft` | `RAPPORT_LES` |
 | GET | `/companies/{company_id}/reports/saldobalanse` | `RAPPORT_LES` |
+| GET | `/companies/{company_id}/reports/selvstendig` | `RESKONTRO_LES` |
+| GET | `/companies/{company_id}/reports/selvstendig/submissions` | `RESKONTRO_LES` |
+| POST | `/companies/{company_id}/reports/selvstendig/submissions` | `RESKONTRO_SKRIV` |
+| POST | `/companies/{company_id}/reports/selvstendig/submissions/{submission_id}/outcome` | `RESKONTRO_LES` |
 
 ## Les mer
 

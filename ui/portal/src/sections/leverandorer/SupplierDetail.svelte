@@ -11,6 +11,7 @@
   import { harRett } from "../../lib/me.svelte.js";
   import PartyContact from "../../components/PartyContact.svelte";
   import SubledgerItems from "../parties/SubledgerItems.svelte";
+  import SelvstendigVurdering from "./SelvstendigVurdering.svelte";
 
   let { companyId, partyId, query = "" } = $props();
   // ?avstem (from Reskontro → Oversikt) opens the reskontro straight away.
@@ -251,6 +252,8 @@
       {/if}
     </div>
   </section>
+
+  {#key party.party_id}<SelvstendigVurdering {companyId} {party} />{/key}
 
   <details id="reskontro" class="mt-2 scroll-mt-4" open={startOpen}>
     <summary class="cursor-pointer font-medium mb-3">Reskontro: poster og avstemming</summary>
