@@ -1,0 +1,54 @@
+# Test regnmed-worker: the daily trekkpålegg fetch against Skatteetatens
+# TEST environment (docs/trekkpalegg.md §2, #334).
+#
+# Same Maskinporten client and key as regnmed-api (see its patch): the
+# `maskinporten-credentials` secret, created by
+# scripts/maskinporten-cluster-key.sh, mounted as a file. TREKKPALEGG_URL
+# defaults to test.
+#
+# Nothing here calls Skatteetaten on its own: a company's daily fetch is
+# scheduled only after a person has fetched once from the portal and
+# Skatteetaten answered (regnmed-api::garnishment::fetch).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regnmed-worker
+  namespace: regnmed
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: MASKINPORTEN_TOKEN_ENDPOINT
+              value: https://test.maskinporten.no/token
+            - name: MASKINPORTEN_AUDIENCE
+              value: https://test.maskinporten.no/
+            - name: MASKINPORTEN_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: maskinporten-credentials
+                  key: client-id
+            - name: MASKINPORTEN_KID
+              valueFrom:
+                secretKeyRef:
+                  name: maskinporten-credentials
+                  key: kid
+            - name: MASKINPORTEN_KEY_FILE
+              value: /secrets/maskinporten/key.pem
+            # Required by MaskinportenConfig::from_env, then overridden by
+            # the rail's own scope (regnmed-gov::garnishment::SCOPES).
+            - name: MASKINPORTEN_SCOPES
+              value: skatteetaten:trekkpaalegg
+          volumeMounts:
+            - name: maskinporten
+              mountPath: /secrets/maskinporten
+              readOnly: true
+      # The worker runs as 65532; the key is group-readable to it only.
+      securityContext:
+        fsGroup: 65532
+      volumes:
+        - name: maskinporten
+          secret:
+            secretName: maskinporten-credentials
+            defaultMode: 0440

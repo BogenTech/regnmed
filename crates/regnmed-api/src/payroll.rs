@@ -1039,14 +1039,49 @@ pub struct RunPayrollRequest {
     garnishment_set: Option<Vec<GarnishmentKey>>,
 }
 
-/// One hand-registered order in the set: (registrering, versjon).
-/// Fetched orders (#334) will add (trekkid, trekkversjon).
-#[derive(Deserialize, serde::Serialize, Clone, Copy)]
-pub struct GarnishmentKey {
-    #[serde(rename = "registrering")]
-    order: Uuid,
-    #[serde(rename = "versjon")]
-    version: i32,
+/// One order in the set: (registrering, versjon) for a hand entry,
+/// (trekkid, trekkversjon) for an order fetched from Skatteetaten.
+#[derive(Deserialize, serde::Serialize, Clone)]
+#[serde(untagged)]
+pub enum GarnishmentKey {
+    Registered {
+        #[serde(rename = "registrering")]
+        order: Uuid,
+        #[serde(rename = "versjon")]
+        version: i32,
+    },
+    Fetched {
+        #[serde(rename = "trekkid")]
+        external_id: String,
+        #[serde(rename = "trekkversjon")]
+        external_version: i32,
+    },
+}
+
+impl From<GarnishmentKey> for regnmed_db::garnishment::Key {
+    fn from(k: GarnishmentKey) -> Self {
+        match k {
+            GarnishmentKey::Registered { order, version } => Self::Registered(order, version),
+            GarnishmentKey::Fetched {
+                external_id,
+                external_version,
+            } => Self::Fetched(external_id, external_version),
+        }
+    }
+}
+
+impl From<regnmed_db::garnishment::Key> for GarnishmentKey {
+    fn from(k: regnmed_db::garnishment::Key) -> Self {
+        match k {
+            regnmed_db::garnishment::Key::Registered(order, version) => {
+                Self::Registered { order, version }
+            }
+            regnmed_db::garnishment::Key::Fetched(external_id, external_version) => Self::Fetched {
+                external_id,
+                external_version,
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -1092,10 +1127,10 @@ pub async fn run_payroll(
         )
         .await
     } else {
-        let set: Option<Vec<(Uuid, i32)>> = request
+        let set: Option<Vec<regnmed_db::garnishment::Key>> = request
             .garnishment_set
-            .as_ref()
-            .map(|s| s.iter().map(|k| (k.order, k.version)).collect());
+            .clone()
+            .map(|s| s.into_iter().map(Into::into).collect());
         regnmed_db::payroll::run_payroll_as_previewed(
             &state.pool,
             company_id,
@@ -1131,9 +1166,8 @@ pub async fn run_payroll(
                 Vec::new()
             },
         })).collect::<Vec<_>>(),
-        "trekkpalegg_sett": run.garnishment_set.iter().map(|&(order, version)| {
-            GarnishmentKey { order, version }
-        }).collect::<Vec<_>>(),
+        "trekkpalegg_sett": run.garnishment_set.iter().cloned().map(GarnishmentKey::from)
+            .collect::<Vec<_>>(),
         "trekkpalegg_konto": run.garnishment_account,
         "advarsler": run.warnings,
         "forhandsvisning": q.preview,
@@ -1142,8 +1176,7 @@ pub async fn run_payroll(
 
 fn garnishment_json(company_id: Uuid, w: &regnmed_db::payroll::Withheld) -> serde_json::Value {
     let o = &w.order;
-    json!({
-        "registrering": o.garnishment_id,
+    let mut j = json!({
         "versjon": o.version,
         "type": o.kind.slug(),
         "belop_ore": match o.size { regnmed_core::garnishment::Size::AmountOre(a) => Some(a), _ => None },
@@ -1152,9 +1185,31 @@ fn garnishment_json(company_id: Uuid, w: &regnmed_db::payroll::Withheld) -> serd
         "mottaker_orgnr": o.payee_orgnumber,
         "onsket_ore": w.wanted_ore,
         "trukket_ore": w.withheld_ore,
-        "brev_url": crate::garnishment::letter_url(company_id, o.letter_id),
-        "brev_filnavn": o.letter_filename,
-    })
+    });
+    let source = match &o.source {
+        regnmed_db::garnishment::Source::Registered {
+            id,
+            letter_id,
+            letter_filename,
+        } => json!({
+            "registrering": id,
+            "brev_url": crate::garnishment::letter_url(company_id, *letter_id),
+            "brev_filnavn": letter_filename,
+        }),
+        regnmed_db::garnishment::Source::Fetched {
+            external_id,
+            case_number,
+            ..
+        } => json!({
+            "trekkid": external_id,
+            "trekkversjon": o.version,
+            "saksnummer": case_number,
+        }),
+    };
+    j.as_object_mut()
+        .expect("object")
+        .extend(source.as_object().expect("object").clone());
+    j
 }
 
 /// The payslip for one employee in one run, as PDF.

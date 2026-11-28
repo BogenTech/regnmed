@@ -48,6 +48,18 @@ pub fn rules(kind: Kind) -> Option<Rules> {
                           and a.valid_from <= current_date
                           and (a.valid_to is null or a.valid_to > current_date))",
         }),
+        Kind::GarnishmentFetch => Some(Rules {
+            name: "Daglig henting av trekkpålegg fra Skatteetaten",
+            max_per_day: 1,
+            // Skatteetaten serves the list only with the company's approved
+            // systembruker, and only once it has delivered an a-melding
+            // through regnmed (docs/trekkpalegg.md §1).
+            applies: "exists (select 1 from altinn_system_user s
+                        where s.company_id = $1 and s.status = 'Accepted')
+                  and exists (select 1 from amelding_submission a
+                        join amelding_submission_event e on e.submission_id = a.id
+                        where a.company_id = $1 and e.kind = 'receipt')",
+        }),
         Kind::SaftImport
         | Kind::AuditReport
         | Kind::PeppolLookup

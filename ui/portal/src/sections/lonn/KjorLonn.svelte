@@ -378,14 +378,18 @@
                (docs/trekkpalegg.md §6, Avgjørelser). -->
           <h4 class="font-semibold text-sm mt-3">Trekkpålegg</h4>
           <ul class="text-sm grid gap-1 mt-1">
-            {#each garnishments as t (t.registrering)}
+            {#each garnishments as t (t.registrering ?? t.trekkid)}
               <li>
                 {t.navn}: {kr(t.trukket_ore)} kr
                 {#if t.trukket_ore < t.onsket_ore}(av {kr(t.onsket_ore)}){/if}
                 — {t.type === "skatt" ? "skatt, selskapets KID" : "KID " + t.kid}, versjon {t.versjon}
-                <button class="link text-xs" onclick={() => download(t.brev_url, t.brev_filnavn)}>
-                  brevet
-                </button>
+                {#if t.trekkid}
+                  (fra Skatteetaten, trekkpålegg {t.trekkid})
+                {:else}
+                  <button class="link text-xs" onclick={() => download(t.brev_url, t.brev_filnavn)}>
+                    brevet
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -401,8 +405,8 @@
           </div>
         {/if}
         <p class="text-xs opacity-70 mt-3">
-          Bare trekkpålegg registrert for hånd under «Trekkpålegg» trekkes; pålegg hentes ikke fra
-          Skatteetaten ennå. Et pålegg som ikke er registrert, trekkes ikke.
+          Det som er hentet fra Skatteetaten eller registrert under «Trekkpålegg» når du forhåndsviser,
+          er det som trekkes.
         </p>
         <div class="flex flex-wrap gap-2 mt-3">
           <button class="btn btn-primary btn-sm" disabled={arbeider} onclick={bokfor}>

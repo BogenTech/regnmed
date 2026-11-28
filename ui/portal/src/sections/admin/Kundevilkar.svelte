@@ -27,6 +27,7 @@
     "mva-melding": "Mva-melding",
     "altinn-hendelser": "Varsling fra Altinn",
     skattekort: "Skattekort",
+    trekkpalegg: "Trekkpålegg",
   };
   const HENDELSE = {
     receipt: "kvittering",

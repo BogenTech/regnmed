@@ -102,6 +102,7 @@ pub async fn test_state(idp: &TestIdp) -> Option<AppState> {
         amelding: None,
         shareholder_return: None,
         tax_card: None,
+        garnishment: None,
         bank_feed: None,
         peppol_webhook_secret: None,
         system_user: None,

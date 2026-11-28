@@ -53,6 +53,7 @@ Tabellen er generert fra rutetabellen i `crates/regnmed-api/src/lib.rs` (`script
 | PUT | `/companies/{company_id}/payroll/garnishment-settings` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/payroll/garnishments` | `LONN_LES` |
 | POST | `/companies/{company_id}/payroll/garnishments` | `LONN_SKRIV` |
+| POST | `/companies/{company_id}/payroll/garnishments/fetch` | `LONN_SKRIV` |
 | POST | `/companies/{company_id}/payroll/garnishments/letters` | `LONN_SKRIV` |
 | GET | `/companies/{company_id}/payroll/garnishments/letters/{letter_id}` | `LONN_LES` |
 | PUT | `/companies/{company_id}/payroll/garnishments/{order_id}` | `LONN_SKRIV` |

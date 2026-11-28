@@ -16,6 +16,8 @@ mod ansattkobling;
 mod assets;
 #[path = "grupper/expenses.rs"]
 mod expenses;
+#[path = "grupper/garnishment_fetch.rs"]
+mod garnishment_fetch;
 #[path = "grupper/payroll_prefill.rs"]
 mod payroll_prefill;
 #[path = "grupper/share_register.rs"]

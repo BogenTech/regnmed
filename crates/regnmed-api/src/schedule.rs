@@ -21,6 +21,7 @@ use crate::platform::PlatformContext;
 fn right_to_change(kind: Kind) -> Option<Right> {
     match kind {
         Kind::BankSync => Some(Right::BankReconcile),
+        Kind::GarnishmentFetch => Some(Right::PayrollWrite),
         Kind::SaftImport
         | Kind::AuditReport
         | Kind::PeppolLookup

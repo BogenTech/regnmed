@@ -30,7 +30,7 @@ use crate::access::{Right, require};
 use crate::auth::{ApiError, AuthPerson};
 
 pub use regnmed_db::terms::{TEXT, VERSION};
-use regnmed_db::terms::{covered, effective_date, versions};
+use regnmed_db::terms::{effective_date, may_file, versions};
 
 /// The text itself, readable at a stable address (regnmed.no/vilkar).
 pub async fn page() -> impl axum::response::IntoResponse {
@@ -70,15 +70,6 @@ pub async fn list_versions() -> Json<serde_json::Value> {
             }))
             .collect::<Vec<_>>()
     ))
-}
-
-/// Whether the company may file today under the terms it has accepted.
-fn may_file(history: &[regnmed_db::terms::Acceptance]) -> bool {
-    let accepted: Vec<String> = history.iter().map(|a| a.terms_sha256.clone()).collect();
-    // shortcut: the day turns at midnight UTC, not Oslo, so a new version
-    // takes effect up to two hours late -- the old text governs meanwhile.
-    let today = chrono::Utc::now().date_naive().to_string();
-    covered(&versions(), &accepted, &today)
 }
 
 pub async fn current() -> Json<serde_json::Value> {

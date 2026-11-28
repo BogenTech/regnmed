@@ -12,6 +12,8 @@
 //!   feedback arrives as an event instead of being asked for.
 //! - [`tax_card`]: skattekort til arbeidsgiver -- ordering the cards and
 //!   reading what each one means for the employee's withholding.
+//! - [`garnishment`]: trekkpålegg -- the employer's whole list of
+//!   utleggstrekk orders, read without a float.
 //! - [`recommand`] and [`peppol_directory`]: the Peppol access point and
 //!   the public SML/SMP lookup (docs/efaktura.md).
 //! - [`tsa`]: RFC 3161 timestamping — the external witness for anchor
@@ -38,6 +40,7 @@ pub mod bankfeed;
 pub mod brreg;
 pub mod enablebanking;
 pub mod finanstilsynet;
+pub mod garnishment;
 pub mod idporten;
 pub mod maskinporten;
 pub mod norgesbank;

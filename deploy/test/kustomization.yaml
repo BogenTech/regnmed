@@ -80,4 +80,5 @@ patches:
   - path: patches/abonnement-oppfolging-cronjob.yaml
   - path: patches/terms-notice-cronjob.yaml
   - path: patches/agent-worker.yaml
+  - path: patches/regnmed-worker.yaml
   - path: patches/backup-cronjobs.yaml

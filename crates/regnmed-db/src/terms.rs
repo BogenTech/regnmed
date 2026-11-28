@@ -69,6 +69,15 @@ pub fn covered(versions: &[(&str, &str, &str)], accepted: &[String], today: &str
     })
 }
 
+/// Whether the company may file today under the terms it has accepted.
+pub fn may_file(history: &[Acceptance]) -> bool {
+    let accepted: Vec<String> = history.iter().map(|a| a.terms_sha256.clone()).collect();
+    // shortcut: the day turns at midnight UTC, not Oslo, so a new version
+    // takes effect up to two hours late -- the old text governs meanwhile.
+    let today = Utc::now().date_naive().to_string();
+    covered(&versions(), &accepted, &today)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Acceptance {
     pub terms_sha256: String,
@@ -211,7 +220,8 @@ pub async fn record_notice(
 /// One call regnmed made to an authority on the company's behalf.
 #[derive(Debug, Clone)]
 pub struct AuthorityCall {
-    /// `a-melding`, `aksjonaerregisteroppgave`, `altinn-hendelser` or `skattekort`.
+    /// `a-melding`, `aksjonaerregisteroppgave`, `altinn-hendelser`, `skattekort`,
+    /// `trekkpalegg` or `mva-melding`.
     pub form: String,
     pub id: Uuid,
     /// Period, income year or resource -- what the call was about.
@@ -272,6 +282,13 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
                       from tax_card c where c.order_id = r.id having count(*) > 0
                 ) x), '[]'::jsonb)
            from tax_card_request r where r.company_id = $1
+         union all
+         select 'trekkpalegg', r.id, 'trekkpålegg', r.requested_by, r.created_at,
+                coalesce((select jsonb_agg(jsonb_build_object(
+                    'hendelse', case when o.ok then 'answer' else 'failed' end,
+                    'tidspunkt', o.created_at, 'av', null, 'forsendelse_id', null))
+                  from garnishment_fetch_outcome o where o.fetch_id = r.id), '[]'::jsonb)
+           from garnishment_fetch r where r.company_id = $1
          union all
          select 'mva-melding', f.id, f.year::text || '-' || f.period, f.requested_by, f.created_at,
                 coalesce((select jsonb_agg(jsonb_build_object(

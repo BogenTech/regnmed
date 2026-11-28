@@ -54,6 +54,10 @@ pub async fn run(pool: PgPool, concurrency: usize, once: bool) -> Result<()> {
             .map(|js| regnmed_mail::follow_up::job_mail(pool.clone(), js)),
         directory_answer: None,
         vat_filing: regnmed_db::vat_filing::Rail::from_env()?.map(Arc::new),
+        // Trekkpålegg from Skatteetaten (docs/trekkpalegg.md): the
+        // Maskinporten client the API uses. None: the daily fetch fails
+        // with a message saying the worker is not set up for it.
+        garnishment: regnmed_db::garnishment::Rail::from_env()?.map(Arc::new),
     };
 
     if once {

@@ -196,7 +196,7 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:skattekorttilarbeidsgiver` | skattekort → forskuddstrekk (#46) | koden finnes (`regnmed-gov::tax_card`, docs/lonn.md); prøvd mot testmiljøet 2026-11-12 |
 | `skatteetaten:innrapporteringaksjonaerregisteroppgave` | RF-1086 (#43) | rendringen finnes |
 | `skatteetaten:frister` | offisielle frister | vi *beregner* mva-frister selv (`Terminordning`); en autoritativ kilde er en kryssjekk, ikke en erstatning. Bestilt i test, SSV-6690 |
-| `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | bestilt i test, SSV-6690 |
+| `skatteetaten:trekkpaalegg` | trekkpålegg i lønnskjøringen (#334, docs/trekkpalegg.md) | koden finnes (`regnmed-gov::garnishment`), prøvd mot opptak i dokumentasjonens form, ikke mot testmiljøet; bestilt i test, SSV-6690 |
 | `skatteetaten:kravogbetalinger` | kundens egne krav og innbetalinger i likviditetsoversikten (#36) | bedt om som kommentar på SSV-6690 2026-11-27; tjenesten er i pilot |
 | `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
 | `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
