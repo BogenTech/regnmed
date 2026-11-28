@@ -117,24 +117,14 @@ impl ShareholderReturnClient {
         forsendelse_id: &str,
     ) -> Result<Option<Outcome>> {
         let token = tokens.token_for_systemuser(orgnumber).await?;
-        let response = self
-            .http
-            .get(format!(
-                "{}/enduser/dialogs/{dialog_id}",
-                self.dialogporten_url
-            ))
-            .bearer_auth(token)
-            .header("accept", "application/json")
-            .send()
-            .await
-            .context("reading the dialog in Dialogporten")?;
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        if !status.is_success() {
-            bail!("Dialogporten returned {status}: {body}");
-        }
-        let dialog: serde_json::Value = serde_json::from_str(&body)?;
-        Ok(outcome_in(&dialog, forsendelse_id))
+        dialog_outcome(
+            &self.http,
+            &self.dialogporten_url,
+            &token,
+            dialog_id,
+            forsendelse_id,
+        )
+        .await
     }
 
     /// Files one oppgave: hovedskjema, every underskjema, bekreft.
@@ -203,6 +193,32 @@ impl ShareholderReturnClient {
         }
         Ok(body)
     }
+}
+
+/// Skatteetaten's answer to `forsendelse_id` in its Dialogporten dialog,
+/// or `None` while there is none. Shared by the reporting APIs that answer
+/// this way (RF-1086, payments to self-employed people).
+pub(crate) async fn dialog_outcome(
+    http: &reqwest::Client,
+    dialogporten_url: &str,
+    token: &str,
+    dialog_id: &str,
+    forsendelse_id: &str,
+) -> Result<Option<Outcome>> {
+    let response = http
+        .get(format!("{dialogporten_url}/enduser/dialogs/{dialog_id}"))
+        .bearer_auth(token)
+        .header("accept", "application/json")
+        .send()
+        .await
+        .context("reading the dialog in Dialogporten")?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        bail!("Dialogporten returned {status}: {body}");
+    }
+    let dialog: serde_json::Value = serde_json::from_str(&body)?;
+    Ok(outcome_in(&dialog, forsendelse_id))
 }
 
 /// The transmission answering `forsendelse_id`: related to it, and not

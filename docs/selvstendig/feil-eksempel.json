@@ -1,0 +1,13 @@
+{
+  "kode": "GLD_006",
+  "melding": "Feil i request",
+  "korrelasjonsid": "13a865f5-28f9-47db-9abd-ab78977c79fe",
+  "spesifisering": [
+    {
+      "kode": "GLD_1052",
+      "melding": "Inntektsår i path og i innsending er ulike",
+      "sti": "leveranse/inntektsaar",
+      "angittVerdi": "2025"
+    }
+  ]
+}

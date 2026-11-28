@@ -18,6 +18,7 @@ pub mod budget;
 pub mod camt053;
 pub mod cash_register;
 pub mod chart_of_accounts;
+pub mod contractor_payments;
 pub(crate) mod csvutil;
 pub mod currency;
 pub mod ehf;
