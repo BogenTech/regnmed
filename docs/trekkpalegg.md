@@ -351,7 +351,11 @@ betalingsinformasjonen. Veiledningen sier:
 - **Gammel liste** (§3 punkt 3): eldre enn tre døgn gir en advarsel.
 - **Synlighet**: hentede pålegg, forsøkene og feiltekstene står bak
   `LONN_LES` (`GET …/payroll/garnishments`, felt `hentede` og
-  `henting`); å hente krever `LONN_SKRIV` og godtatte kundevilkår. Hver
+  `henting`); å hente krever `LONN_SKRIV` og godtatte kundevilkår.
+  Vilkårene sjekkes i selve hentingen (`regnmed-db::garnishment::fetch`),
+  ikke bare bak knappen, så den daglige jobben stopper også når en ny
+  vilkårsversjon trer i kraft uten å være godtatt — den feiler med en
+  melding om det, og Skatteetaten kalles ikke. Hver
   henting står i registeret over kall til myndighetene
   (docs/vilkar-teknisk.md), uten feilteksten.
 - **Arbeideren** henter med samme Maskinporten-klient som API-et

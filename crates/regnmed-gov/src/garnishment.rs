@@ -205,10 +205,11 @@ pub fn parse_order(o: &Value) -> std::result::Result<Order, String> {
 
 /// `trekkbeloep` is kroner per month and `trekkprosent` a percent, both
 /// JSON numbers (`double`); read from their decimal text, never through a
-/// float (§2 step 4).
+/// float (§2 step 4). An explicit `null` for the alternative not used is
+/// read as absent.
 fn size(p: &Value) -> std::result::Result<Size, String> {
-    let amount = p.get("trekkbeloep").map(|t| &t["trekkbeloep"]);
-    let percent = p.get("trekkprosent").map(|t| &t["trekkprosent"]);
+    let field = |name: &str| p.get(name).filter(|t| !t.is_null()).map(|t| &t[name]);
+    let (amount, percent) = (field("trekkbeloep"), field("trekkprosent"));
     match (amount, percent) {
         (Some(a), None) => crate::tax_card::hundredths(a)
             .map(Size::AmountOre)
@@ -283,6 +284,18 @@ mod tests {
         assert!(percent("12.345").is_err());
         assert!(percent("101").is_err());
         assert!(period(serde_json::json!({})).is_err());
+        // The alternative not used, sent as null, is absent.
+        assert_eq!(
+            period(serde_json::json!({"trekkbeloep": null,
+                "trekkprosent": {"trekkprosent": 17}})),
+            Ok(Size::PercentBp(1700))
+        );
+        assert_eq!(
+            period(serde_json::json!({"trekkbeloep": {"trekkbeloep": 4400},
+                "trekkprosent": null})),
+            Ok(Size::AmountOre(440_000))
+        );
+        assert!(period(serde_json::json!({"trekkbeloep": null, "trekkprosent": null})).is_err());
     }
 
     #[test]

@@ -193,6 +193,13 @@ async fn a_fetched_order_is_stored_registered_and_carried_into_the_run() {
         "{body}"
     );
     assert_eq!(skatteetaten.lock().unwrap().calls, 0);
+    // So does the daily job, which calls the fetch without the handler.
+    let rail = state.garnishment.clone().unwrap();
+    let e = regnmed_db::garnishment::fetch(&state.pool, company, &rail, "arbeider")
+        .await
+        .unwrap_err();
+    assert!(format!("{e:#}").contains("kundevilkår"), "{e:#}");
+    assert_eq!(skatteetaten.lock().unwrap().calls, 0);
     let (code, body) = call(
         &state,
         admin,

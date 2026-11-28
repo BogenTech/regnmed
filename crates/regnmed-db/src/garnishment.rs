@@ -697,6 +697,14 @@ pub struct FetchSummary {
 /// request is recorded BEFORE the call, and a failure is recorded with
 /// Skatteetaten's answer, so the terms' §7.1 register shows every call.
 pub async fn fetch(pool: &PgPool, company_id: Uuid, rail: &Rail, by: &str) -> Result<FetchSummary> {
+    // Here and not only in the portal handler: the daily job calls this too,
+    // and a newer terms version the company has not accepted stops it.
+    ensure!(
+        crate::terms::may_file(&crate::terms::acceptances(pool, company_id).await?),
+        "selskapet har ikke godtatt gjeldende kundevilkår for kall mot myndighetene, så \
+         trekkpålegg hentes ikke. En administrator godtar dem under Administrasjon → \
+         Firmaopplysninger."
+    );
     let orgnumber: String = sqlx::query_scalar("select orgnr from company where id = $1")
         .bind(company_id)
         .fetch_one(pool)

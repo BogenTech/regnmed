@@ -69,6 +69,15 @@ pub fn covered(versions: &[(&str, &str, &str)], accepted: &[String], today: &str
     })
 }
 
+/// Whether the company may file today under the terms it has accepted.
+pub fn may_file(history: &[Acceptance]) -> bool {
+    let accepted: Vec<String> = history.iter().map(|a| a.terms_sha256.clone()).collect();
+    // shortcut: the day turns at midnight UTC, not Oslo, so a new version
+    // takes effect up to two hours late -- the old text governs meanwhile.
+    let today = Utc::now().date_naive().to_string();
+    covered(&versions(), &accepted, &today)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Acceptance {
     pub terms_sha256: String,
