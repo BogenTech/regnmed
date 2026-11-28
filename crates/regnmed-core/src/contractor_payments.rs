@@ -29,7 +29,10 @@ pub enum RecipientId {
 pub struct Recipient {
     pub id: RecipientId,
     pub name: String,
-    /// Paid in the income year, øre. Positive.
+    /// Invoiced in the income year excluding VAT, net of credit notes,
+    /// øre (the field is `betaltBeloep`; skfvf. § 7-10-24 (1) says
+    /// invoiced). Zero only in a correction: it withdraws a record an
+    /// earlier delivery made (the rettledning's way to delete one).
     pub paid_ore: i64,
 }
 
@@ -67,8 +70,8 @@ pub enum ReportError {
         field: &'static str,
         value: String,
     },
-    /// Nothing paid (or a net refund): such a recipient has no oppgave.
-    NotPositive {
+    /// A net credit: such a recipient has no oppgave.
+    Negative {
         recipient: String,
         ore: i64,
     },
@@ -88,10 +91,9 @@ impl std::fmt::Display for ReportError {
             Self::InvalidValue { field, value } => {
                 write!(f, "«{value}» kan ikke brukes som {field}")
             }
-            Self::NotPositive { recipient, ore } => write!(
+            Self::Negative { recipient, ore } => write!(
                 f,
-                "«{recipient}» har ikke fått noe betalt i året (netto {} øre)",
-                ore
+                "«{recipient}» har netto kreditert {ore} øre i året og skal ikke ha noen oppgave"
             ),
             Self::Duplicate { recipient } => write!(
                 f,
@@ -107,6 +109,44 @@ impl std::error::Error for ReportError {}
 /// schema has no øre, and the amounts are payments that rarely are whole.
 pub fn kroner(ore: i64) -> i64 {
     (ore + ore.signum() * 50) / 100
+}
+
+/// One supplier's share of one voucher on the supplier ledger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoucherShare<P> {
+    pub voucher: uuid::Uuid,
+    pub party: P,
+    /// What the supplier invoiced in this voucher, VAT included: positive
+    /// for an invoice, negative for a credit note.
+    pub gross_ore: i64,
+    /// The voucher's VAT (input VAT positive), shared by every supplier in
+    /// it in proportion to their gross.
+    pub voucher_vat_ore: i64,
+}
+
+/// Invoiced excluding VAT per supplier: the gross of each voucher less the
+/// supplier's share of that voucher's VAT. A voucher almost always has one
+/// supplier and its VAT is then exact; several share it pro rata, rounded
+/// half away from zero, so their parts may differ from the whole by an øre.
+pub fn invoiced_excl_vat<P: Ord + Clone>(shares: &[VoucherShare<P>]) -> Vec<(P, i64)> {
+    let mut totals = std::collections::BTreeMap::<uuid::Uuid, i64>::new();
+    for s in shares {
+        *totals.entry(s.voucher).or_default() += s.gross_ore;
+    }
+    let mut out = std::collections::BTreeMap::<P, i64>::new();
+    for s in shares {
+        let total = totals[&s.voucher];
+        let vat = if total == 0 {
+            0
+        } else {
+            let n = s.voucher_vat_ore as i128 * s.gross_ore as i128;
+            let d = total as i128;
+            // Half away from zero.
+            ((2 * n + n.signum() * d.abs()) / (2 * d)) as i64
+        };
+        *out.entry(s.party.clone()).or_default() += s.gross_ore - vat;
+    }
+    out.into_iter().collect()
 }
 
 /// The `Melding` document, ready to send or to file by hand.
@@ -173,8 +213,8 @@ pub fn render(d: &Delivery) -> Result<String, ReportError> {
     if !d.recipients.is_empty() {
         out.push_str(",\"oppgave\":[");
         for (i, r) in d.recipients.iter().enumerate() {
-            if r.paid_ore <= 0 {
-                return Err(ReportError::NotPositive {
+            if r.paid_ore < 0 {
+                return Err(ReportError::Negative {
                     recipient: r.name.clone(),
                     ore: r.paid_ore,
                 });
@@ -367,8 +407,11 @@ mod tests {
             })
         );
         let mut d = delivery();
+        d.recipients[1].paid_ore = -1;
+        assert!(matches!(render(&d), Err(ReportError::Negative { .. })));
+        // Zero withdraws an earlier record, and the schema allows it.
         d.recipients[1].paid_ore = 0;
-        assert!(matches!(render(&d), Err(ReportError::NotPositive { .. })));
+        validate(&render(&d).unwrap()).unwrap();
         let mut d = delivery();
         d.recipients[1].id = d.recipients[0].id.clone();
         assert!(matches!(render(&d), Err(ReportError::Duplicate { .. })));
@@ -378,6 +421,32 @@ mod tests {
         let mut d = delivery();
         d.recipients[0].name = "x".repeat(201);
         assert!(matches!(render(&d), Err(ReportError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn vat_comes_off_each_voucher_and_credit_notes_net() {
+        let v = |n: u128| uuid::Uuid::from_u128(n);
+        let share = |voucher, party: &'static str, gross, vat| VoucherShare {
+            voucher: v(voucher),
+            party,
+            gross_ore: gross,
+            voucher_vat_ore: vat,
+        };
+        let rows = [
+            // 10 000 + 25 % VAT.
+            share(1, "snekker", 1_250_000, 250_000),
+            // A supplier outside the VAT register: nothing to take off.
+            share(2, "maler", 400_000, 0),
+            // Credit note for 2 000 + VAT.
+            share(3, "snekker", -250_000, -50_000),
+            // Two suppliers in one voucher share its VAT pro rata.
+            share(4, "maler", 100, 10),
+            share(4, "rorlegger", 200, 10),
+        ];
+        assert_eq!(
+            invoiced_excl_vat(&rows),
+            vec![("maler", 400_097), ("rorlegger", 193), ("snekker", 800_000)]
+        );
     }
 
     #[test]

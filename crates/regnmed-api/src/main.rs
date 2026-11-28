@@ -148,6 +148,16 @@ async fn main() -> Result<()> {
         std::sync::Arc::new(rail)
     });
 
+    // Payments to self-employed people (docs/selvstendig.md): same client,
+    // its own scope, TEST unless CONTRACTOR_PAYMENTS_URL says otherwise.
+    let contractor_payments = regnmed_db::contractor_payments::Rail::from_env()?.map(|rail| {
+        println!(
+            "self-employed payments report submission is on ({})",
+            rail.client.base_url
+        );
+        std::sync::Arc::new(rail)
+    });
+
     // Asking companies to approve regnmed in Altinn: same client, its own scopes.
     let system_user = match std::env::var("MASKINPORTEN_CLIENT_ID") {
         Ok(_) => {
@@ -237,6 +247,7 @@ async fn main() -> Result<()> {
         shareholder_return,
         tax_card,
         garnishment,
+        contractor_payments,
         bank_feed,
         peppol_webhook_secret,
         system_user,

@@ -28,6 +28,7 @@
     "altinn-hendelser": "Varsling fra Altinn",
     skattekort: "Skattekort",
     trekkpalegg: "Trekkpålegg",
+    "betalinger-selvstendig": "Betalinger til selvstendig næringsdrivende",
   };
   const HENDELSE = {
     receipt: "kvittering",

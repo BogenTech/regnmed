@@ -23,6 +23,7 @@ pub mod cash_register;
 pub mod chart_of_accounts;
 pub mod chat;
 pub mod company_card;
+pub mod contractor_payments;
 pub mod currency;
 pub mod dimension;
 pub mod dispatch;

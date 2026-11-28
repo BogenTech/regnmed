@@ -221,7 +221,7 @@ pub async fn record_notice(
 #[derive(Debug, Clone)]
 pub struct AuthorityCall {
     /// `a-melding`, `aksjonaerregisteroppgave`, `altinn-hendelser`, `skattekort`,
-    /// `trekkpalegg` or `mva-melding`.
+    /// `trekkpalegg`, `mva-melding` or `betalinger-selvstendig`.
     pub form: String,
     pub id: Uuid,
     /// Period, income year or resource -- what the call was about.
@@ -259,6 +259,10 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
          select 'aksjonaerregisteroppgave', s.id, s.income_year::text, s.created_by,
                 s.created_at, {}
            from shareholder_return_submission s where s.company_id = $1
+         union all
+         select 'betalinger-selvstendig', s.id, s.income_year::text, s.created_by,
+                s.created_at, {}
+           from contractor_report_submission s where s.company_id = $1
          union all
          select 'altinn-hendelser', s.id, s.resource_filter, s.created_by, s.created_at,
                 '[]'::jsonb
@@ -299,6 +303,7 @@ pub async fn authority_calls(pool: &PgPool, company_id: Uuid) -> Result<Vec<Auth
          order by created_at desc",
         EVENTS.replace("{table}", "amelding_submission_event"),
         EVENTS.replace("{table}", "shareholder_return_submission_event"),
+        EVENTS.replace("{table}", "contractor_report_submission_event"),
     );
     let rows = sqlx::query(&sql).bind(company_id).fetch_all(pool).await?;
     Ok(rows
