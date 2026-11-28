@@ -5,13 +5,16 @@
   import PartyList from "../parties/PartyList.svelte";
   import NewParty from "../parties/NewParty.svelte";
   import SupplierDetail from "./SupplierDetail.svelte";
+  import Selvstendig from "./Selvstendig.svelte";
 
   let { companyId, extra, query } = $props();
 
   const isId = (s) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(s || "");
 </script>
 
-{#if extra === "ny"}
+{#if extra === "betalinger"}
+  {#key companyId}<Selvstendig {companyId} />{/key}
+{:else if extra === "ny"}
   <NewParty {companyId} kind="leverandor" {query} />
 {:else if isId(extra)}
   {#key companyId + extra}
@@ -23,4 +26,7 @@
   {#key companyId + "?" + query}
     <PartyList {companyId} kind="leverandor" {query} />
   {/key}
+  <a class="link text-sm" href={"#/c/" + companyId + "/leverandorer/betalinger"}>
+    Betalinger til selvstendig næringsdrivende (oppgave til Skatteetaten)
+  </a>
 {/if}

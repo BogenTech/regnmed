@@ -38,6 +38,7 @@ pub mod altinn_system_user;
 pub mod amelding;
 pub mod bankfeed;
 pub mod brreg;
+pub mod contractor_payments;
 pub mod enablebanking;
 pub mod finanstilsynet;
 pub mod garnishment;

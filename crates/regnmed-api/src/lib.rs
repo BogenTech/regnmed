@@ -17,6 +17,7 @@ pub mod cards;
 pub mod cash_register;
 pub mod chart_of_accounts;
 pub mod chat;
+pub mod contractor_payments;
 pub mod currency;
 pub mod dimension;
 pub mod dispatch;
@@ -115,6 +116,9 @@ pub struct AppState {
     /// Trekkpålegg from Skatteetaten (docs/trekkpalegg.md §2). None when
     /// MASKINPORTEN_* is unset.
     pub garnishment: Option<Arc<regnmed_db::garnishment::Rail>>,
+    /// Payments to self-employed people (docs/selvstendig.md). None when
+    /// MASKINPORTEN_* is unset.
+    pub contractor_payments: Option<Arc<regnmed_db::contractor_payments::Rail>>,
     /// Direct bank connection (docs/bank.md tier 2): the configured providers,
     /// in priority order. None when there is none — the portal then shows no
     /// bank-connection card at all.
@@ -953,6 +957,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/companies/{company_id}/terms/accept",
             axum::routing::post(terms::accept),
+        )
+        .route(
+            "/companies/{company_id}/reports/selvstendig",
+            get(contractor_payments::report),
+        )
+        .route(
+            "/companies/{company_id}/reports/selvstendig/submissions",
+            get(contractor_payments::list_submissions).post(contractor_payments::submit),
+        )
+        .route(
+            "/companies/{company_id}/reports/selvstendig/submissions/{submission_id}/outcome",
+            axum::routing::post(contractor_payments::outcome),
+        )
+        .route(
+            "/companies/{company_id}/parties/{party_id}/self-employed",
+            get(contractor_payments::assessment).post(contractor_payments::assess),
         )
         .route(
             "/companies/{company_id}/reports/aksjonaeroppgave",

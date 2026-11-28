@@ -95,6 +95,7 @@ innsettings-bare:
 | --- | --- | --- |
 | A-melding | `amelding_submission` + `_event` (0074) | **før** kallet; kvittering, feil og tilbakemelding etterpå |
 | Aksjonærregisteroppgave | `shareholder_return_submission` + `_event` (0076) | **før** kallet; kvittering, feil og svar etterpå |
+| Betalinger til selvstendig næringsdrivende | `contractor_report_submission` + `_event` (0112) | **før** kallet; kvittering, feil og svar etterpå |
 | Skattekortbestilling | `tax_card_request` (0079) + `tax_card_order`, `tax_card_request_failure`, `tax_card` | **før** kallet; mottatt bestilling, feil og svar etterpå |
 | Henting av trekkpålegg | `garnishment_fetch` (0111) + `garnishment_fetch_outcome` | **før** kallet; svar og feil etterpå |
 | Abonnement på Altinn-hendelser | `altinn_event_subscription` (0075) | **etter** kallet, når Altinn har opprettet det — et mislykket forsøk logges bare i driftsloggen |

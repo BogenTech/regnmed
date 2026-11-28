@@ -201,7 +201,7 @@ dyreste måten å gjøre dette på: hver tildeling har ukers ledetid.
 | `skatteetaten:innleveringkontroll` | SAF-T levert ved kontroll (#183) | eksporten finnes; krav og flyt i docs/saft/README.md. Bestilt i test, SSV-6691 |
 | `skatteetaten:formueinntekt/skattemelding` | skattemelding m/ næringsspesifikasjon (#11) | ikke bygget; bekreftelsen krever ID-porten, samme godkjenningsflyt som mva-meldingen. Bestilt i test, SSV-6691 |
 | `skatteetaten:skattdialogdokument` | dokumentene i Skatteetatens dialoger (skattekort, skatteoppgjør, forskuddsskatt) | skattemelding-scopet dekker det bare i en overgangsperiode. Bedt om i beskrivelsen av SSV-6691 (ingen egen tjeneste i skjemaet) |
-| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | ikke bygget; tallene ligger i leverandørreskontroen. Bestilt i test, SSV-6691; Altinn-ressursen ligger i systemets `rights` |
+| `skatteetaten:innrapporteringbetalingerselvstendignaeringsdrivende` | betalinger til selvstendig næringsdrivende (tidligere RF-1321), frist 15. februar | rendring, skjemavalidering, nedlasting og innsending bygget (docs/selvstendig.md, #363); ikke bevist mot Skatteetaten. Bestilt i test, SSV-6691; Altinn-ressursen ligger i systemets `rights`, men ikke ennå i kundenes systembrukerforespørsel |
 
 De fire nederste radene er bestilt før koden finnes, og det er et
 bevisst unntak fra overskriften: én sak per kategori og ukers ledetid

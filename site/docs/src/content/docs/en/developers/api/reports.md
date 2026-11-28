@@ -35,6 +35,10 @@ The table is generated from the route table in `crates/regnmed-api/src/lib.rs` (
 | GET | `/companies/{company_id}/reports/revisjon` | `RAPPORT_LES` |
 | GET | `/companies/{company_id}/reports/saft` | `RAPPORT_LES` |
 | GET | `/companies/{company_id}/reports/saldobalanse` | `RAPPORT_LES` |
+| GET | `/companies/{company_id}/reports/selvstendig` | `RESKONTRO_LES` |
+| GET | `/companies/{company_id}/reports/selvstendig/submissions` | `RESKONTRO_LES` |
+| POST | `/companies/{company_id}/reports/selvstendig/submissions` | `RESKONTRO_SKRIV` |
+| POST | `/companies/{company_id}/reports/selvstendig/submissions/{submission_id}/outcome` | `RESKONTRO_LES` |
 
 ## Further reading (Norwegian)
 

@@ -10,6 +10,8 @@ mod common;
 mod bank;
 #[path = "grupper/bank_feed.rs"]
 mod bank_feed;
+#[path = "grupper/contractor_payments.rs"]
+mod contractor_payments;
 #[path = "grupper/valuta.rs"]
 mod currency;
 #[path = "grupper/ocr.rs"]
