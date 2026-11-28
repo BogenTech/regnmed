@@ -157,6 +157,9 @@ impl Line {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Withdrawn {
     pub name: String,
+    /// Already sent with 0 in an earlier correction: it is sent with 0
+    /// again (every delivery is the whole set) but is nothing new.
+    pub already_zero: bool,
     /// May be a fødselsnummer, so never serialized.
     #[serde(skip)]
     pub id: RecipientId,
@@ -168,8 +171,8 @@ pub struct Report {
     /// Marked self-employed, with a net to report.
     pub recipients: Vec<Line>,
     /// Records an earlier delivery made that the ledger no longer
-    /// supports (marked no since, or credited to nothing): sent again with
-    /// 0, which is how Skatteetaten deletes one.
+    /// supports (marked no since, or credited to nothing): sent with 0,
+    /// which is how Skatteetaten deletes one, in every later delivery.
     pub withdrawn: Vec<Withdrawn>,
     /// Suppliers with invoices in the year nobody has assessed. A warning:
     /// the decision on 2026-11-28 was to warn, not to block.
@@ -181,8 +184,10 @@ pub struct Report {
 /// Every supplier's invoiced amount in the year excluding VAT, from the
 /// supplier ledger (docs/selvstendig.md, «Tallene»):
 ///
-/// - An entry crediting the supplier is an invoice, unless money came in
-///   in the same voucher (an account 19xx): then it is a refund.
+/// - An entry crediting the supplier is an invoice when the same voucher
+///   charges something outside class 2 (a cost, an asset, VAT) and no
+///   money came in (an account 19xx: that is a refund). The open-items
+///   migration charges 2050 and is history, not an invoice of the year.
 /// - An entry debiting the supplier is a credit note only when the same
 ///   voucher credits a cost or income account (class 3–8, agio excepted)
 ///   or VAT, and no money went out. Anything else is a payment, also one
@@ -210,7 +215,14 @@ async fn invoiced(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Vec<(Uui
                     -- a payment through some other account. Agio is not.
                     coalesce(bool_or(e.amount_ore < 0
                         and ((a.number >= '3000' and a.number not in ('8060', '8160'))
-                             or a.number between '2700' and '2719')), false) as reversed
+                             or a.number between '2700' and '2719')), false) as reversed,
+                    -- Something was charged outside class 2 (VAT aside): what
+                    -- makes a credit on the supplier an invoice. The open-items
+                    -- migration (against 2050) and a move between suppliers
+                    -- charge nothing and are not invoices of the year.
+                    coalesce(bool_or(e.amount_ore > 0
+                        and (a.number not like '2%' or a.number between '2700' and '2719')),
+                        false) as charged
              from entry e
              join account a on a.id = e.account_id
              where e.voucher_id in (select voucher_id from sup)
@@ -218,7 +230,7 @@ async fn invoiced(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Vec<(Uui
          )
          select s.voucher_id, s.party_id, -sum(s.amount_ore)::bigint as gross, vo.vat::bigint as vat
          from sup s join vo on vo.voucher_id = s.voucher_id
-         where (s.amount_ore < 0 and vo.money <= 0)
+         where (s.amount_ore < 0 and vo.money <= 0 and vo.charged)
             or (s.amount_ore > 0 and vo.money >= 0 and vo.reversed)
          group by s.voucher_id, s.party_id, vo.vat",
     )
@@ -301,8 +313,12 @@ pub async fn report(pool: &PgPool, company_id: Uuid, year: i32) -> Result<Report
     if let Some(doc) = newest_delivered_document(pool, company_id, year).await? {
         let now: Vec<RecipientId> = report.recipients.iter().filter_map(Line::id).collect();
         for (id, name, amount) in records_in(&doc)? {
-            if amount > 0 && !now.contains(&id) {
-                report.withdrawn.push(Withdrawn { name, id });
+            if !now.contains(&id) {
+                report.withdrawn.push(Withdrawn {
+                    name,
+                    id,
+                    already_zero: amount == 0,
+                });
             }
         }
     }

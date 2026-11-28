@@ -132,7 +132,10 @@ pub async fn report(
         "sum_kr": r.recipients.iter()
             .map(|l| regnmed_core::contractor_payments::kroner(l.invoiced_ore))
             .sum::<i64>(),
-        "trekkes_tilbake": r.withdrawn.iter().map(|w| &w.name).collect::<Vec<_>>(),
+        "trekkes_tilbake": r.withdrawn.iter()
+            .filter(|w| !w.already_zero)
+            .map(|w| &w.name)
+            .collect::<Vec<_>>(),
         "ikke_vurdert": r.unassessed.iter().map(line_json).collect::<Vec<_>>(),
         "hindringer": r.hindrances,
         "leverbar": r.hindrances.is_empty(),

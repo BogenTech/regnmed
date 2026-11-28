@@ -169,6 +169,8 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
         ("2710", "Inngående mva"),
         ("4000", "Innkjøp"),
         ("8060", "Valutagevinst (agio)"),
+        ("2050", "Annen egenkapital"),
+        ("2410", "Leverandørgjeld, migrert"),
     ] {
         regnmed_db::ensure_account(&state.pool, company, number, name)
             .await
@@ -298,6 +300,26 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
     .await;
 
     let base = format!("/companies/{company}");
+    // Migrated in March: last December's open invoice from the carpenter
+    // comes in through the open-items import against 2050. History, not
+    // an invoice of 2026, so it stays out of the report.
+    let rows = regnmed_core::migration_csv::parse_open_items(
+        "Navn;Fakturanr;Fakturadato;Restbeløp\nOla Snekker;L-9;15.12.2025;40 000,00\n",
+    )
+    .unwrap();
+    regnmed_db::migration::import_open_items(
+        &state.pool,
+        company,
+        regnmed_core::migration_csv::PartyKind::Supplier,
+        "2410",
+        "2050",
+        NaiveDate::from_ymd_opt(2026, 3, 15).unwrap(),
+        &rows,
+        "test",
+    )
+    .await
+    .unwrap();
+
     let plain = state.clone();
     let assess = |party: Uuid, body: serde_json::Value| {
         let (state, token, base) = (plain.clone(), token.clone(), base.clone());
@@ -504,6 +526,17 @@ async fn the_report_comes_from_the_supplier_ledger_and_is_filed_once() {
     assert_eq!(records.len(), 2);
     assert_eq!(records[1]["oppgaveeier"]["organisasjonsnummer"], maler_org);
     assert_eq!(records[1]["betaltBeloep"], 0);
+    let corrected = body.clone();
+
+    // Delivered as it stands: the withdrawn record stays at 0 in the set,
+    // so nothing new is offered and nothing is sent again.
+    let (_, page) = call(&state, &token, "GET", &report, None).await;
+    assert_eq!(page["trekkes_tilbake"], json!([]), "{page}");
+    let (status, again) = call(&state, &token, "POST", &submissions, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{again}");
+    assert!(again["error"].as_str().unwrap().contains("allerede levert"));
+    assert_eq!(calls.lock().unwrap().len(), 3);
+    let body = corrected;
 
     // Skatteetaten's answer, from the receipt's Dialogporten dialog.
     let id = body["id"].as_str().unwrap();

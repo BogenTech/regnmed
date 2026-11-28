@@ -88,8 +88,14 @@ Tre utfall per leverandør med fakturaer i året:
 året (bilagsdato i året):
 
 - En postering som **krediterer** leverandøren på en leverandørkonto
-  (`reskontro_kind = 'leverandor'`) er en **faktura**, med mindre penger
-  kom inn i samme bilag (konto 19xx). Da er den en tilbakebetaling.
+  (`reskontro_kind = 'leverandor'`) er en **faktura** når samme bilag
+  belaster noe utenfor klasse 2 (en kostnad, en eiendel, mva 2700–2719)
+  og ingen penger kom inn (konto 19xx: da er den en tilbakebetaling).
+  Migreringen av åpne poster (`migration::import_open_items`, mot 2050) og
+  en flytting mellom leverandører belaster ingenting og er ikke årets
+  fakturaer. Åpningsbalansen fra SAF-T-importen bærer ingen parter og når
+  aldri reskontroen; den importerte historikken (journal IMP) er ekte
+  fakturaer og telles.
 - En postering som **debiterer** leverandøren er en **kreditnota** bare
   når samme bilag krediterer en kostnads- eller inntektskonto (klasse
   3–8, agio 8060/8160 unntatt) eller mva, og ingen penger gikk ut. Alt
@@ -109,6 +115,8 @@ Tre utfall per leverandør med fakturaer i året:
   kjøp mot leverandørreskontroen for at de skal komme med.
 - Vurderingen gjelder hele leverandøren. Kjøper kunden både tjenester og
   rene varer (eller husleie) fra samme selvstendige, kommer alt med.
+- Åpne poster migrert mot en motkonto utenfor klasse 2 (standard er
+  2050) ville telles som fakturaer.
 - Mva leses fra kontoene 2700–2719. Mva bokført på en annen konto blir
   stående i beløpet.
 - En reversering av en faktura som var ført mot en balansekonto (for
@@ -164,7 +172,9 @@ Samme skinne som a-meldingen og RF-1086:
 - **Korrigering.** En levert oppgave som er lik dagens, sendes ikke igjen.
   Er noe endret, sendes hele settet på nytt. En mottaker den forrige
   leveransen hadde, men som ikke er med nå, sendes med 0 kr, som er
-  Skatteetatens måte å slette en oppgave på.
+  Skatteetatens måte å slette en oppgave på. Den står med 0 kr i hver
+  senere leveranse også, slik at en levert oppgave kan sammenlignes med
+  dagens, men siden lister bare de som trekkes tilbake for første gang.
 - **Svaret** hentes fra Dialogporten med «Hent svar» (samme kode som
   RF-1086). Det kommer ikke av seg selv ennå, fordi det ikke finnes noe
   Altinn-abonnement for denne ressursen.
